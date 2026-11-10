@@ -81,6 +81,7 @@ export default function App() {
     phone: '',
     hourly_rate: '18.50',
     monthly_target_hours: '176',
+    admission_date: new Date().toISOString().slice(0, 10),
     is_active: true,
   });
 
@@ -164,6 +165,7 @@ export default function App() {
       phone: '+351 ',
       hourly_rate: '18.50',
       monthly_target_hours: '176',
+      admission_date: new Date().toISOString().slice(0, 10),
       is_active: true,
     });
     setEmpModalOpen(true);
@@ -179,6 +181,9 @@ export default function App() {
       phone: emp.phone || '',
       hourly_rate: String(emp.hourly_rate),
       monthly_target_hours: String(emp.monthly_target_hours || 176),
+      admission_date:
+        emp.admission_date ||
+        (emp.created_at ? emp.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10)),
       is_active: emp.is_active,
     });
     setEmpModalOpen(true);
@@ -197,6 +202,7 @@ export default function App() {
         phone: empForm.phone.trim() || null,
         hourly_rate: parseFloat(empForm.hourly_rate) || 0,
         monthly_target_hours: parseInt(empForm.monthly_target_hours, 10) || 176,
+        admission_date: empForm.admission_date || null,
         is_active: empForm.is_active,
       },
       activeCompany?.id
@@ -690,7 +696,7 @@ export default function App() {
                               <td>
                                 <div style={{ fontWeight: 600 }}>{emp.full_name}</div>
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                  Meta: {emp.monthly_target_hours}h / mês
+                                  Admissão: {emp.admission_date ? emp.admission_date.split('-').reverse().join('/') : (emp.created_at ? emp.created_at.slice(0, 10).split('-').reverse().join('/') : '-')} • Meta: {emp.monthly_target_hours}h/mês
                                 </div>
                               </td>
                               <td>
@@ -915,6 +921,16 @@ export default function App() {
                     required
                     value={empForm.monthly_target_hours}
                     onChange={(e) => setEmpForm({ ...empForm, monthly_target_hours: e.target.value })}
+                  />
+                </div>
+
+                <div className="flat-form-group">
+                  <label>Data de Admissão</label>
+                  <input
+                    type="date"
+                    required
+                    value={empForm.admission_date}
+                    onChange={(e) => setEmpForm({ ...empForm, admission_date: e.target.value })}
                   />
                 </div>
               </div>

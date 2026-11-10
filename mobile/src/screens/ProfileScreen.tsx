@@ -210,6 +210,19 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               {Number(employee.hourly_rate).toFixed(2)} €/h
             </Text>
           </View>
+
+          <View style={styles.infoRow}>
+            <Text style={[styles.infoLabel, { color: colors.textMuted }]}>
+              Admissão:
+            </Text>
+            <Text style={[styles.infoVal, { color: '#10B981', fontWeight: '700' }]}>
+              {employee.admission_date
+                ? employee.admission_date.split('-').reverse().join('/')
+                : employee.created_at
+                ? employee.created_at.slice(0, 10).split('-').reverse().join('/')
+                : '-'}
+            </Text>
+          </View>
         </View>
       </View>
 

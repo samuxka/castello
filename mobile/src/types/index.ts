@@ -43,6 +43,7 @@ export interface EmployeeProfile {
   hourly_rate: number; // Euro €
   monthly_target_hours: number;
   avatar_url?: string | null;
+  admission_date?: string | null;
   is_active: boolean;
   created_at?: string;
 }

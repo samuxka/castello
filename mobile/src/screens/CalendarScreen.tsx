@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { TimeEntry } from '../types';
+import { EmployeeProfile, TimeEntry } from '../types';
 import {
   calculateMonthlySummaries,
   getLocalDateString,
@@ -15,6 +15,7 @@ import {
 
 interface CalendarScreenProps {
   entries: TimeEntry[];
+  employee?: EmployeeProfile | null;
   theme: 'light' | 'dark';
 }
 
@@ -37,6 +38,7 @@ const WEEKDAYS_HEADER = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
 export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   entries,
+  employee,
   theme,
 }) => {
   const isDark = theme === 'dark';
@@ -46,17 +48,26 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
     border: isDark ? '#334155' : '#E2E8F0',
     textMain: isDark ? '#F8FAFC' : '#0F172A',
     textMuted: isDark ? '#94A3B8' : '#64748B',
-    primary: '#2563EB', // Azul quando trabalhou
-    absent: '#DC2626',  // Vermelho quando faltou
+    primary: '#2563EB',    // Azul quando trabalhou
+    absent: '#DC2626',     // Vermelho quando faltou
+    admission: '#10B981',  // Verde Esmeralda para o dia de admissão
     cardSubtle: isDark ? '#172554' : '#EFF6FF',
   };
 
   const today = new Date();
+  const todayStr = getLocalDateString(today);
+
+  // Data de admissão do colaborador (se não definida, usa a data de criação ou a primeira picagem)
+  const admissionDateStr =
+    employee?.admission_date ||
+    (employee?.created_at ? employee.created_at.slice(0, 10) : null) ||
+    (entries.length > 0
+      ? [...entries].map((e) => e.work_date).sort()[0]
+      : todayStr);
+
   const [selectedYear, setSelectedYear] = useState(today.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(today.getMonth());
-  const [selectedDateStr, setSelectedDateStr] = useState<string>(
-    getLocalDateString(today)
-  );
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(todayStr);
 
   const monthlyData = calculateMonthlySummaries(
     entries,
@@ -81,6 +92,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   }
 
   // Estatísticas de Presença e Falta no mês
+  // Regra do utilizador: dias anteriores à admissão NÃO contam como falta!
   let presentDaysCount = 0;
   let absentDaysCount = 0;
 
@@ -88,20 +100,27 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
     const dateObj = new Date(selectedYear, selectedMonth, d);
     const dayOfWeek = dateObj.getDay();
     const dateStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const isPastOrToday = dateObj.getTime() <= today.getTime();
+    const isPastOrToday = dateStr <= todayStr;
+    const isAfterAdmission = dateStr > admissionDateStr;
 
-    // Dias úteis passados (Segunda a Sexta)
-    if (dayOfWeek !== 0 && dayOfWeek !== 6 && isPastOrToday) {
-      const summary = monthlyData.dailyMap[dateStr];
-      if (summary && summary.workedMinutes > 0) {
-        presentDaysCount += 1;
-      } else {
-        absentDaysCount += 1;
-      }
+    const summary = monthlyData.dailyMap[dateStr];
+    const hasWorked = Boolean(summary && summary.workedMinutes > 0);
+
+    if (hasWorked) {
+      presentDaysCount += 1;
+    } else if (isAfterAdmission && dayOfWeek !== 0 && dayOfWeek !== 6 && isPastOrToday) {
+      absentDaysCount += 1;
     }
   }
 
   const selectedDaySummary = monthlyData.dailyMap[selectedDateStr] || null;
+  const selectedDateObj = new Date(
+    parseInt(selectedDateStr.slice(0, 4), 10),
+    parseInt(selectedDateStr.slice(5, 7), 10) - 1,
+    parseInt(selectedDateStr.slice(8, 10), 10)
+  );
+  const isSelectedWeekend =
+    selectedDateObj.getDay() === 0 || selectedDateObj.getDay() === 6;
 
   return (
     <ScrollView
@@ -154,7 +173,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Legenda: Azul = Compareceu | Vermelho = Faltou */}
+      {/* Legenda Dinâmica: Azul = Compareceu | Vermelho = Faltou | Verde = Admissão */}
       <View
         style={[
           styles.legendCard,
@@ -162,16 +181,23 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
         ]}
       >
         <View style={styles.legendItem}>
-          <View style={[styles.legendIndicator, { backgroundColor: '#2563EB' }]} />
+          <View style={[styles.legendIndicator, { backgroundColor: colors.primary }]} />
           <Text style={[styles.legendText, { color: colors.textMain }]}>
-            Compareceu ({presentDaysCount} dias)
+            Compareceu ({presentDaysCount})
           </Text>
         </View>
 
         <View style={styles.legendItem}>
-          <View style={[styles.legendIndicator, { backgroundColor: '#DC2626' }]} />
+          <View style={[styles.legendIndicator, { backgroundColor: colors.absent }]} />
           <Text style={[styles.legendText, { color: colors.textMain }]}>
-            Faltou ({absentDaysCount} dias)
+            Faltou ({absentDaysCount})
+          </Text>
+        </View>
+
+        <View style={styles.legendItem}>
+          <View style={[styles.legendIndicator, { backgroundColor: colors.admission }]} />
+          <Text style={[styles.legendText, { color: colors.textMain }]}>
+            Admissão
           </Text>
         </View>
       </View>
@@ -200,21 +226,38 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
             const daySummary = monthlyData.dailyMap[cell.dateStr];
             const dateObj = new Date(selectedYear, selectedMonth, cell.day);
             const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-            const isPastOrToday = dateObj.getTime() <= today.getTime();
+            const isPastOrToday = cell.dateStr <= todayStr;
             const hasWorked = Boolean(daySummary && daySummary.workedMinutes > 0);
 
-            // Regra:
-            // Azul = Trabalhou/Compareceu
-            // Vermelho = Faltou (dia útil passado sem picagem de ponto)
+            const isAdmissionDay = cell.dateStr === admissionDateStr;
+            const isBeforeAdmission = cell.dateStr < admissionDateStr;
+            const isAfterAdmission = cell.dateStr > admissionDateStr;
+
+            // Regras do utilizador:
+            // 1. Dia da admissão: cor diferente (Verde Esmeralda)
+            // 2. Dias anteriores: ficam normais (neutros, sem vermelho)
+            // 3. Dias seguintes: dinâmicos (Azul para trabalho, Vermelho para falta nos dias úteis passados)
             let cellBg = colors.card;
             let cellTextColor = colors.textMain;
 
-            if (hasWorked) {
-              cellBg = '#2563EB'; // Azul
+            if (isAdmissionDay) {
+              cellBg = colors.admission; // Verde Esmeralda
               cellTextColor = '#FFFFFF';
-            } else if (!isWeekend && isPastOrToday) {
-              cellBg = '#DC2626'; // Vermelho
-              cellTextColor = '#FFFFFF';
+            } else if (isBeforeAdmission) {
+              // Ficam normais / neutros
+              cellBg = 'transparent';
+              cellTextColor = colors.textMuted;
+            } else if (isAfterAdmission) {
+              if (hasWorked) {
+                cellBg = colors.primary; // Azul
+                cellTextColor = '#FFFFFF';
+              } else if (!isWeekend && isPastOrToday) {
+                cellBg = colors.absent; // Vermelho
+                cellTextColor = '#FFFFFF';
+              } else {
+                cellBg = colors.card;
+                cellTextColor = isWeekend ? colors.textMuted : colors.textMain;
+              }
             }
 
             const isSelected = cell.dateStr === selectedDateStr;
@@ -232,6 +275,9 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
                 <Text style={[styles.dayCellText, { color: cellTextColor }]}>
                   {cell.day}
                 </Text>
+                {isAdmissionDay && (
+                  <View style={styles.admissionDot} />
+                )}
               </TouchableOpacity>
             );
           })}
@@ -248,6 +294,29 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
         <Text style={[styles.dayDetailTitle, { color: colors.textMain }]}>
           Dia {selectedDateStr.split('-').reverse().join('/')}
         </Text>
+
+        {/* Destaque se o dia selecionado for o dia de admissão */}
+        {selectedDateStr === admissionDateStr && (
+          <View
+            style={[
+              styles.admissionBanner,
+              {
+                backgroundColor: isDark ? '#064E3B' : '#ECFDF5',
+                borderColor: colors.admission,
+              },
+            ]}
+          >
+            <Ionicons name="ribbon-outline" size={18} color={colors.admission} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: colors.admission, fontWeight: '700', fontSize: 13 }}>
+                Data de Admissão no Castello
+              </Text>
+              <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                Início oficial de funções na empresa
+              </Text>
+            </View>
+          </View>
+        )}
 
         {selectedDaySummary ? (
           <View style={styles.detailGrid}>
@@ -287,9 +356,25 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
               </Text>
             </View>
           </View>
+        ) : selectedDateStr < admissionDateStr ? (
+          <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
+            Dia anterior à admissão do colaborador (Sem atividade).
+          </Text>
+        ) : selectedDateStr === admissionDateStr ? (
+          <Text style={{ color: colors.admission, fontSize: 13, fontWeight: '600', marginTop: 4 }}>
+            Primeiro dia oficial na empresa.
+          </Text>
+        ) : selectedDateStr > todayStr ? (
+          <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
+            Dia futuro (Aguardando trabalho).
+          </Text>
+        ) : isSelectedWeekend ? (
+          <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
+            Fim de semana (Descanso semanal).
+          </Text>
         ) : (
           <Text style={{ color: colors.absent, fontSize: 13, fontWeight: '600', marginTop: 4 }}>
-            Sem registo de ponto (Falta)
+            Sem registo de ponto (Falta).
           </Text>
         )}
       </View>
@@ -332,7 +417,7 @@ const styles = StyleSheet.create({
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   legendIndicator: {
     width: 12,
@@ -340,7 +425,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   legendText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   calendarGridCard: {
@@ -370,6 +455,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 6,
     marginVertical: 2,
+    position: 'relative',
   },
   dayCellSelectedRing: {
     borderWidth: 2,
@@ -378,6 +464,23 @@ const styles = StyleSheet.create({
   dayCellText: {
     fontSize: 13,
     fontWeight: '700',
+  },
+  admissionDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#FFFFFF',
+    position: 'absolute',
+    bottom: 3,
+  },
+  admissionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 12,
   },
   dayDetailCard: {
     borderRadius: 8,

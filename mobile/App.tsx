@@ -218,7 +218,11 @@ function MainApp() {
           )
         )}
         {activeTab === 'calendario' && (
-          <CalendarScreen entries={entries} theme={theme} />
+          <CalendarScreen
+            entries={entries}
+            employee={currentEmployee}
+            theme={theme}
+          />
         )}
         {activeTab === 'perfil' && (
           <ProfileScreen

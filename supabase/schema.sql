@@ -72,9 +72,17 @@ create table if not exists public.profiles (
   hourly_rate numeric(10, 2) not null default 18.50,
   monthly_target_hours integer not null default 176,
   avatar_url text,
+  admission_date date default current_date,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+do $$ 
+begin
+  if not exists (select 1 from information_schema.columns where table_name='profiles' and column_name='admission_date') then
+    alter table public.profiles add column admission_date date default current_date;
+  end if;
+end $$;
 
 -- 4. TABELA DE TAREFAS DA OBRA (site_tasks)
 -- Fluxo:
