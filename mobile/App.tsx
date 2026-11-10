@@ -382,6 +382,7 @@ function MainApp() {
         onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         onRefreshData={loadData}
         onLogout={handleLogout}
+        onUpdateAvatar={handleUpdateAvatar}
       />
     </SafeAreaView>
   );

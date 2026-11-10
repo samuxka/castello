@@ -34,10 +34,20 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES"
       ]
     },
     "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O castello precisa de acesso às suas fotos para atualizar a sua foto de perfil.",
+          "cameraPermission": "O castello precisa de acesso à câmara para tirar a sua foto de perfil."
+        }
+      ],
       [
         "expo-notifications",
         {

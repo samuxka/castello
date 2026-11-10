@@ -12,7 +12,9 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { EmployeeProfile } from '../types';
+import { uploadImageToCloudinary } from '../services/cloudinary';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -22,6 +24,7 @@ interface SettingsModalProps {
   onToggleTheme: () => void;
   onRefreshData: () => Promise<void>;
   onLogout: () => void;
+  onUpdateAvatar?: (avatarUri: string) => Promise<void>;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -32,6 +35,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onToggleTheme,
   onRefreshData,
   onLogout,
+  onUpdateAvatar,
 }) => {
   const isDark = theme === 'dark';
   const colors = {
@@ -47,6 +51,77 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const [refreshing, setRefreshing] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const processAndUploadPhoto = async (asset: ImagePicker.ImagePickerAsset) => {
+    if (!onUpdateAvatar) return;
+    setUploadingAvatar(true);
+    try {
+      let fileInput: any;
+      if (asset.base64) {
+        fileInput = `data:image/jpeg;base64,${asset.base64}`;
+      } else {
+        fileInput = {
+          uri: asset.uri,
+          name: asset.fileName || 'profile.jpg',
+          type: asset.mimeType || 'image/jpeg',
+        };
+      }
+      const secureUrl = await uploadImageToCloudinary(fileInput, 'castello_profiles');
+      await onUpdateAvatar(secureUrl);
+      Alert.alert('Sucesso', 'Foto de perfil atualizada no Cloudinary com sucesso!');
+    } catch (e: any) {
+      Alert.alert('Erro no Upload', e.message || 'Falha ao atualizar a foto de perfil.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleChangeAvatar = () => {
+    if (!onUpdateAvatar) return;
+    Alert.alert('Foto de Perfil', 'Escolha como pretende alterar a sua foto:', [
+      {
+        text: 'Tirar Foto (Câmara)',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permissão', 'Permissão de câmara necessária.');
+            return;
+          }
+          const res = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+            base64: true,
+          });
+          if (!res.canceled && res.assets && res.assets.length > 0) {
+            await processAndUploadPhoto(res.assets[0]);
+          }
+        },
+      },
+      {
+        text: 'Escolher da Galeria',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permissão', 'Permissão de galeria necessária.');
+            return;
+          }
+          const res = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+            base64: true,
+          });
+          if (!res.canceled && res.assets && res.assets.length > 0) {
+            await processAndUploadPhoto(res.assets[0]);
+          }
+        },
+      },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -125,13 +200,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            {employee.avatar_url ? (
-              <Image source={{ uri: employee.avatar_url }} style={styles.avatarImg} />
-            ) : (
-              <View style={[styles.avatarFallback, { backgroundColor: colors.primary }]}>
-                <Text style={styles.avatarFallbackText}>{initials}</Text>
+            <TouchableOpacity
+              onPress={handleChangeAvatar}
+              disabled={uploadingAvatar}
+              activeOpacity={0.7}
+              style={{ position: 'relative' }}
+            >
+              {employee.avatar_url ? (
+                <Image source={{ uri: employee.avatar_url }} style={styles.avatarImg} />
+              ) : (
+                <View style={[styles.avatarFallback, { backgroundColor: colors.primary }]}>
+                  <Text style={styles.avatarFallbackText}>{initials}</Text>
+                </View>
+              )}
+              <View
+                style={{
+                  position: 'absolute',
+                  bottom: -2,
+                  right: -2,
+                  backgroundColor: colors.primary,
+                  width: 20,
+                  height: 20,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 2,
+                  borderColor: colors.card,
+                }}
+              >
+                {uploadingAvatar ? (
+                  <ActivityIndicator size={10} color="#FFFFFF" />
+                ) : (
+                  <Ionicons name="camera" size={10} color="#FFFFFF" />
+                )}
               </View>
-            )}
+            </TouchableOpacity>
 
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[styles.userName, { color: colors.textMain }]} numberOfLines={1}>
@@ -437,3 +540,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
+

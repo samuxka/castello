@@ -8,8 +8,11 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { ConstructionSite, EmployeeProfile, TimeEntry } from '../types';
 import { calculateMonthlySummaries } from '../utils/timeCalculations';
 import { uploadImageToCloudinary } from '../services/cloudinary';
@@ -46,83 +49,146 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   };
 
   const [uploading, setUploading] = useState(false);
+  const [urlModalVisible, setUrlModalVisible] = useState(false);
+  const [customUrlInput, setCustomUrlInput] = useState('');
+
   const now = new Date();
   const stats = calculateMonthlySummaries(entries, now.getFullYear(), now.getMonth());
   const earnedEuro = ((stats.totalMinutes / 60) * (employee.hourly_rate || 0)).toFixed(2);
 
   /**
-   * Abre o seletor nativo de fotos do aparelho do usuário
-   * e faz o upload direto para o Cloudinary
+   * Processa o asset retornado pelo ImagePicker e envia para o Cloudinary
    */
-  const handlePickAndUploadCustomPhoto = async () => {
+  const processAndUploadAsset = async (asset: ImagePicker.ImagePickerAsset) => {
+    setUploading(true);
     try {
-      // Import dinâmico do expo-image-picker se disponível
-      let ImagePicker: any;
-      try {
-        ImagePicker = require('expo-image-picker');
-      } catch {
-        ImagePicker = null;
-      }
-
-      if (ImagePicker && ImagePicker.launchImageLibraryAsync) {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert(
-            'Permissão Necessária',
-            'É necessária permissão de acesso à galeria para enviar a sua foto.'
-          );
-          return;
-        }
-
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          aspect: [1, 1],
-          quality: 0.8,
-          base64: true,
-        });
-
-        if (!result.canceled && result.assets && result.assets.length > 0) {
-          const asset = result.assets[0];
-          setUploading(true);
-          const fileToUpload = asset.base64
-            ? `data:image/jpeg;base64,${asset.base64}`
-            : asset.uri;
-
-          const secureUrl = await uploadImageToCloudinary(fileToUpload, 'castello_profiles');
-          await onUpdateAvatar(secureUrl);
-          Alert.alert('Sucesso', 'Foto própria enviada para o Cloudinary e atualizada no perfil!');
-          return;
-        }
+      let fileInput: any;
+      if (asset.base64) {
+        fileInput = `data:image/jpeg;base64,${asset.base64}`;
       } else {
-        // Fallback Web / Prompt de URL ou foto caso o módulo nativo não esteja instalado
-        Alert.prompt
-          ? Alert.prompt(
-              'Foto de Perfil',
-              'Insira a URL ou link da sua foto:',
-              async (urlText) => {
-                if (urlText && urlText.trim()) {
-                  setUploading(true);
-                  try {
-                    const secureUrl = await uploadImageToCloudinary(urlText.trim(), 'castello_profiles');
-                    await onUpdateAvatar(secureUrl);
-                    Alert.alert('Sucesso', 'Foto atualizada!');
-                  } catch {
-                    await onUpdateAvatar(urlText.trim());
-                  } finally {
-                    setUploading(false);
-                  }
-                }
-              }
-            )
-          : Alert.alert(
-              'Foto de Perfil',
-              'Para selecionar arquivos da sua galeria no Expo Go, instale: npx expo install expo-image-picker'
-            );
+        fileInput = {
+          uri: asset.uri,
+          name: asset.fileName || 'profile.jpg',
+          type: asset.mimeType || 'image/jpeg',
+        };
       }
+      const secureUrl = await uploadImageToCloudinary(fileInput, 'castello_profiles');
+      await onUpdateAvatar(secureUrl);
+      Alert.alert('Sucesso', 'Foto de perfil atualizada no Cloudinary com sucesso!');
     } catch (err: any) {
       console.error('Erro no upload de foto:', err);
-      Alert.alert('Erro', err.message || 'Falha ao enviar a foto para o Cloudinary.');
+      Alert.alert('Erro no Upload', err.message || 'Falha ao enviar a foto para o Cloudinary.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  /**
+   * Tira uma nova foto com a câmara
+   */
+  const handleTakePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permissão Necessária',
+          'É necessária permissão de acesso à câmara para tirar uma foto.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        await processAndUploadAsset(result.assets[0]);
+      }
+    } catch (err: any) {
+      console.error('Erro na câmara:', err);
+      Alert.alert('Erro', err.message || 'Falha ao aceder à câmara.');
+    }
+  };
+
+  /**
+   * Escolhe uma foto da galeria do dispositivo
+   */
+  const handlePickFromGallery = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permissão Necessária',
+          'É necessária permissão de acesso à galeria para escolher uma foto.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        await processAndUploadAsset(result.assets[0]);
+      }
+    } catch (err: any) {
+      console.error('Erro na galeria:', err);
+      Alert.alert('Erro', err.message || 'Falha ao aceder à galeria.');
+    }
+  };
+
+  /**
+   * Abre opções de carregamento de foto
+   */
+  const handleOpenPhotoOptions = () => {
+    Alert.alert(
+      'Foto de Perfil',
+      'Como deseja carregar a sua foto?',
+      [
+        {
+          text: 'Tirar Foto (Câmara)',
+          onPress: handleTakePhoto,
+        },
+        {
+          text: 'Escolher da Galeria',
+          onPress: handlePickFromGallery,
+        },
+        {
+          text: 'Inserir Link de Foto',
+          onPress: () => setUrlModalVisible(true),
+        },
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+      ]
+    );
+  };
+
+  const handleSaveUrlPhoto = async () => {
+    if (!customUrlInput.trim()) return;
+    setUploading(true);
+    setUrlModalVisible(false);
+    try {
+      const secureUrl = await uploadImageToCloudinary(customUrlInput.trim(), 'castello_profiles');
+      await onUpdateAvatar(secureUrl);
+      Alert.alert('Sucesso', 'Foto atualizada com sucesso!');
+      setCustomUrlInput('');
+    } catch (e: any) {
+      try {
+        await onUpdateAvatar(customUrlInput.trim());
+        Alert.alert('Sucesso', 'Foto associada ao perfil!');
+        setCustomUrlInput('');
+      } catch {
+        Alert.alert('Erro', 'Não foi possível carregar a imagem informada.');
+      }
     } finally {
       setUploading(false);
     }
@@ -145,7 +211,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           style={styles.avatarTouchable}
           activeOpacity={0.8}
           disabled={uploading}
-          onPress={handlePickAndUploadCustomPhoto}
+          onPress={handleOpenPhotoOptions}
         >
           {employee.avatar_url ? (
             <Image
@@ -177,7 +243,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         <TouchableOpacity
           style={styles.btnUploadText}
           disabled={uploading}
-          onPress={handlePickAndUploadCustomPhoto}
+          onPress={handleOpenPhotoOptions}
         >
           <Ionicons name="cloud-upload-outline" size={15} color="#2563EB" />
           <Text style={{ color: '#2563EB', fontSize: 13, fontWeight: '600' }}>
@@ -290,6 +356,54 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           Terminar Sessão
         </Text>
       </TouchableOpacity>
+
+      {/* Modal para Colar Link de Foto (Fallback Web/URL) */}
+      <Modal
+        visible={urlModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setUrlModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.textMain }]}>
+              Inserir Link da Foto
+            </Text>
+            <Text style={{ color: colors.textMuted, fontSize: 12, marginBottom: 12 }}>
+              Cole a URL pública da sua foto de perfil:
+            </Text>
+
+            <TextInput
+              style={[
+                styles.urlInput,
+                { backgroundColor: colors.cardSubtle, borderColor: colors.border, color: colors.textMain },
+              ]}
+              placeholder="https://exemplo.com/minha-foto.jpg"
+              placeholderTextColor={colors.textMuted}
+              value={customUrlInput}
+              onChangeText={setCustomUrlInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtnSecondary, { borderColor: colors.border }]}
+                onPress={() => setUrlModalVisible(false)}
+              >
+                <Text style={{ color: colors.textMain, fontWeight: '600' }}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalBtnPrimary, { backgroundColor: colors.primary }]}
+                onPress={handleSaveUrlPhoto}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Gravar Foto</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -305,40 +419,42 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 8,
     borderWidth: 1,
-    padding: 20,
+    padding: 24,
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 16,
   },
   avatarTouchable: {
     position: 'relative',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   avatarImage: {
-    width: 76,
-    height: 76,
-    borderRadius: 8,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 2,
+    borderColor: '#2563EB',
   },
   avatarFlat: {
-    width: 76,
-    height: 76,
-    borderRadius: 8,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarFlatText: {
     color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 32,
+    fontWeight: '800',
   },
   cameraIconPill: {
     position: 'absolute',
-    bottom: -4,
-    right: -4,
+    bottom: 0,
+    right: 0,
     backgroundColor: '#2563EB',
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -350,42 +466,44 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 4,
-    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+    borderRadius: 6,
+    backgroundColor: '#EFF6FF',
     marginBottom: 14,
   },
   name: {
     fontSize: 18,
     fontWeight: '700',
+    letterSpacing: -0.3,
   },
   job: {
     fontSize: 13,
     fontWeight: '600',
     marginTop: 2,
-    marginBottom: 14,
   },
   infoList: {
     width: '100%',
+    marginTop: 20,
+    paddingTop: 16,
     borderTopWidth: 1,
-    paddingTop: 12,
-    gap: 8,
+    gap: 10,
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   infoLabel: {
-    fontSize: 12,
+    fontSize: 13,
   },
   infoVal: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   kpiRow: {
     flexDirection: 'row',
     borderRadius: 8,
     borderWidth: 1,
-    marginBottom: 14,
+    marginBottom: 16,
+    overflow: 'hidden',
   },
   kpiBox: {
     flex: 1,
@@ -395,6 +513,7 @@ const styles = StyleSheet.create({
   kpiLabel: {
     fontSize: 11,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
     fontWeight: '600',
   },
   kpiVal: {
@@ -404,12 +523,12 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    borderWidth: 1,
+    justifyContent: 'space-between',
+    padding: 16,
     borderRadius: 8,
-    padding: 14,
-    marginBottom: 14,
+    borderWidth: 1,
+    marginBottom: 12,
   },
   actionButtonText: {
     fontSize: 14,
@@ -420,8 +539,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderWidth: 1,
-    borderRadius: 8,
     padding: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 10,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalBox: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  urlInput: {
+    borderWidth: 1,
+    borderRadius: 6,
+    padding: 10,
+    fontSize: 13,
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  modalBtnSecondary: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  modalBtnPrimary: {
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
   },
 });

@@ -85,11 +85,11 @@ function sha1(str: string): string {
 }
 
 /**
- * Faz upload de imagem (Data URI base64 ou URL) diretamente para o Cloudinary
+ * Faz upload de imagem (Data URI base64, URL ou URI local de arquivo) diretamente para o Cloudinary
  * Retorna a secure_url do Cloudinary
  */
 export async function uploadImageToCloudinary(
-  fileBase64OrUri: string,
+  fileInput: string | { uri: string; name?: string; type?: string },
   folder: string = 'castello_profiles'
 ): Promise<string> {
   const timestamp = Math.floor(Date.now() / 1000);
@@ -97,7 +97,34 @@ export async function uploadImageToCloudinary(
   const signature = sha1(paramsToSign + CLOUDINARY_API_SECRET);
 
   const formData = new FormData();
-  formData.append('file', fileBase64OrUri);
+
+  if (typeof fileInput === 'string') {
+    if (
+      fileInput.startsWith('data:') ||
+      fileInput.startsWith('http://') ||
+      fileInput.startsWith('https://')
+    ) {
+      formData.append('file', fileInput);
+    } else {
+      // É uma URI local do dispositivo (ex: file:///... ou content://...)
+      const filename = fileInput.split('/').pop() || 'profile.jpg';
+      const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
+      const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+      formData.append('file', {
+        uri: fileInput,
+        name: filename,
+        type: mime,
+      } as any);
+    }
+  } else {
+    // Objeto de arquivo do React Native
+    formData.append('file', {
+      uri: fileInput.uri,
+      name: fileInput.name || 'profile.jpg',
+      type: fileInput.type || 'image/jpeg',
+    } as any);
+  }
+
   formData.append('api_key', CLOUDINARY_API_KEY);
   formData.append('timestamp', String(timestamp));
   formData.append('folder', folder);
