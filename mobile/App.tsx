@@ -18,6 +18,7 @@ import {
   getActiveEmployee,
   getSavedBiometricCredentials,
   registerTimeEntry,
+  updateEmployeeAvatar,
 } from './src/lib/supabase';
 import { ConstructionSite, EmployeeProfile, EntryType, TimeEntry } from './src/types';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -123,7 +124,7 @@ function MainApp() {
   const handleRegisterEntry = async (type: EntryType) => {
     if (!currentEmployee) return;
     try {
-      await registerTimeEntry(currentEmployee.id, currentEmployee.site_id, type);
+      await registerTimeEntry(currentEmployee.id, null, type);
       const updated = await fetchEmployeeTimeEntries(currentEmployee.id);
       setEntries(updated);
     } catch (e) {
@@ -131,7 +132,7 @@ function MainApp() {
     }
   };
 
-  const currentSite = sites.find((s) => s.id === currentEmployee?.site_id) || null;
+  const currentSite = sites[0] || null;
 
   if (loading) {
     return (

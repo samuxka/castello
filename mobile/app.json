@@ -30,7 +30,11 @@
         "SCHEDULE_EXACT_ALARM",
         "USE_EXACT_ALARM",
         "POST_NOTIFICATIONS",
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ]
     },
     "plugins": [
@@ -51,6 +55,12 @@
       "expo-status-bar",
       "expo-asset",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ed5ca8b8-4f8d-4af4-9a7e-9c38b366cc30"
+      }
+    },
+    "owner": "samuxka"
   }
 }

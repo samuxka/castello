@@ -83,6 +83,8 @@ export function calculateDailySummary(
     workedMinutes = Math.max(0, (lunchMs - startMs) / 60000);
   }
 
+  const hasPending = sorted.some((e) => e.status === 'pendente');
+
   return {
     date,
     entries: sorted,
@@ -92,6 +94,7 @@ export function calculateDailySummary(
     workedMinutes: Math.round(workedMinutes),
     workedFormatted: formatMinutesToHours(workedMinutes),
     isComplete,
+    hasPending,
   };
 }
 

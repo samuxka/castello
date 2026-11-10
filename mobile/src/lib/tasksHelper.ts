@@ -1,3 +1,6 @@
+import { supabase } from './supabase';
+import { SiteTask } from '../types';
+
 export async function fetchSiteTasks(siteId: string): Promise<SiteTask[]> {
   if (supabase) {
     try {
