@@ -191,25 +191,30 @@ export default function App() {
 
   const handleSaveEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    await saveEmployee(
-      {
-        id: editingEmpId,
-        full_name: empForm.full_name.trim(),
-        email: empForm.email.trim().toLowerCase(),
-        access_code: empForm.access_code.trim(),
-        role: 'funcionario',
-        job_title: empForm.job_title.trim(),
-        phone: empForm.phone.trim() || null,
-        hourly_rate: parseFloat(empForm.hourly_rate) || 0,
-        monthly_target_hours: parseInt(empForm.monthly_target_hours, 10) || 176,
-        admission_date: empForm.admission_date || null,
-        is_active: empForm.is_active,
-      },
-      activeCompany?.id
-    );
-    setEmpModalOpen(false);
-    await loadData(activeCompany?.id);
-    showNotice(editingEmpId ? 'Colaborador atualizado.' : 'Colaborador criado.');
+    try {
+      await saveEmployee(
+        {
+          id: editingEmpId,
+          full_name: empForm.full_name.trim(),
+          email: empForm.email.trim().toLowerCase(),
+          access_code: empForm.access_code.trim(),
+          role: 'funcionario',
+          job_title: empForm.job_title.trim(),
+          phone: empForm.phone.trim() || null,
+          hourly_rate: parseFloat(empForm.hourly_rate) || 0,
+          monthly_target_hours: parseInt(empForm.monthly_target_hours, 10) || 176,
+          admission_date: empForm.admission_date || null,
+          is_active: empForm.is_active,
+        },
+        activeCompany?.id
+      );
+      setEmpModalOpen(false);
+      await loadData(activeCompany?.id);
+      showNotice(editingEmpId ? 'Colaborador atualizado com sucesso.' : 'Colaborador criado com sucesso.');
+    } catch (err: any) {
+      console.error('Erro ao gravar colaborador:', err);
+      alert('Erro ao gravar colaborador: ' + (err.message || 'Verifique os dados preenchidos.'));
+    }
   };
 
   const handleDeleteEmployee = async (id: string) => {

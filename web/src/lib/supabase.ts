@@ -228,27 +228,64 @@ export async function saveEmployee(
   emp: Omit<EmployeeProfile, 'id'> & { id?: string },
   companyId?: string
 ): Promise<EmployeeProfile> {
-  const payload = {
+  const payload: any = {
     ...emp,
     company_id: emp.company_id || companyId || null,
   };
 
   if (supabase) {
     if (emp.id) {
-      const { data, error } = await supabase
+      const { id, ...updateFields } = payload;
+      let { data, error } = await supabase
         .from('profiles')
-        .update(payload)
+        .update(updateFields)
         .eq('id', emp.id)
         .select('*')
         .single();
-      if (!error && data) return data as EmployeeProfile;
+
+      // Fallback resiliente: se a coluna admission_date ainda não foi criada no banco
+      if (error && (error.code === 'PGRST204' || error.message?.includes('admission_date'))) {
+        delete updateFields.admission_date;
+        const retry = await supabase
+          .from('profiles')
+          .update(updateFields)
+          .eq('id', emp.id)
+          .select('*')
+          .single();
+        data = retry.data;
+        error = retry.error;
+      }
+
+      if (error) {
+        console.error('Erro ao atualizar colaborador:', error);
+        throw new Error(error.message || 'Falha ao atualizar colaborador.');
+      }
+      if (data) return data as EmployeeProfile;
     } else {
-      const { data, error } = await supabase
+      const { id, ...insertFields } = payload;
+      let { data, error } = await supabase
         .from('profiles')
-        .insert(payload)
+        .insert(insertFields)
         .select('*')
         .single();
-      if (!error && data) return data as EmployeeProfile;
+
+      // Fallback resiliente: se a coluna admission_date ainda não foi criada no banco
+      if (error && (error.code === 'PGRST204' || error.message?.includes('admission_date'))) {
+        delete insertFields.admission_date;
+        const retry = await supabase
+          .from('profiles')
+          .insert(insertFields)
+          .select('*')
+          .single();
+        data = retry.data;
+        error = retry.error;
+      }
+
+      if (error) {
+        console.error('Erro ao criar colaborador:', error);
+        throw new Error(error.message || 'Falha ao criar colaborador.');
+      }
+      if (data) return data as EmployeeProfile;
     }
   }
   throw new Error('Falha ao salvar colaborador.');
