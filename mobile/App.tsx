@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StatusBar,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +28,7 @@ import { CalendarScreen } from './src/screens/CalendarScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { SiteDetailScreen } from './src/screens/SiteDetailScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
+import { SettingsModal } from './src/screens/SettingsModal';
 import { setupAlarmNotifications } from './src/utils/alarmService';
 
 type TabKey = 'inicio' | 'obras' | 'calendario' | 'perfil';
@@ -50,6 +52,25 @@ function MainApp() {
   const [currentEmployee, setCurrentEmployee] = useState<EmployeeProfile | null>(null);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [hasBiometricsSaved, setHasBiometricsSaved] = useState<boolean>(false);
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) {
+      return 'Bom dia,';
+    } else if (hour >= 12 && hour < 18) {
+      return 'Boa tarde,';
+    } else {
+      return 'Boa noite,';
+    }
+  };
+
+  const getFirstAndLastName = (fullName?: string) => {
+    if (!fullName) return 'Colaborador';
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length <= 1) return parts[0];
+    return `${parts[0]} ${parts[parts.length - 1]}`;
+  };
 
   const colors = {
     bg: isDark ? '#0F172A' : '#F8FAFC',
@@ -164,29 +185,54 @@ function MainApp() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      {/* Top Header Flat */}
+      {/* Top Header do Utilizador (Substitui o antigo quadrado C e barra) */}
       <View
         style={[
           styles.topBar,
           { backgroundColor: colors.card, borderBottomColor: colors.border },
         ]}
       >
-        <View style={styles.brandRow}>
-          <View style={styles.logoBadge}>
-            <Text style={styles.logoBadgeText}>C</Text>
-          </View>
-          <View>
-            <Text style={[styles.appTitle, { color: colors.textMain }]}>
-              castello
+        <View style={styles.userInfoRow}>
+          {/* Círculo com foto de perfil */}
+          {currentEmployee.avatar_url ? (
+            <Image
+              source={{ uri: currentEmployee.avatar_url }}
+              style={styles.avatarCircle}
+            />
+          ) : (
+            <View style={[styles.avatarCircleFallback, { backgroundColor: colors.primary }]}>
+              <Text style={styles.avatarCircleText}>
+                {currentEmployee.full_name
+                  .split(' ')
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase()}
+              </Text>
+            </View>
+          )}
+
+          {/* Cumprimento baseado na hora e Primeiro e Último Nome */}
+          <View style={styles.userTextCol}>
+            <Text style={[styles.greetingText, { color: colors.textMuted }]}>
+              {getGreeting()}
             </Text>
-            <Text style={[styles.employeeSubtitle, { color: colors.textMuted }]}>
-              {currentEmployee.full_name}
+            <Text
+              style={[styles.userNameText, { color: colors.textMain }]}
+              numberOfLines={1}
+            >
+              {getFirstAndLastName(currentEmployee.full_name)}
             </Text>
           </View>
         </View>
 
-        <TouchableOpacity style={styles.refreshBtn} onPress={loadData}>
-          <Ionicons name="refresh-outline" size={18} color={colors.textMuted} />
+        {/* Menu Hambúrguer para Abrir Página de Configurações */}
+        <TouchableOpacity
+          style={[styles.hamburgerBtn, { borderColor: colors.border }]}
+          onPress={() => setSettingsOpen(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="menu" size={22} color={colors.textMain} />
         </TouchableOpacity>
       </View>
 
@@ -326,6 +372,17 @@ function MainApp() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Modal / Página de Configurações */}
+      <SettingsModal
+        visible={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        employee={currentEmployee}
+        theme={theme}
+        onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        onRefreshData={loadData}
+        onLogout={handleLogout}
+      />
     </SafeAreaView>
   );
 }
@@ -351,34 +408,51 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
   },
-  brandRow: {
+  userInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
+    flex: 1,
+    marginRight: 10,
   },
-  logoBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 4,
-    backgroundColor: '#2563EB',
+  avatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  avatarCircleFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoBadgeText: {
+  avatarCircleText: {
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 16,
   },
-  appTitle: {
+  userTextCol: {
+    justifyContent: 'center',
+    flex: 1,
+  },
+  greetingText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  userNameText: {
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: -0.3,
+    marginTop: 1,
   },
-  employeeSubtitle: {
-    fontSize: 11,
-  },
-  refreshBtn: {
-    padding: 6,
+  hamburgerBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   screenArea: {
     flex: 1,
