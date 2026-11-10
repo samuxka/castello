@@ -9,6 +9,7 @@ import {
   ExternalLink,
   LayoutDashboard,
   LogOut,
+  Menu,
   Moon,
   Plus,
   Sun,
@@ -62,6 +63,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [selectedSiteForDetail, setSelectedSiteForDetail] = useState<ConstructionSite | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [sites, setSites] = useState<ConstructionSite[]>([]);
   const [employees, setEmployees] = useState<EmployeeProfile[]>([]);
@@ -138,6 +140,7 @@ export default function App() {
     setActiveCompanySession(null);
     setActiveCompany(null);
     setSelectedSiteForDetail(null);
+    setMobileMenuOpen(false);
   };
 
   const handleValidateEntry = async (entryId: number, newStatus: EntryStatus) => {
@@ -296,26 +299,89 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* Top Bar para Mobile / Tablet */}
+      <header className="mobile-topbar">
+        <div className="mobile-brand">
+          <div className="brand-logo-flat" style={{ width: 32, height: 32, fontSize: 16 }}>
+            C
+          </div>
+          <div style={{ minWidth: 0, overflow: 'hidden' }}>
+            <div className="brand-text-name" style={{ fontSize: 16, lineHeight: 1.1 }}>
+              castello
+            </div>
+            <div
+              className="brand-text-sub"
+              style={{
+                fontSize: 11,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                color: 'var(--primary)',
+                fontWeight: 600,
+              }}
+            >
+              {activeCompany.name}
+            </div>
+          </div>
+        </div>
+
+        <div className="mobile-actions">
+          <button
+            className="theme-toggle-btn"
+            style={{ padding: '6px 10px' }}
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            title="Alternar Tema"
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+
+          <button
+            className="btn-flat-secondary"
+            style={{ padding: '6px 10px' }}
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Menu"
+          >
+            {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
+        </div>
+      </header>
+
+      {/* Backdrop overlay para fechar a sidebar em telas pequenas */}
+      <div
+        className={`sidebar-backdrop ${mobileMenuOpen ? 'active' : ''}`}
+        onClick={() => setMobileMenuOpen(false)}
+      />
+
       {/* Barra Lateral Flat */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
         <div>
           <div className="brand-section">
-            <div className="brand-logo-flat">C</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="brand-text-name">castello</div>
-              <div
-                className="brand-text-sub"
-                style={{
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  color: 'var(--primary)',
-                  fontWeight: 600,
-                }}
-              >
-                {activeCompany.name}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+              <div className="brand-logo-flat">C</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="brand-text-name">castello</div>
+                <div
+                  className="brand-text-sub"
+                  style={{
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    color: 'var(--primary)',
+                    fontWeight: 600,
+                  }}
+                >
+                  {activeCompany.name}
+                </div>
               </div>
             </div>
+
+            <button
+              className="sidebar-close-btn"
+              onClick={() => setMobileMenuOpen(false)}
+              aria-label="Fechar menu lateral"
+            >
+              <X size={16} />
+            </button>
           </div>
 
           <nav className="nav-list">
@@ -324,6 +390,7 @@ export default function App() {
               onClick={() => {
                 setCurrentPage('dashboard');
                 setSelectedSiteForDetail(null);
+                setMobileMenuOpen(false);
               }}
             >
               <LayoutDashboard size={18} />
@@ -335,6 +402,7 @@ export default function App() {
               onClick={() => {
                 setCurrentPage('funcionarios');
                 setSelectedSiteForDetail(null);
+                setMobileMenuOpen(false);
               }}
             >
               <Users size={18} />
@@ -346,6 +414,7 @@ export default function App() {
               onClick={() => {
                 setCurrentPage('obras');
                 setSelectedSiteForDetail(null);
+                setMobileMenuOpen(false);
               }}
             >
               <Building2 size={18} />

@@ -216,7 +216,7 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
       </div>
 
       {/* Navegação entre Tarefas e Diário de Bordo */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <button
           className={`btn-flat-secondary ${activeTab === 'tarefas' ? 'active' : ''}`}
           style={{

@@ -70,7 +70,7 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
   const progressPercent = tasks.length > 0 ? Math.round((completedTasksCount / tasks.length) * 100) : 0;
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-page)', color: 'var(--text-main)', padding: '30px 20px' }}>
+    <div className="client-portal-wrap" style={{ minHeight: '100vh', background: 'var(--bg-page)', color: 'var(--text-main)', padding: '30px 20px' }}>
       <div style={{ maxWidth: 860, margin: '0 auto' }}>
         {/* Top Header do Cliente */}
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, borderBottom: '1px solid var(--border-color)', paddingBottom: 16 }}>

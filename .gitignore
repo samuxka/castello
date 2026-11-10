@@ -24,6 +24,7 @@ web-build/
 # Vite build
 dist/
 build/
+*.tsbuildinfo
 
 # Logs
 npm-debug.log*
@@ -41,3 +42,4 @@ yarn-error.log*
 *.njsproj
 *.sln
 *.sw?
+
