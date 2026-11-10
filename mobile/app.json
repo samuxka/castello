@@ -1,16 +1,20 @@
 {
   "expo": {
-    "name": "Castelo Ponto",
+    "name": "castello",
     "slug": "castelo-ponto",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
     "splash": {
-      "backgroundColor": "#0F172A"
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000511"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.castelo.ponto",
+      "icon": "./assets/icon.png",
       "infoPlist": {
         "UIBackgroundModes": [
           "audio",
@@ -22,7 +26,8 @@
     "android": {
       "package": "com.castelo.ponto",
       "adaptiveIcon": {
-        "backgroundColor": "#0F172A"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000511"
       },
       "permissions": [
         "VIBRATE",

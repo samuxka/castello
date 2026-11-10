@@ -6,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { EmployeeProfile } from '../types';
@@ -63,11 +64,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.cardBox}>
-        {/* Logo Flat */}
+        {/* Logo Oficial */}
         <View style={styles.brandRow}>
-          <View style={styles.logoBadge}>
-            <Text style={styles.logoBadgeText}>C</Text>
-          </View>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={styles.brandTitle}>castello</Text>
         </View>
 
@@ -161,6 +164,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginBottom: 8,
+  },
+  logoImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
   },
   logoBadge: {
     width: 34,
