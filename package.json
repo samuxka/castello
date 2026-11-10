@@ -1,0 +1,11 @@
+{
+  "name": "castello",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd web && npm install && npm run build",
+    "web": "cd web && npm run dev",
+    "web:build": "cd web && npm run build"
+  }
+}
+
