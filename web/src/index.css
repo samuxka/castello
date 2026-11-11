@@ -729,3 +729,80 @@ body {
     padding: 16px 12px !important;
   }
 }
+
+/* ==========================================================================
+   RODAPÉ DO SISTEMA (Castello powered by SSO)
+   ========================================================================== */
+.app-footer {
+  margin-top: 48px;
+  padding: 24px 0 16px;
+  border-top: 1px solid var(--border-color);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+
+/* ==========================================================================
+   ESTILOS DE IMPRESSÃO / EXPORTAÇÃO EM PDF
+   ========================================================================== */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+  .sidebar,
+  .mobile-topbar,
+  .sidebar-backdrop,
+  .theme-toggle-btn,
+  .view-header button,
+  .view-header .btn-flat-primary,
+  .view-header .btn-flat-secondary,
+  .btn-flat-primary,
+  .btn-flat-secondary,
+  .btn-flat-danger,
+  .flat-modal-backdrop,
+  .nav-list,
+  .sidebar-close-btn {
+    display: none !important;
+  }
+  .app-container {
+    display: block !important;
+    min-height: auto !important;
+  }
+  .main-view {
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .panel-box,
+  .kpi-box {
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+  .flat-table th {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+  .flat-table td {
+    color: #0f172a !important;
+    border: 1px solid #e2e8f0 !important;
+  }
+  .app-footer {
+    display: flex !important;
+    color: #64748b !important;
+    border-top: 1px solid #cbd5e1 !important;
+    margin-top: 24px !important;
+    padding-top: 16px !important;
+  }
+}

@@ -10,6 +10,41 @@ export interface Company {
   owner_email: string;
   password_hash: string;
   phone?: string | null;
+  logo_url?: string | null;
+  currency?: string;
+  address?: string | null;
+  created_at?: string;
+}
+
+export type FinancialType = 'receita' | 'despesa';
+
+export type FinancialCategory =
+  | 'adiantamento_cliente'
+  | 'receita_medicao'
+  | 'pagamento_fornecedor'
+  | 'custo_materiais'
+  | 'custo_mao_de_obra'
+  | 'custo_equipamentos'
+  | 'custo_subempreitadas'
+  | 'outros';
+
+export type FinancialStatus = 'pendente' | 'pago' | 'cancelado';
+
+export interface FinancialRecord {
+  id: string;
+  company_id?: string | null;
+  site_id?: string | null;
+  site_name?: string | null;
+  type: FinancialType;
+  category: FinancialCategory;
+  title: string;
+  description?: string | null;
+  entity_name?: string | null; // Fornecedor / Cliente
+  invoice_number?: string | null;
+  amount: number; // Em Euro (€)
+  due_date: string; // YYYY-MM-DD
+  payment_date?: string | null; // YYYY-MM-DD
+  status: FinancialStatus;
   created_at?: string;
 }
 

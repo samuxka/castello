@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Clock,
   Database,
+  DollarSign,
   Edit2,
   ExternalLink,
   LayoutDashboard,
@@ -12,6 +13,7 @@ import {
   Menu,
   Moon,
   Plus,
+  Settings,
   Sun,
   Trash2,
   Users,
@@ -24,6 +26,7 @@ import {
   getActiveCompanySession,
   getAllTimeEntries,
   getEmployees,
+  getFinancialRecords,
   getSites,
   isSupabaseConfigured,
   saveEmployee,
@@ -36,16 +39,19 @@ import {
   ConstructionSite,
   EmployeeProfile,
   EntryStatus,
+  FinancialRecord,
   SiteStatus,
   TimeEntry,
 } from './types';
 import { AuthModal } from './components/AuthModal';
 import { SiteDetailPage } from './pages/SiteDetailPage';
 import { ClientPortalPage } from './pages/ClientPortalPage';
+import { FinancialPage } from './pages/FinancialPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { EmployeeAutocompleteSelect } from './components/EmployeeAutocompleteSelect';
 import { JobTitleAutocompleteSelect } from './components/JobTitleAutocompleteSelect';
 
-type Page = 'dashboard' | 'funcionarios' | 'obras';
+type Page = 'dashboard' | 'funcionarios' | 'obras' | 'financeiro' | 'configuracoes';
 
 export default function App() {
   // Verifica se o link é o link público do cliente (?obra=CODIGO)
@@ -68,6 +74,7 @@ export default function App() {
   const [sites, setSites] = useState<ConstructionSite[]>([]);
   const [employees, setEmployees] = useState<EmployeeProfile[]>([]);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
+  const [financialRecords, setFinancialRecords] = useState<FinancialRecord[]>([]);
   const [notification, setNotification] = useState<string | null>(null);
 
   // Modal Funcionário (CRUD - Sem alocação fixa de obra)
@@ -103,14 +110,16 @@ export default function App() {
 
   const loadData = async (compId?: string) => {
     const targetCompId = compId || activeCompany?.id;
-    const [s, e, t] = await Promise.all([
+    const [s, e, t, f] = await Promise.all([
       getSites(targetCompId),
       getEmployees(targetCompId),
       getAllTimeEntries(targetCompId),
+      getFinancialRecords(targetCompId),
     ]);
     setSites(s);
     setEmployees(e);
     setEntries(t);
+    setFinancialRecords(f);
 
     if (selectedSiteForDetail) {
       const refreshed = s.find((x) => x.id === selectedSiteForDetail.id);
@@ -313,8 +322,19 @@ export default function App() {
       {/* Top Bar para Mobile / Tablet */}
       <header className="mobile-topbar">
         <div className="mobile-brand">
-          <div className="brand-logo-flat" style={{ width: 32, height: 32, fontSize: 16 }}>
-            C
+          <div
+            className="brand-logo-flat"
+            style={{ width: 34, height: 34, fontSize: 16, overflow: 'hidden', padding: 0 }}
+          >
+            {activeCompany.logo_url ? (
+              <img
+                src={activeCompany.logo_url}
+                alt="Logo"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : (
+              activeCompany.name.charAt(0).toUpperCase() || 'C'
+            )}
           </div>
           <div style={{ minWidth: 0, overflow: 'hidden' }}>
             <div className="brand-text-name" style={{ fontSize: 16, lineHeight: 1.1 }}>
@@ -368,7 +388,20 @@ export default function App() {
         <div>
           <div className="brand-section">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
-              <div className="brand-logo-flat">C</div>
+              <div
+                className="brand-logo-flat"
+                style={{ width: 38, height: 38, overflow: 'hidden', padding: 0 }}
+              >
+                {activeCompany.logo_url ? (
+                  <img
+                    src={activeCompany.logo_url}
+                    alt="Logo"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  activeCompany.name.charAt(0).toUpperCase() || 'C'
+                )}
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="brand-text-name">castello</div>
                 <div
@@ -430,6 +463,30 @@ export default function App() {
             >
               <Building2 size={18} />
               Obras
+            </button>
+
+            <button
+              className={`nav-item ${currentPage === 'financeiro' && !selectedSiteForDetail ? 'active' : ''}`}
+              onClick={() => {
+                setCurrentPage('financeiro');
+                setSelectedSiteForDetail(null);
+                setMobileMenuOpen(false);
+              }}
+            >
+              <DollarSign size={18} />
+              Gestão Financeira
+            </button>
+
+            <button
+              className={`nav-item ${currentPage === 'configuracoes' && !selectedSiteForDetail ? 'active' : ''}`}
+              onClick={() => {
+                setCurrentPage('configuracoes');
+                setSelectedSiteForDetail(null);
+                setMobileMenuOpen(false);
+              }}
+            >
+              <Settings size={18} />
+              Configurações
             </button>
           </nav>
         </div>
@@ -843,8 +900,36 @@ export default function App() {
                 </div>
               </>
             )}
+
+            {/* 4. PÁGINA DE GESTÃO FINANCEIRA DE OBRAS */}
+            {currentPage === 'financeiro' && (
+              <FinancialPage
+                company={activeCompany}
+                sites={sites}
+                records={financialRecords}
+                onRefresh={() => loadData(activeCompany.id)}
+                showNotice={showNotice}
+              />
+            )}
+
+            {/* 5. PÁGINA DE CONFIGURAÇÕES DA FIRMA */}
+            {currentPage === 'configuracoes' && (
+              <SettingsPage
+                company={activeCompany}
+                onCompanyUpdated={(updated) => {
+                  setActiveCompany(updated);
+                }}
+                onAccountDeleted={handleLogout}
+                showNotice={showNotice}
+              />
+            )}
           </>
         )}
+
+        {/* RODAPÉ DO SITE */}
+        <footer className="app-footer">
+          <span>Castello powered by SSO</span>
+        </footer>
       </main>
 
       {/* MODAL: CRIAR / EDITAR FUNCIONÁRIO (SEM OBRA) */}
