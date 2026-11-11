@@ -57,9 +57,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <div
             className="brand-logo-flat"
-            style={{ margin: '0 auto 12px auto', width: 44, height: 44, fontSize: 22 }}
+            style={{
+              margin: '0 auto 12px auto',
+              width: 52,
+              height: 52,
+              overflow: 'hidden',
+              padding: 0,
+              backgroundColor: 'transparent',
+            }}
           >
-            C
+            <img
+              src="/logo.png"
+              alt="Castello Logo"
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
           </div>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-main)' }}>
             castello

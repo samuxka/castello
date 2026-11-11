@@ -2,16 +2,12 @@ import React, { useState } from 'react';
 import {
   AlertTriangle,
   Building2,
-  Camera,
   CheckCircle2,
-  DollarSign,
-  Globe,
   KeyRound,
   Lock,
   Mail,
   Phone,
   Save,
-  Shield,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -35,115 +31,101 @@ export function SettingsPage({
   onAccountDeleted,
   showNotice,
 }: SettingsPageProps) {
-  // Dados gerais da empresa
+  // Dados básicos
   const [name, setName] = useState(company.name || '');
-  const [taxId, setTaxId] = useState(company.tax_id || '');
   const [phone, setPhone] = useState(company.phone || '');
-  const [address, setAddress] = useState(company.address || '');
+  const [taxId, setTaxId] = useState(company.tax_id || '');
   const [logoUrl, setLogoUrl] = useState(company.logo_url || '');
-  const [currency, setCurrency] = useState(company.currency || 'EUR');
+  const [saving, setSaving] = useState(false);
 
-  // Configurações operacionais
-  const [standardHours, setStandardHours] = useState('176');
-  const [workStartTime, setWorkStartTime] = useState('08:00');
-  const [workEndTime, setWorkEndTime] = useState('17:00');
-  const [toleranceMinutes, setToleranceMinutes] = useState('15');
-  const [notifyPendingEntries, setNotifyPendingEntries] = useState(true);
-  const [notifyOverdueBills, setNotifyOverdueBills] = useState(true);
-
-  // Alteração de senha
+  // Senha
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
 
-  // Exclusão de conta
+  // Exclusão
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
-  const [savingGeneral, setSavingGeneral] = useState(false);
 
-  // Upload local de imagem / logo
-  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Selecionar arquivo de logo
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      alert('A imagem deve ter no máximo 2MB.');
+    if (file.size > 3 * 1024 * 1024) {
+      alert('A imagem é muito pesada. Escolha uma foto de até 3MB.');
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const result = event.target?.result as string;
-      if (result) {
-        setLogoUrl(result);
-        showNotice('Logo carregada. Clique em "Gravar Dados da Firma" para salvar.');
+      const base64 = event.target?.result as string;
+      if (base64) {
+        setLogoUrl(base64);
+        showNotice('Logo carregada! Clique em "Salvar Informações da Empresa" para confirmar.');
       }
     };
     reader.readAsDataURL(file);
   };
 
-  const handleSaveGeneralInfo = async (e: React.FormEvent) => {
+  const handleSaveCompany = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      alert('O nome da empresa é obrigatório.');
+      alert('Por favor, informe o nome da sua empresa.');
       return;
     }
 
-    setSavingGeneral(true);
+    setSaving(true);
     try {
       const updated = await updateCompanyProfile(company.id, {
         name: name.trim(),
-        tax_id: taxId.trim() || null,
         phone: phone.trim() || null,
-        address: address.trim() || null,
+        tax_id: taxId.trim() || null,
         logo_url: logoUrl || null,
-        currency,
       });
 
       onCompanyUpdated(updated);
-      showNotice('Configurações da firma atualizadas com sucesso.');
+      showNotice('Dados da empresa salvos com sucesso!');
     } catch (err: any) {
-      console.error(err);
-      alert('Erro ao gravar configurações: ' + (err.message || 'Tente novamente.'));
+      alert('Erro ao salvar: ' + (err.message || 'Tente novamente.'));
     } finally {
-      setSavingGeneral(false);
+      setSaving(false);
     }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPassword) {
-      alert('Por favor informe a senha atual.');
+      alert('Digite sua senha atual.');
       return;
     }
     if (newPassword.length < 6) {
-      alert('A nova senha deve possuir pelo menos 6 caracteres.');
+      alert('A nova senha deve ter pelo menos 6 letras ou números.');
       return;
     }
     if (newPassword !== confirmPassword) {
-      alert('A confirmação da nova senha não confere.');
+      alert('As duas senhas novas digitadas não são iguais.');
       return;
     }
 
-    setPasswordLoading(true);
+    setSavingPassword(true);
     try {
       await changeCompanyPassword(company.id, currentPassword, newPassword);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      showNotice('Senha alterada com sucesso.');
+      showNotice('Senha alterada com sucesso!');
     } catch (err: any) {
-      console.error(err);
       alert(err.message || 'Falha ao alterar senha.');
     } finally {
-      setPasswordLoading(false);
+      setSavingPassword(false);
     }
   };
 
   const handleDeleteAccount = async () => {
     if (deleteConfirmText.trim().toUpperCase() !== 'EXCLUIR') {
-      alert('Digite EXCLUIR para confirmar a eliminação permanente.');
+      alert('Para confirmar, digite EXCLUIR no campo indicado.');
       return;
     }
 
@@ -157,66 +139,71 @@ export function SettingsPage({
   };
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', width: '100%' }}>
+    <div style={{ maxWidth: 760, margin: '0 auto', width: '100%' }}>
       {/* Cabeçalho */}
-      <div className="view-header">
-        <div>
-          <h1 className="view-title">Configurações da Firma</h1>
-          <p className="view-description">
-            Gerencie a identidade visual, dados cadastrais, segurança e parâmetros operacionais de <strong>{company.name}</strong>.
-          </p>
-        </div>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-main)', letterSpacing: -0.5 }}>
+          Configurações da Empresa
+        </h1>
+        <p style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 2 }}>
+          Altere a logo da sua firma, o nome cadastrado ou sua senha de acesso.
+        </p>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-        {/* 1. IDENTIDADE E DADOS GERAIS */}
-        <section className="panel-box">
-          <div className="panel-header" style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Building2 size={20} color="var(--primary)" />
-              <h2 className="panel-title" style={{ fontSize: 16 }}>
-                Identidade Visual e Informações da Firma
-              </h2>
-            </div>
+        {/* BLOCO 1: LOGO E DADOS DA FIRMA */}
+        <div
+          style={{
+            padding: 24,
+            borderRadius: 12,
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
+            <Building2 size={20} color="var(--primary)" />
+            <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-main)' }}>
+              1. Logo e Nome da Firma
+            </h2>
           </div>
 
-          <form onSubmit={handleSaveGeneralInfo}>
-            {/* Bloco da Logo */}
+          <form onSubmit={handleSaveCompany}>
+            {/* Escolher e Pré-visualizar Logo */}
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 20,
                 padding: '16px 20px',
+                borderRadius: 10,
                 backgroundColor: 'var(--bg-card-subtle)',
-                borderRadius: 8,
-                border: '1px solid var(--border-color)',
                 marginBottom: 20,
                 flexWrap: 'wrap',
               }}
             >
+              {/* Círculo da Foto/Logo */}
               <div
                 style={{
-                  width: 76,
-                  height: 76,
-                  borderRadius: 10,
+                  width: 80,
+                  height: 80,
+                  borderRadius: 12,
                   backgroundColor: 'var(--primary)',
+                  color: '#ffffff',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  overflow: 'hidden',
-                  border: '2px solid var(--primary-border)',
-                  color: '#fff',
+                  fontSize: 32,
                   fontWeight: 800,
-                  fontSize: 28,
-                  position: 'relative',
+                  overflow: 'hidden',
                   flexShrink: 0,
+                  border: '2px solid var(--border-color)',
                 }}
               >
                 {logoUrl ? (
                   <img
                     src={logoUrl}
-                    alt="Logo da Firma"
+                    alt="Logo"
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 ) : (
@@ -224,33 +211,37 @@ export function SettingsPage({
                 )}
               </div>
 
-              <div style={{ flex: 1, minWidth: 220 }}>
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
-                  Logotipo Oficial da Construtora
+              {/* Botões de Ação para a Logo */}
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
+                  Logotipo da Empresa
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
-                  Esta imagem será exibida no cabeçalho do sistema, relatórios em PDF e no portal do cliente. (PNG, JPG ou WEBP até 2MB).
+                  Esta imagem vai aparecer no topo da página e nos relatórios.
                 </div>
 
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   <label
-                    className="btn-flat-secondary"
                     style={{
                       cursor: 'pointer',
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 6,
-                      fontSize: 12,
-                      padding: '8px 14px',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      padding: '8px 16px',
+                      borderRadius: 6,
+                      backgroundColor: 'var(--primary)',
+                      color: '#ffffff',
                     }}
                   >
-                    <Upload size={14} />
-                    Carregar Imagem
+                    <Upload size={15} />
+                    Escolher Foto do Computador
                     <input
                       type="file"
                       accept="image/*"
                       style={{ display: 'none' }}
-                      onChange={handleLogoFileChange}
+                      onChange={handleLogoChange}
                     />
                   </label>
 
@@ -258,334 +249,221 @@ export function SettingsPage({
                     <button
                       type="button"
                       className="btn-flat-secondary"
-                      style={{
-                        color: 'var(--danger)',
-                        borderColor: 'var(--danger-border)',
-                        fontSize: 12,
-                        padding: '8px 14px',
-                      }}
+                      style={{ fontSize: 12, padding: '8px 12px', color: '#dc2626' }}
                       onClick={() => setLogoUrl('')}
                     >
-                      Remover Logo
+                      Remover Foto
                     </button>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Inputs de Informações */}
-            <div className="flat-form-grid" style={{ marginBottom: 20 }}>
+            {/* Campos de Nome e Telefone */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 20 }}>
               <div className="flat-form-group">
-                <label>Nome da Construtora / Firma *</label>
+                <label style={{ fontSize: 13, fontWeight: 700 }}>Nome da Empresa / Construtora *</label>
                 <input
                   type="text"
                   required
+                  placeholder="Ex: Castello Construções"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex: Castello Construções & Obras"
+                  style={{ fontSize: 15, padding: '10px 14px' }}
                 />
               </div>
 
-              <div className="flat-form-group">
-                <label>NIF / NIPC / CNPJ Fiscal</label>
-                <input
-                  type="text"
-                  value={taxId}
-                  onChange={(e) => setTaxId(e.target.value)}
-                  placeholder="Ex: 509 123 456"
-                />
-              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="flat-form-group">
+                  <label style={{ fontSize: 13, fontWeight: 700 }}>Telefone / WhatsApp</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: +351 900 000 000"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    style={{ padding: '10px 14px' }}
+                  />
+                </div>
 
-              <div className="flat-form-group">
-                <label>Telefone Comercial</label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="Ex: +351 21 000 0000"
-                />
-              </div>
-
-              <div className="flat-form-group">
-                <label>Moeda Padrão do Sistema</label>
-                <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                  <option value="EUR">Euro (€) - União Europeia</option>
-                  <option value="BRL">Real (R$) - Brasil</option>
-                  <option value="USD">Dólar ($) - Estados Unidos</option>
-                  <option value="GBP">Libra (£) - Reino Unido</option>
-                  <option value="CHF">Franco Suíço (CHF)</option>
-                </select>
-              </div>
-
-              <div className="flat-form-group full">
-                <label>Morada / Endereço da Sede</label>
-                <input
-                  type="text"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Ex: Avenida da República 1045, Lisboa, Portugal"
-                />
+                <div className="flat-form-group">
+                  <label style={{ fontSize: 13, fontWeight: 700 }}>NIF / CNPJ Fiscal</label>
+                  <input
+                    type="text"
+                    placeholder="Número fiscal (opcional)"
+                    value={taxId}
+                    onChange={(e) => setTaxId(e.target.value)}
+                    style={{ padding: '10px 14px' }}
+                  />
+                </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="submit"
-                disabled={savingGeneral}
-                className="btn-flat-primary"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-              >
-                <Save size={16} />
-                {savingGeneral ? 'A gravar...' : 'Gravar Dados da Firma'}
-              </button>
-            </div>
-          </form>
-        </section>
-
-        {/* 2. PREFERÊNCIAS OPERACIONAIS */}
-        <section className="panel-box">
-          <div className="panel-header" style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Globe size={20} color="var(--primary)" />
-              <h2 className="panel-title" style={{ fontSize: 16 }}>
-                Parâmetros Operacionais de Trabalho
-              </h2>
-            </div>
-          </div>
-
-          <div className="flat-form-grid" style={{ marginBottom: 20 }}>
-            <div className="flat-form-group">
-              <label>Horas Mensais de Referência (Meta)</label>
-              <input
-                type="number"
-                value={standardHours}
-                onChange={(e) => setStandardHours(e.target.value)}
-              />
-            </div>
-
-            <div className="flat-form-group">
-              <label>Tolerância de Picagem (minutos)</label>
-              <input
-                type="number"
-                value={toleranceMinutes}
-                onChange={(e) => setToleranceMinutes(e.target.value)}
-              />
-            </div>
-
-            <div className="flat-form-group">
-              <label>Horário de Início de Turno</label>
-              <input
-                type="time"
-                value={workStartTime}
-                onChange={(e) => setWorkStartTime(e.target.value)}
-              />
-            </div>
-
-            <div className="flat-form-group">
-              <label>Horário de Término de Turno</label>
-              <input
-                type="time"
-                value={workEndTime}
-                onChange={(e) => setWorkEndTime(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-              padding: '16px 18px',
-              backgroundColor: 'var(--bg-card-subtle)',
-              borderRadius: 8,
-              border: '1px solid var(--border-color)',
-            }}
-          >
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13 }}>
-              <input
-                type="checkbox"
-                checked={notifyPendingEntries}
-                onChange={(e) => setNotifyPendingEntries(e.target.checked)}
-                style={{ width: 16, height: 16, accentColor: 'var(--primary)' }}
-              />
-              <span>Receber alertas no painel para picagens pendentes de aprovação</span>
-            </label>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13 }}>
-              <input
-                type="checkbox"
-                checked={notifyOverdueBills}
-                onChange={(e) => setNotifyOverdueBills(e.target.checked)}
-                style={{ width: 16, height: 16, accentColor: 'var(--primary)' }}
-              />
-              <span>Avisar automaticamente sobre faturas de fornecedores e contas a pagar com vencimento próximo (5 dias)</span>
-            </label>
-          </div>
-        </section>
-
-        {/* 3. SEGURANÇA E ACESSO */}
-        <section className="panel-box">
-          <div className="panel-header" style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Shield size={20} color="var(--primary)" />
-              <h2 className="panel-title" style={{ fontSize: 16 }}>
-                Segurança e Senha de Acesso
-              </h2>
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding: '14px 18px',
-              backgroundColor: 'var(--bg-card-subtle)',
-              borderRadius: 8,
-              border: '1px solid var(--border-color)',
-              marginBottom: 20,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: 10,
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                E-mail de Login do Administrador
-              </div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)', marginTop: 2 }}>
-                {company.owner_email}
-              </div>
-            </div>
-            <span
+            <button
+              type="submit"
+              disabled={saving}
+              className="btn-flat-primary"
               style={{
-                fontSize: 11,
-                padding: '4px 10px',
-                borderRadius: 4,
-                backgroundColor: 'var(--success-subtle)',
-                color: 'var(--success)',
-                fontWeight: 600,
-                border: '1px solid var(--success-border)',
+                width: '100%',
+                padding: '12px 18px',
+                fontSize: 14,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
               }}
             >
-              Autenticado
-            </span>
+              <Save size={18} />
+              {saving ? 'Salvando...' : 'Salvar Informações da Empresa'}
+            </button>
+          </form>
+        </div>
+
+        {/* BLOCO 2: MUDAR SENHA */}
+        <div
+          style={{
+            padding: 24,
+            borderRadius: 12,
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <KeyRound size={20} color="var(--primary)" />
+            <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-main)' }}>
+              2. Alterar sua Senha de Acesso
+            </h2>
+          </div>
+
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+            Seu e-mail de acesso é: <strong>{company.owner_email}</strong>
           </div>
 
           <form onSubmit={handleChangePassword}>
-            <div className="flat-form-grid" style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 18 }}>
               <div className="flat-form-group">
-                <label>Senha Atual</label>
+                <label style={{ fontSize: 13, fontWeight: 700 }}>Senha Atual</label>
                 <input
                   type="password"
                   required
+                  placeholder="Digite a senha que você usa hoje"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="Digite sua senha atual"
+                  style={{ padding: '10px 14px' }}
                 />
               </div>
 
-              <div className="flat-form-group">
-                <label>Nova Senha (Mínimo 6 caracteres)</label>
-                <input
-                  type="password"
-                  required
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Nova senha segura"
-                />
-              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="flat-form-group">
+                  <label style={{ fontSize: 13, fontWeight: 700 }}>Nova Senha</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Mínimo de 6 letras ou números"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    style={{ padding: '10px 14px' }}
+                  />
+                </div>
 
-              <div className="flat-form-group">
-                <label>Confirmar Nova Senha</label>
-                <input
-                  type="password"
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repita a nova senha"
-                />
+                <div className="flat-form-group">
+                  <label style={{ fontSize: 13, fontWeight: 700 }}>Confirmar Nova Senha</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Repita a nova senha"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    style={{ padding: '10px 14px' }}
+                  />
+                </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="submit"
-                disabled={passwordLoading}
-                className="btn-flat-secondary"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-              >
-                <KeyRound size={16} />
-                {passwordLoading ? 'A verificar...' : 'Atualizar Senha'}
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={savingPassword}
+              className="btn-flat-secondary"
+              style={{
+                padding: '10px 18px',
+                fontSize: 13,
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <Lock size={16} />
+              {savingPassword ? 'Alterando senha...' : 'Atualizar Minha Senha'}
+            </button>
           </form>
-        </section>
+        </div>
 
-        {/* 4. ZONA CRÍTICA - EXCLUSÃO DE CONTA */}
-        <section
-          className="panel-box"
+        {/* BLOCO 3: EXCLUIR CONTA */}
+        <div
           style={{
-            borderColor: 'var(--danger-border)',
-            backgroundColor: 'var(--danger-subtle)',
+            padding: 20,
+            borderRadius: 12,
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid #fecaca',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 16,
           }}
         >
-          <div className="panel-header" style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <AlertTriangle size={20} color="var(--danger)" />
-              <h2 className="panel-title" style={{ fontSize: 16, color: 'var(--danger)' }}>
-                Zona Crítica: Eliminar Conta da Firma
-              </h2>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626' }}>
+              Excluir Conta da Empresa
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              Apaga permanentemente os dados, obras e registros desta firma.
             </div>
           </div>
 
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
-            A exclusão da conta da firma é uma ação permanente e irreversível. Todos os dados associados a <strong>{company.name}</strong>, incluindo obras, colaboradores, picagens de ponto e registros financeiros serão removidos.
-          </p>
-
           <button
             type="button"
-            className="btn-flat-secondary"
-            style={{
-              backgroundColor: 'var(--danger)',
-              color: '#ffffff',
-              borderColor: 'var(--danger)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              fontWeight: 600,
-            }}
             onClick={() => {
               setDeleteConfirmText('');
               setDeleteModalOpen(true);
             }}
+            style={{
+              padding: '8px 14px',
+              borderRadius: 6,
+              border: '1px solid #dc2626',
+              backgroundColor: '#fef2f2',
+              color: '#dc2626',
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
           >
             <Trash2 size={16} />
-            Eliminar Conta Permanentemente
+            Excluir Conta
           </button>
-        </section>
+        </div>
       </div>
 
-      {/* Modal de Confirmação de Exclusão */}
+      {/* Modal de Confirmação */}
       {deleteModalOpen && (
         <div className="flat-modal-backdrop">
-          <div className="flat-modal-box" style={{ maxWidth: 440 }}>
+          <div className="flat-modal-box" style={{ maxWidth: 420 }}>
             <div className="flat-modal-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--danger)' }}>
-                <AlertTriangle size={22} />
-                <h3 className="flat-modal-title" style={{ color: 'var(--danger)' }}>
-                  Confirmar Exclusão de Conta
-                </h3>
-              </div>
+              <h3 className="flat-modal-title" style={{ color: '#dc2626' }}>
+                Tem certeza que deseja excluir?
+              </h3>
             </div>
 
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 12, marginBottom: 16, lineHeight: 1.5 }}>
-              Esta ação <strong>NÃO PODE SER DESFEITA</strong>. Todos os dados de obras, ponto e gestão financeira serão apagados.
-              <br /><br />
-              Para confirmar, digite a palavra <strong style={{ color: 'var(--danger)' }}>EXCLUIR</strong> no campo abaixo:
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.5 }}>
+              Essa ação não pode ser desfeita. Para confirmar a exclusão da conta de <strong>{company.name}</strong>, digite a palavra <strong>EXCLUIR</strong>:
             </p>
 
-            <div className="flat-form-group" style={{ marginBottom: 20 }}>
+            <div style={{ marginTop: 14, marginBottom: 18 }}>
               <input
                 type="text"
                 autoFocus
@@ -593,10 +471,12 @@ export function SettingsPage({
                 value={deleteConfirmText}
                 onChange={(e) => setDeleteConfirmText(e.target.value)}
                 style={{
+                  width: '100%',
                   textAlign: 'center',
                   fontWeight: 700,
-                  borderColor: 'var(--danger-border)',
-                  color: 'var(--danger)',
+                  borderColor: '#dc2626',
+                  padding: '10px',
+                  borderRadius: 6,
                 }}
               />
             </div>
@@ -609,22 +489,23 @@ export function SettingsPage({
               >
                 Cancelar
               </button>
+
               <button
                 type="button"
                 disabled={deleteConfirmText.trim().toUpperCase() !== 'EXCLUIR'}
                 onClick={handleDeleteAccount}
                 style={{
-                  backgroundColor: 'var(--danger)',
-                  color: '#fff',
+                  backgroundColor: '#dc2626',
+                  color: '#ffffff',
                   border: 'none',
-                  padding: '9px 18px',
+                  padding: '9px 16px',
                   borderRadius: 6,
-                  fontWeight: 600,
+                  fontWeight: 700,
                   cursor: deleteConfirmText.trim().toUpperCase() === 'EXCLUIR' ? 'pointer' : 'not-allowed',
                   opacity: deleteConfirmText.trim().toUpperCase() === 'EXCLUIR' ? 1 : 0.5,
                 }}
               >
-                Sim, Eliminar Definitivamente
+                Confirmar Exclusão
               </button>
             </div>
           </div>

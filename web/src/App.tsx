@@ -324,7 +324,14 @@ export default function App() {
         <div className="mobile-brand">
           <div
             className="brand-logo-flat"
-            style={{ width: 34, height: 34, fontSize: 16, overflow: 'hidden', padding: 0 }}
+            style={{
+              width: 34,
+              height: 34,
+              fontSize: 16,
+              overflow: 'hidden',
+              padding: 0,
+              backgroundColor: activeCompany.logo_url ? 'var(--primary)' : 'transparent',
+            }}
           >
             {activeCompany.logo_url ? (
               <img
@@ -333,25 +340,38 @@ export default function App() {
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             ) : (
-              activeCompany.name.charAt(0).toUpperCase() || 'C'
+              <img
+                src="/logo.png"
+                alt="Logo Castello"
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
             )}
           </div>
           <div style={{ minWidth: 0, overflow: 'hidden' }}>
-            <div className="brand-text-name" style={{ fontSize: 16, lineHeight: 1.1 }}>
-              castello
+            <div
+              className="brand-text-name"
+              style={{
+                fontSize: 15,
+                lineHeight: 1.2,
+                fontWeight: 800,
+                color: 'var(--text-main)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {activeCompany.name}
             </div>
             <div
               className="brand-text-sub"
               style={{
                 fontSize: 11,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
                 color: 'var(--primary)',
-                fontWeight: 600,
+                fontWeight: 700,
+                letterSpacing: 0.5,
               }}
             >
-              {activeCompany.name}
+              castello
             </div>
           </div>
         </div>
@@ -390,7 +410,13 @@ export default function App() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
               <div
                 className="brand-logo-flat"
-                style={{ width: 38, height: 38, overflow: 'hidden', padding: 0 }}
+                style={{
+                  width: 38,
+                  height: 38,
+                  overflow: 'hidden',
+                  padding: 0,
+                  backgroundColor: activeCompany.logo_url ? 'var(--primary)' : 'transparent',
+                }}
               >
                 {activeCompany.logo_url ? (
                   <img
@@ -399,22 +425,39 @@ export default function App() {
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 ) : (
-                  activeCompany.name.charAt(0).toUpperCase() || 'C'
+                  <img
+                    src="/logo.png"
+                    alt="Logo Castello"
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
                 )}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="brand-text-name">castello</div>
                 <div
-                  className="brand-text-sub"
+                  className="brand-text-name"
                   style={{
+                    fontSize: 16,
+                    fontWeight: 800,
+                    letterSpacing: -0.3,
+                    color: 'var(--text-main)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
-                    color: 'var(--primary)',
-                    fontWeight: 600,
                   }}
                 >
                   {activeCompany.name}
+                </div>
+                <div
+                  className="brand-text-sub"
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--primary)',
+                    fontWeight: 700,
+                    letterSpacing: 0.5,
+                    marginTop: 1,
+                  }}
+                >
+                  castello
                 </div>
               </div>
             </div>
@@ -524,40 +567,41 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Conteúdo Principal */}
+      {/* Conteúdo Principal com Altura Padronizada e Scroll Interno */}
       <main className="main-view">
-        {notification && (
-          <div
-            style={{
-              padding: '10px 14px',
-              backgroundColor: 'var(--primary-subtle)',
-              border: '1px solid var(--primary-border)',
-              borderRadius: 6,
-              color: 'var(--primary)',
-              fontSize: 13,
-              fontWeight: 600,
-              marginBottom: 20,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <CheckCircle2 size={16} />
-            {notification}
-          </div>
-        )}
+        <div className="main-content-area">
+          {notification && (
+            <div
+              style={{
+                padding: '10px 14px',
+                backgroundColor: 'var(--primary-subtle)',
+                border: '1px solid var(--primary-border)',
+                borderRadius: 6,
+                color: 'var(--primary)',
+                fontSize: 13,
+                fontWeight: 600,
+                marginBottom: 20,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <CheckCircle2 size={16} />
+              {notification}
+            </div>
+          )}
 
-        {/* DETALHE DA OBRA (Quando o usuário clica numa obra) */}
-        {selectedSiteForDetail ? (
-          <SiteDetailPage
-            site={selectedSiteForDetail}
-            employees={employees}
-            onBack={() => setSelectedSiteForDetail(null)}
-          />
-        ) : (
-          <>
-            {/* 1. DASHBOARD */}
-            {currentPage === 'dashboard' && (
+          {/* DETALHE DA OBRA (Quando o usuário clica numa obra) */}
+          {selectedSiteForDetail ? (
+            <SiteDetailPage
+              site={selectedSiteForDetail}
+              employees={employees}
+              onBack={() => setSelectedSiteForDetail(null)}
+            />
+          ) : (
+            <>
+              {/* 1. DASHBOARD */}
+              {currentPage === 'dashboard' && (
               <>
                 <div className="view-header">
                   <div>
@@ -925,6 +969,7 @@ export default function App() {
             )}
           </>
         )}
+        </div>
 
         {/* RODAPÉ DO SITE */}
         <footer className="app-footer">

@@ -554,142 +554,10 @@ export async function updateEntryStatus(
 }
 
 // ============================================================================
-// GESTÃO FINANCEIRA DE OBRAS
+// GESTÃO FINANCEIRA DE OBRAS (Sem dados mockados)
 // ============================================================================
 const getFinStorageKey = (companyId?: string) =>
   `castello_financial_${companyId || 'default'}`;
-
-export function getInitialSampleFinancials(companyId?: string): FinancialRecord[] {
-  const today = new Date();
-  const formatIso = (d: Date) => d.toISOString().slice(0, 10);
-  const dMinus15 = new Date(today.getTime() - 15 * 86400000);
-  const dMinus5 = new Date(today.getTime() - 5 * 86400000);
-  const dPlus7 = new Date(today.getTime() + 7 * 86400000);
-  const dPlus18 = new Date(today.getTime() + 18 * 86400000);
-
-  return [
-    {
-      id: 'fin-01',
-      company_id: companyId || null,
-      type: 'receita',
-      category: 'adiantamento_cliente',
-      title: 'Adiantamento Inicial de Contrato',
-      entity_name: 'Família Moreira / Investimentos',
-      amount: 75000,
-      due_date: formatIso(dMinus15),
-      payment_date: formatIso(dMinus15),
-      status: 'pago',
-      invoice_number: 'FAT-2026-001',
-      description: 'Sinal de 25% para mobilização da obra e aquisição de estrutura.',
-      created_at: formatIso(dMinus15),
-    },
-    {
-      id: 'fin-02',
-      company_id: companyId || null,
-      type: 'receita',
-      category: 'receita_medicao',
-      title: 'Medição 01 - Fundações e Estrutura de Betão',
-      entity_name: 'Engenharia & Fiscalização Geral',
-      amount: 45000,
-      due_date: formatIso(dMinus5),
-      payment_date: formatIso(dMinus5),
-      status: 'pago',
-      invoice_number: 'MED-01-2026',
-      description: 'Aprovação de medição mensal de alvenaria e pilares.',
-      created_at: formatIso(dMinus5),
-    },
-    {
-      id: 'fin-03',
-      company_id: companyId || null,
-      type: 'despesa',
-      category: 'custo_materiais',
-      title: 'Aquisição de Aço CA-50 e Betão Pronto B25',
-      entity_name: 'Cimpor Fornecimentos de Betão Lda',
-      amount: 18500,
-      due_date: formatIso(dMinus15),
-      payment_date: formatIso(dMinus15),
-      status: 'pago',
-      invoice_number: 'NC-89321',
-      description: 'Betão estrutural para laje e vigas principais.',
-      created_at: formatIso(dMinus15),
-    },
-    {
-      id: 'fin-04',
-      company_id: companyId || null,
-      type: 'despesa',
-      category: 'custo_mao_de_obra',
-      title: 'Mão de Obra Especializada - Equipe de Cofragem',
-      entity_name: 'Folha de Produção da Equipe',
-      amount: 12400,
-      due_date: formatIso(dMinus5),
-      payment_date: formatIso(dMinus5),
-      status: 'pago',
-      invoice_number: 'RH-2026-02',
-      description: 'Horas trabalhadas e diárias de encarregados e oficiais.',
-      created_at: formatIso(dMinus5),
-    },
-    {
-      id: 'fin-05',
-      company_id: companyId || null,
-      type: 'despesa',
-      category: 'custo_equipamentos',
-      title: 'Locação Mensal de Grua de Torre e Andaimes',
-      entity_name: 'Gruas & Máquinas Ibérica',
-      amount: 4800,
-      due_date: formatIso(dMinus5),
-      payment_date: formatIso(dMinus5),
-      status: 'pago',
-      invoice_number: 'LOC-4412',
-      description: 'Locação operacional incluindo montagem e seguro.',
-      created_at: formatIso(dMinus5),
-    },
-    {
-      id: 'fin-06',
-      company_id: companyId || null,
-      type: 'despesa',
-      category: 'custo_subempreitadas',
-      title: 'Subempreitada de Instalações Especiais e AVAC',
-      entity_name: 'ClimaTech Climatização e Redes',
-      amount: 14200,
-      due_date: formatIso(dPlus7),
-      payment_date: null,
-      status: 'pendente',
-      invoice_number: 'FAT-SUB-109',
-      description: 'Primeira fase de tubagens de ventilação e ar condicionado.',
-      created_at: formatIso(today),
-    },
-    {
-      id: 'fin-07',
-      company_id: companyId || null,
-      type: 'despesa',
-      category: 'pagamento_fornecedor',
-      title: 'Fornecimento de Tijolos Térmicos e Cimento',
-      entity_name: 'Materiais de Construção Castelo do Norte',
-      amount: 6750,
-      due_date: formatIso(dPlus7),
-      payment_date: null,
-      status: 'pendente',
-      invoice_number: 'FAT-8902',
-      description: 'Entrega de material cerâmico para fechamentos de alvenaria.',
-      created_at: formatIso(today),
-    },
-    {
-      id: 'fin-08',
-      company_id: companyId || null,
-      type: 'receita',
-      category: 'receita_medicao',
-      title: 'Medição 02 - Conclusão de Alvenarias e Cobertura',
-      entity_name: 'Cliente Privado / Fiscalização',
-      amount: 52000,
-      due_date: formatIso(dPlus18),
-      payment_date: null,
-      status: 'pendente',
-      invoice_number: 'MED-02-2026',
-      description: 'Previsão de faturamento da 2ª medição contratual.',
-      created_at: formatIso(today),
-    },
-  ];
-}
 
 export async function getFinancialRecords(companyId?: string): Promise<FinancialRecord[]> {
   const localKey = getFinStorageKey(companyId);
@@ -701,9 +569,11 @@ export async function getFinancialRecords(companyId?: string): Promise<Financial
         query = query.or(`company_id.eq.${companyId},company_id.is.null`);
       }
       const { data, error } = await query;
-      if (!error && data && data.length > 0) {
-        localStorage.setItem(localKey, JSON.stringify(data));
-        return data as FinancialRecord[];
+      if (!error && data) {
+        // Remove quaisquer dados mockados legados com id 'fin-0'
+        const realData = (data as FinancialRecord[]).filter((r) => !r.id.startsWith('fin-0'));
+        localStorage.setItem(localKey, JSON.stringify(realData));
+        return realData;
       }
     } catch (e) {
       console.warn('Erro ao carregar transações financeiras do Supabase:', e);
@@ -714,16 +584,20 @@ export async function getFinancialRecords(companyId?: string): Promise<Financial
   const stored = localStorage.getItem(localKey);
   if (stored) {
     try {
-      return JSON.parse(stored) as FinancialRecord[];
+      const parsed = JSON.parse(stored) as FinancialRecord[];
+      // Remove quaisquer dados mockados legados ('fin-01' a 'fin-08')
+      const realOnly = parsed.filter((r) => !r.id.startsWith('fin-0'));
+      if (realOnly.length !== parsed.length) {
+        localStorage.setItem(localKey, JSON.stringify(realOnly));
+      }
+      return realOnly;
     } catch {
       // ignore
     }
   }
 
-  // Gera dados iniciais caso ainda não existam registros
-  const initial = getInitialSampleFinancials(companyId);
-  localStorage.setItem(localKey, JSON.stringify(initial));
-  return initial;
+  // Sem dados mockados: inicia limpo com lista vazia
+  return [];
 }
 
 export async function saveFinancialRecord(

@@ -75,7 +75,16 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
         {/* Top Header do Cliente */}
         <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, borderBottom: '1px solid var(--border-color)', paddingBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div className="brand-logo-flat">C</div>
+            <div
+              className="brand-logo-flat"
+              style={{ width: 36, height: 36, overflow: 'hidden', padding: 0, backgroundColor: 'transparent' }}
+            >
+              <img
+                src="/logo.png"
+                alt="Castello Logo"
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            </div>
             <div>
               <div style={{ fontSize: 18, fontWeight: 700 }}>castello</div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Portal de Acompanhamento do Cliente</div>
