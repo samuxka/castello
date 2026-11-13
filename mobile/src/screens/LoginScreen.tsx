@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { EmployeeProfile } from '../types';
@@ -47,6 +48,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   };
 
   const handleBiometricPress = async () => {
+    if (!hasBiometricsSaved) {
+      Alert.alert(
+        'Ativação de Biometria',
+        'Para ativar a biometria ou Face ID, faça o primeiro acesso digitando o seu e-mail e código PIN. O aplicativo salvará as suas credenciais com segurança para os próximos acessos com apenas um toque.'
+      );
+      return;
+    }
+
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -121,19 +130,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           )}
         </TouchableOpacity>
 
-        {/* Botão de Biometria (Disponível após o primeiro login) */}
-        {hasBiometricsSaved && (
-          <TouchableOpacity
-            style={styles.btnBiometrics}
-            disabled={loading}
-            onPress={handleBiometricPress}
-          >
-            <Ionicons name="finger-print-outline" size={22} color="#2563EB" />
-            <Text style={styles.btnBiometricsText}>
-              Aceder com Biometria / Face ID
-            </Text>
-          </TouchableOpacity>
-        )}
+        {/* Botão de Biometria / Face ID */}
+        <TouchableOpacity
+          style={styles.btnBiometrics}
+          disabled={loading}
+          onPress={handleBiometricPress}
+        >
+          <Ionicons name="finger-print-outline" size={22} color="#2563EB" />
+          <Text style={styles.btnBiometricsText}>
+            Aceder com Biometria / Face ID
+          </Text>
+        </TouchableOpacity>
 
         <View style={styles.footerNote}>
           <Text style={styles.footerNoteText}>

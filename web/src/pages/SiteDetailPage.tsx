@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import {
   Calendar,
+  Camera,
   CheckCircle2,
   Clock,
   ExternalLink,
+  Eye,
+  Lock,
   MapPin,
   Plus,
   ShieldCheck,
@@ -41,7 +44,7 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
-  const [assignedName, setAssignedName] = useState('');
+  const [assignedEmpId, setAssignedEmpId] = useState('');
   const [dueDate, setDueDate] = useState('');
 
   // Modal Novo Diário
@@ -49,6 +52,14 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
   const [logSummary, setLogSummary] = useState('');
   const [workersCount, setWorkersCount] = useState('2');
   const [weather, setWeather] = useState('Ensolarado');
+
+  // Modal Visualizar Fotos
+  const [viewingPhotoUrl, setViewingPhotoUrl] = useState<string | null>(null);
+
+  // Modal Confirmação do Chefe
+  const [confirmModalTask, setConfirmModalTask] = useState<SiteTask | null>(null);
+  const [bossNameInput, setBossNameInput] = useState('');
+  const [approveForClient, setApproveForClient] = useState(true);
 
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -68,17 +79,24 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskTitle.trim()) return;
+
+    const assignedEmp = employees.find((x) => x.id === assignedEmpId);
+    const assignedName = assignedEmp ? assignedEmp.full_name : undefined;
+
     await createSiteTask(
       site.id,
       taskTitle,
       taskDesc,
-      assignedName || undefined,
+      assignedName,
       dueDate || undefined,
-      site.company_id || undefined
+      site.company_id || undefined,
+      assignedEmpId || undefined
     );
+
     setTaskTitle('');
     setTaskDesc('');
-    setAssignedName('');
+    setAssignedEmpId('');
+    setDueDate('');
     setTaskModalOpen(false);
     await loadSiteData();
   };
@@ -99,14 +117,38 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
 
   const handleWorkerCompleteTask = async (taskId: string) => {
     const worker = prompt('Nome do colaborador que concluiu a tarefa:') || 'Colaborador';
-    await updateTaskStatus(taskId, 'concluida_funcionario', worker);
-    await loadSiteData();
+    try {
+      await updateTaskStatus(taskId, 'concluida_funcionario', worker);
+    } catch (err) {
+      console.warn('Erro ao concluir tarefa:', err);
+    } finally {
+      await loadSiteData();
+    }
   };
 
-  const handleBossConfirmTask = async (taskId: string) => {
-    const boss = prompt('Nome do encarregado/chefe que confirma:') || 'Chefe de Obra';
-    await updateTaskStatus(taskId, 'confirmada_chefe', boss);
-    await loadSiteData();
+  const handleOpenConfirmModal = (task: SiteTask) => {
+    setConfirmModalTask(task);
+    setBossNameInput(site.manager_name || 'Encarregado da Obra');
+    setApproveForClient(true);
+  };
+
+  const handleExecuteBossConfirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!confirmModalTask) return;
+    try {
+      await updateTaskStatus(
+        confirmModalTask.id,
+        'confirmada_chefe',
+        bossNameInput.trim() || 'Chefe de Obra',
+        undefined,
+        approveForClient
+      );
+    } catch (err) {
+      console.warn('Erro ao aprovar tarefa:', err);
+    } finally {
+      setConfirmModalTask(null);
+      await loadSiteData();
+    }
   };
 
   const handleCopyClientLink = () => {
@@ -280,34 +322,97 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
                       <td>
                         <div style={{ fontWeight: 600 }}>{task.title}</div>
                         {task.description && (
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                             {task.description}
                           </div>
                         )}
+                        {task.completion_photos && task.completion_photos.length > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                            <span style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <Camera size={12} /> {task.completion_photos.length} foto{task.completion_photos.length > 1 ? 's' : ''}:
+                            </span>
+                            {task.completion_photos.map((photoUrl, pIdx) => (
+                              <button
+                                key={pIdx}
+                                type="button"
+                                onClick={() => setViewingPhotoUrl(photoUrl)}
+                                style={{
+                                  padding: 0,
+                                  border: '1px solid var(--border-color)',
+                                  borderRadius: 4,
+                                  overflow: 'hidden',
+                                  width: 26,
+                                  height: 26,
+                                  cursor: 'pointer',
+                                  backgroundColor: 'var(--bg-card)',
+                                }}
+                                title="Clique para ampliar foto do serviço"
+                              >
+                                <img
+                                  src={photoUrl}
+                                  alt="Serviço"
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </td>
-                      <td>{task.assigned_to_name || 'Qualquer colaborador'}</td>
+                      <td>
+                        {task.assigned_to_name ? (
+                          <div>
+                            <span
+                              className="badge-flat warning"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}
+                              title="Configurada para ser vista apenas por este colaborador no app móvel"
+                            >
+                              <Lock size={10} />
+                              {task.assigned_to_name}
+                            </span>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                              Exclusiva deste funcionário
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            Qualquer colaborador
+                          </span>
+                        )}
+                      </td>
                       <td>{task.due_date ? task.due_date.split('-').reverse().join('/') : '-'}</td>
                       <td>
-                        <span
-                          className={`badge-flat ${
-                            task.status === 'confirmada_chefe'
-                              ? 'success'
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <span
+                            className={`badge-flat ${
+                              task.status === 'confirmada_chefe'
+                                ? 'success'
+                                : task.status === 'concluida_funcionario'
+                                ? 'primary'
+                                : 'warning'
+                            }`}
+                          >
+                            {task.status === 'confirmada_chefe'
+                              ? 'CONFIRMADA'
                               : task.status === 'concluida_funcionario'
-                              ? 'primary'
-                              : 'warning'
-                          }`}
-                        >
-                          {task.status === 'confirmada_chefe'
-                            ? 'CONFIRMADA'
-                            : task.status === 'concluida_funcionario'
-                            ? 'CONCLUÍDA PELO FUNCIONÁRIO'
-                            : 'PENDENTE'}
-                        </span>
+                              ? 'AGUARDANDO CHEFE'
+                              : 'PENDENTE'}
+                          </span>
+                          {task.status === 'confirmada_chefe' && task.show_to_client && (
+                            <span className="badge-flat primary" style={{ fontSize: 10 }}>
+                              No Portal do Cliente
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td>
                         {task.status === 'concluida_funcionario' && (
                           <div style={{ fontSize: 11, color: 'var(--primary)' }}>
-                            Feito por: <strong>{task.completed_by_name}</strong>
+                            Concluído por: <strong>{task.completed_by_name}</strong>
+                            {task.completion_photos && task.completion_photos.length > 0 && (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                {task.completion_photos.length} foto(s) anexada(s)
+                              </div>
+                            )}
                           </div>
                         )}
                         {task.status === 'confirmada_chefe' && (
@@ -336,10 +441,10 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
                             <button
                               className="btn-flat-success"
                               style={{ fontSize: 11 }}
-                              onClick={() => handleBossConfirmTask(task.id)}
+                              onClick={() => handleOpenConfirmModal(task)}
                             >
                               <ShieldCheck size={13} />
-                              Chefe Confirmar
+                              Aprovar & Confirmar
                             </button>
                           )}
 
@@ -448,15 +553,21 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
 
               <div className="flat-form-grid">
                 <div className="flat-form-group">
-                  <label>Designar a Colaborador (Opcional)</label>
-                  <select value={assignedName} onChange={(e) => setAssignedName(e.target.value)}>
-                    <option value="">Qualquer funcionário da equipa</option>
+                  <label>Designar a Colaborador Específico</label>
+                  <select
+                    value={assignedEmpId}
+                    onChange={(e) => setAssignedEmpId(e.target.value)}
+                  >
+                    <option value="">Aberto a todos (Qualquer colaborador vê)</option>
                     {employees.map((emp) => (
-                      <option key={emp.id} value={emp.full_name}>
-                        {emp.full_name} ({emp.job_title})
+                      <option key={emp.id} value={emp.id}>
+                        {emp.full_name} ({emp.job_title}) - Apenas ele verá
                       </option>
                     ))}
                   </select>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Ao designar a um colaborador específico, apenas ele conseguirá ver e concluir esta tarefa no app móvel.
+                  </p>
                 </div>
 
                 <div className="flat-form-group">
@@ -534,6 +645,150 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CHEFE APROVAR TAREFA & FOTOS */}
+      {confirmModalTask && (
+        <div className="flat-modal-backdrop">
+          <div className="flat-modal-box" style={{ maxWidth: 520 }}>
+            <div className="flat-modal-header">
+              <h3 className="flat-modal-title">Aprovar e Confirmar Tarefa</h3>
+              <button className="btn-flat-secondary" onClick={() => setConfirmModalTask(null)}>
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleExecuteBossConfirm}>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>{confirmModalTask.title}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Concluída por: <strong>{confirmModalTask.completed_by_name}</strong>
+                </div>
+              </div>
+
+              {/* Fotos do Serviço anexadas pelo funcionário */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                  Fotos do Serviço Enviadas pelo Colaborador:
+                </label>
+                {confirmModalTask.completion_photos && confirmModalTask.completion_photos.length > 0 ? (
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {confirmModalTask.completion_photos.map((pUrl, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          width: 80,
+                          height: 80,
+                          borderRadius: 6,
+                          overflow: 'hidden',
+                          border: '1px solid var(--border-color)',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => setViewingPhotoUrl(pUrl)}
+                        title="Clique para ampliar"
+                      >
+                        <img src={pUrl} alt="Foto do serviço" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Nenhuma foto anexada.</p>
+                )}
+              </div>
+
+              <div className="flat-form-group">
+                <label>Nome do Encarregado / Chefe Validador *</label>
+                <input
+                  required
+                  value={bossNameInput}
+                  onChange={(e) => setBossNameInput(e.target.value)}
+                />
+              </div>
+
+              {/* Checkbox para exibir foto no portal do cliente */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '10px 12px',
+                  backgroundColor: 'var(--primary-subtle)',
+                  borderRadius: 6,
+                  border: '1px solid var(--primary-border)',
+                  marginBottom: 16,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  id="clientPortalCheck"
+                  checked={approveForClient}
+                  onChange={(e) => setApproveForClient(e.target.checked)}
+                  style={{ width: 16, height: 16, cursor: 'pointer' }}
+                />
+                <label htmlFor="clientPortalCheck" style={{ fontSize: 12, fontWeight: 600, cursor: 'pointer', margin: 0 }}>
+                  Aprovar foto para o site do cliente (Portal de Acompanhamento da Obra)
+                </label>
+              </div>
+
+              <div className="flat-modal-actions">
+                <button type="button" className="btn-flat-secondary" onClick={() => setConfirmModalTask(null)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn-flat-success">
+                  <ShieldCheck size={14} />
+                  Confirmar e Aprovar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LIGHTBOX EXPANDIR FOTO */}
+      {viewingPhotoUrl && (
+        <div
+          className="flat-modal-backdrop"
+          style={{ zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.85)' }}
+          onClick={() => setViewingPhotoUrl(null)}
+        >
+          <div
+            style={{
+              position: 'relative',
+              maxWidth: '90vw',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{
+                position: 'absolute',
+                top: -40,
+                right: 0,
+                background: 'none',
+                border: 'none',
+                color: '#fff',
+                cursor: 'pointer',
+              }}
+              onClick={() => setViewingPhotoUrl(null)}
+            >
+              <X size={28} />
+            </button>
+            <img
+              src={viewingPhotoUrl}
+              alt="Foto do Serviço"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '85vh',
+                borderRadius: 8,
+                objectFit: 'contain',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              }}
+            />
           </div>
         </div>
       )}

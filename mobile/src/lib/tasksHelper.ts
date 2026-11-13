@@ -19,17 +19,22 @@ export async function fetchSiteTasks(siteId: string): Promise<SiteTask[]> {
 
 export async function completeTaskByWorker(
   taskId: string,
-  workerName: string
+  workerName: string,
+  completionPhotos?: string[]
 ): Promise<void> {
   if (supabase) {
     try {
+      const patch: any = {
+        status: 'concluida_funcionario',
+        completed_by_name: workerName,
+        completed_at: new Date().toISOString(),
+      };
+      if (completionPhotos && completionPhotos.length > 0) {
+        patch.completion_photos = completionPhotos;
+      }
       await supabase
         .from('site_tasks')
-        .update({
-          status: 'concluida_funcionario',
-          completed_by_name: workerName,
-          completed_at: new Date().toISOString(),
-        })
+        .update(patch)
         .eq('id', taskId);
     } catch (e) {
       console.warn('Erro ao concluir tarefa:', e);

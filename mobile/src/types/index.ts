@@ -54,12 +54,15 @@ export interface SiteTask {
   company_id?: string | null;
   title: string;
   description?: string | null;
+  assigned_to_id?: string | null;
   assigned_to_name?: string | null;
   status: TaskStatus;
   completed_by_name?: string | null;
   completed_at?: string | null;
+  completion_photos?: string[]; // Fotos enviadas pelo colaborador
   confirmed_by_name?: string | null;
   confirmed_at?: string | null;
+  show_to_client?: boolean;
   due_date?: string | null;
   created_at?: string;
 }
@@ -76,6 +79,29 @@ export interface TimeEntry {
   notes?: string | null;
 }
 
+export interface AbsenceJustification {
+  id: string;
+  employee_id: string;
+  employee_name?: string;
+  company_id?: string | null;
+  date: string; // YYYY-MM-DD
+  reason: string; // Obrigatória
+  photos: string[]; // 1 ou mais fotos
+  status: 'pendente' | 'aprovada' | 'rejeitada';
+  created_at: string;
+}
+
+export interface CompanyNotification {
+  id: string;
+  company_id?: string | null;
+  title: string;
+  content: string;
+  created_at: string;
+  author_name?: string;
+  priority?: 'normal' | 'alta' | 'urgente';
+  is_read?: boolean;
+}
+
 export interface DailyWorkSummary {
   date: string;
   entries: TimeEntry[];
@@ -86,4 +112,105 @@ export interface DailyWorkSummary {
   workedFormatted: string;
   isComplete: boolean;
   hasPending: boolean;
+}
+
+export type VehicleType =
+  | 'furgao'
+  | 'caixa_aberta'
+  | 'pickup'
+  | 'passageiros'
+  | 'comercial_ligeiro';
+
+export type VehicleStatus = 'em_servico' | 'em_manutencao' | 'parada';
+
+export interface Vehicle {
+  id: string;
+  company_id?: string | null;
+  license_plate: string;
+  brand: string;
+  model: string;
+  year?: number | null;
+  vehicle_type: VehicleType;
+  current_km: number;
+  assigned_driver_id?: string | null;
+  assigned_driver_name?: string | null;
+  assigned_site_id?: string | null;
+  assigned_site_name?: string | null;
+  next_inspection_date?: string | null;
+  next_maintenance_km?: number | null;
+  insurance_expiry_date?: string | null;
+  status: VehicleStatus;
+  fuel_type?: string | null;
+  photo_url?: string | null;
+  notes?: string | null;
+  last_oil_change_date?: string | null;
+  last_oil_change_km?: number | null;
+  next_oil_change_km?: number | null;
+  last_tire_change_date?: string | null;
+  last_tire_change_km?: number | null;
+  next_tire_change_km?: number | null;
+  last_brakes_check_date?: string | null;
+  next_brakes_check_km?: number | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type VehicleReportType = 'anomalia' | 'manutencao' | 'abastecimento' | 'limpeza' | 'km' | 'geral';
+
+export interface VehicleReport {
+  id: string;
+  company_id?: string | null;
+  vehicle_id: string;
+  vehicle_plate?: string | null;
+  employee_id: string;
+  employee_name: string;
+  report_type: VehicleReportType;
+  description: string;
+  current_km?: number | null;
+  photos?: string[];
+  created_at: string;
+}
+
+export interface InventoryItem {
+  id: string;
+  company_id?: string | null;
+  name: string;
+  category: string;
+  serial_number?: string | null;
+  total_quantity: number;
+  allocated_quantity: number;
+  available_quantity: number;
+  allocated_site_id?: string | null;
+  allocated_site_name?: string | null;
+  condition: string;
+  unit_price?: number | null;
+  location?: string | null;
+  notes?: string | null;
+}
+
+export interface VehicleInventoryItem {
+  id: string;
+  vehicle_id: string;
+  item_id: string;
+  item_name: string;
+  category: string;
+  quantity: number;
+  condition: string;
+  serial_number?: string | null;
+  updated_at: string;
+}
+
+export interface InventoryMovement {
+  id: string;
+  company_id?: string | null;
+  vehicle_id: string;
+  vehicle_plate: string;
+  item_id: string;
+  item_name: string;
+  employee_id: string;
+  employee_name: string;
+  movement_type: 'carregar' | 'devolver';
+  quantity: number;
+  timestamp: string;
+  notes?: string;
 }

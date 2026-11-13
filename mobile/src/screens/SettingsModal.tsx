@@ -316,54 +316,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Secção: Recursos de Ponto */}
-          <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>
-            FUNCIONALIDADES
-          </Text>
-
-          <View
-            style={[
-              styles.settingsGroup,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.settingRow}>
-              <View style={styles.settingIconLabel}>
-                <View style={[styles.iconWrap, { backgroundColor: colors.cardSubtle }]}>
-                  <Ionicons name="alarm-outline" size={18} color={colors.primary} />
-                </View>
-                <View>
-                  <Text style={[styles.settingLabel, { color: colors.textMain }]}>
-                    Alarme de Almoço de 1h
-                  </Text>
-                  <Text style={[styles.settingSub, { color: colors.textMuted }]}>
-                    Som e notificações ativas em segundo plano
-                  </Text>
-                </View>
-              </View>
-              <Ionicons name="checkmark-circle" size={18} color="#16A34A" />
-            </View>
-
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingIconLabel}>
-                <View style={[styles.iconWrap, { backgroundColor: colors.cardSubtle }]}>
-                  <Ionicons name="finger-print-outline" size={18} color={colors.primary} />
-                </View>
-                <View>
-                  <Text style={[styles.settingLabel, { color: colors.textMain }]}>
-                    Login Biométrico
-                  </Text>
-                  <Text style={[styles.settingSub, { color: colors.textMuted }]}>
-                    Suporte a impressão digital / FaceID
-                  </Text>
-                </View>
-              </View>
-              <Ionicons name="checkmark-circle" size={18} color="#16A34A" />
-            </View>
-          </View>
-
           {/* Secção: Informações do Aplicativo */}
           <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>
             SOBRE O SISTEMA

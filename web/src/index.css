@@ -62,6 +62,81 @@
   --text-on-primary: #ffffff;
 }
 
+/* ==========================================================================
+   TEMAS DE CORES PERSONALIZADAS (AZUL, VERMELHO, VERDE, AMARELO, LARANJA)
+   Disponíveis nas versões Clara e Escura
+   ========================================================================== */
+
+/* AZUL */
+[data-theme-color='azul'] {
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-subtle: #eff6ff;
+  --primary-border: #bfdbfe;
+}
+[data-theme='dark'][data-theme-color='azul'] {
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --primary-subtle: #172554;
+  --primary-border: #1e3a8a;
+}
+
+/* VERMELHO */
+[data-theme-color='vermelho'] {
+  --primary: #dc2626;
+  --primary-hover: #b91c1c;
+  --primary-subtle: #fef2f2;
+  --primary-border: #fecaca;
+}
+[data-theme='dark'][data-theme-color='vermelho'] {
+  --primary: #ef4444;
+  --primary-hover: #dc2626;
+  --primary-subtle: #450a0a;
+  --primary-border: #7f1d1d;
+}
+
+/* VERDE */
+[data-theme-color='verde'] {
+  --primary: #16a34a;
+  --primary-hover: #15803d;
+  --primary-subtle: #f0fdf4;
+  --primary-border: #bbf7d0;
+}
+[data-theme='dark'][data-theme-color='verde'] {
+  --primary: #22c55e;
+  --primary-hover: #16a34a;
+  --primary-subtle: #052e16;
+  --primary-border: #14532d;
+}
+
+/* AMARELO */
+[data-theme-color='amarelo'] {
+  --primary: #d97706;
+  --primary-hover: #b45309;
+  --primary-subtle: #fffbeb;
+  --primary-border: #fde68a;
+}
+[data-theme='dark'][data-theme-color='amarelo'] {
+  --primary: #f59e0b;
+  --primary-hover: #d97706;
+  --primary-subtle: #451a03;
+  --primary-border: #78350f;
+}
+
+/* LARANJA */
+[data-theme-color='laranja'] {
+  --primary: #ea580c;
+  --primary-hover: #c2410c;
+  --primary-subtle: #fff7ed;
+  --primary-border: #fed7aa;
+}
+[data-theme='dark'][data-theme-color='laranja'] {
+  --primary: #f97316;
+  --primary-hover: #ea580c;
+  --primary-subtle: #431407;
+  --primary-border: #7c2d12;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -821,6 +896,37 @@ html, body {
 /* ==========================================================================
    ESTILOS DE IMPRESSÃO / EXPORTAÇÃO EM PDF
    ========================================================================== */
+.dashboard-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(320px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.custom-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+.custom-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+.custom-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
 @media print {
   body {
     background-color: #ffffff !important;

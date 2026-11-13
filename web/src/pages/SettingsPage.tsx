@@ -2,19 +2,25 @@ import React, { useState } from 'react';
 import {
   AlertTriangle,
   Building2,
+  Check,
   CheckCircle2,
   KeyRound,
   Lock,
   Mail,
+  Moon,
+  Palette,
   Phone,
   Save,
+  Sun,
   Trash2,
   Upload,
 } from 'lucide-react';
-import { Company } from '../types';
+import { Company, ThemeColor, ThemeMode } from '../types';
 import {
   changeCompanyPassword,
   deleteCompanyAccount,
+  getSavedTheme,
+  saveTheme,
   updateCompanyProfile,
 } from '../lib/supabase';
 
@@ -43,6 +49,30 @@ export function SettingsPage({
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+
+  // Temas Visuais (Azul, Vermelho, Verde, Amarelo, Laranja - Claro / Escuro)
+  const [themeColor, setThemeColor] = useState<ThemeColor>(() => getSavedTheme().color);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getSavedTheme().mode);
+
+  const THEMES_LIST: { id: ThemeColor; name: string; lightHex: string; darkHex: string; desc: string }[] = [
+    { id: 'azul', name: 'Azul', lightHex: '#2563eb', darkHex: '#3b82f6', desc: 'Corporativo Castello' },
+    { id: 'vermelho', name: 'Vermelho', lightHex: '#dc2626', darkHex: '#ef4444', desc: 'Rubro / Destaque' },
+    { id: 'verde', name: 'Verde', lightHex: '#16a34a', darkHex: '#22c55e', desc: 'Esmeralda / Obra' },
+    { id: 'amarelo', name: 'Amarelo', lightHex: '#d97706', darkHex: '#f59e0b', desc: 'Âmbar / Máquinas' },
+    { id: 'laranja', name: 'Laranja', lightHex: '#ea580c', darkHex: '#f97316', desc: 'Segurança / Energia' },
+  ];
+
+  const handleApplyColor = (color: ThemeColor) => {
+    setThemeColor(color);
+    saveTheme(color, themeMode);
+    showNotice(`Tema de cor ${color.toUpperCase()} ativado!`);
+  };
+
+  const handleApplyMode = (mode: ThemeMode) => {
+    setThemeMode(mode);
+    saveTheme(themeColor, mode);
+    showNotice(`Modo ${mode === 'dark' ? 'Escuro' : 'Claro'} ativado!`);
+  };
 
   // Exclusão
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -319,7 +349,147 @@ export function SettingsPage({
           </form>
         </div>
 
-        {/* BLOCO 2: MUDAR SENHA */}
+        {/* BLOCO 2: PERSONALIZAÇÃO DE TEMA */}
+        <div
+          style={{
+            padding: 24,
+            borderRadius: 12,
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <Palette size={20} color="var(--primary)" />
+            <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-main)' }}>
+              2. Tema e Cores da Firma
+            </h2>
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+            Escolha a cor principal e o modo visual do sistema. Todas as telas e botões se adaptam imediatamente.
+          </p>
+
+          {/* Seletor de Modo: Claro / Escuro */}
+          <div style={{ marginBottom: 22 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 700, marginBottom: 10, color: 'var(--text-main)' }}>
+              Modo de Visualização
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => handleApplyMode('dark')}
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: 10,
+                  border: themeMode === 'dark' ? '2px solid var(--primary)' : '1px solid var(--border-color)',
+                  backgroundColor: themeMode === 'dark' ? 'var(--primary-subtle)' : 'var(--bg-card-subtle)',
+                  color: themeMode === 'dark' ? 'var(--primary)' : 'var(--text-main)',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Moon size={18} />
+                <span>Modo Escuro (Dark)</span>
+                {themeMode === 'dark' && <Check size={16} />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleApplyMode('light')}
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: 10,
+                  border: themeMode === 'light' ? '2px solid var(--primary)' : '1px solid var(--border-color)',
+                  backgroundColor: themeMode === 'light' ? 'var(--primary-subtle)' : 'var(--bg-card-subtle)',
+                  color: themeMode === 'light' ? 'var(--primary)' : 'var(--text-main)',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Sun size={18} />
+                <span>Modo Claro (Light)</span>
+                {themeMode === 'light' && <Check size={16} />}
+              </button>
+            </div>
+          </div>
+
+          {/* Seletor de Cores: Azul, Vermelho, Verde, Amarelo, Laranja */}
+          <div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 700, marginBottom: 10, color: 'var(--text-main)' }}>
+              Cor Principal da Interface (5 Temas Pré-definidos)
+            </label>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                gap: 12,
+              }}
+            >
+              {THEMES_LIST.map((t) => {
+                const isSelected = themeColor === t.id;
+                const activeColor = themeMode === 'dark' ? t.darkHex : t.lightHex;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => handleApplyColor(t.id)}
+                    style={{
+                      padding: '14px 10px',
+                      borderRadius: 10,
+                      border: isSelected ? `2px solid ${activeColor}` : '1px solid var(--border-color)',
+                      backgroundColor: isSelected ? 'var(--primary-subtle)' : 'var(--bg-card-subtle)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 8,
+                      textAlign: 'center',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: '50%',
+                        backgroundColor: activeColor,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#ffffff',
+                        boxShadow: isSelected ? `0 0 12px ${activeColor}80` : 'none',
+                      }}
+                    >
+                      {isSelected && <Check size={16} />}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: isSelected ? 'var(--primary)' : 'var(--text-main)' }}>
+                        {t.name}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                        {t.desc}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* BLOCO 3: MUDAR SENHA */}
         <div
           style={{
             padding: 24,
@@ -332,7 +502,7 @@ export function SettingsPage({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <KeyRound size={20} color="var(--primary)" />
             <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-main)' }}>
-              2. Alterar sua Senha de Acesso
+              3. Alterar sua Senha de Acesso
             </h2>
           </div>
 

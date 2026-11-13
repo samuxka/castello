@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import {
   Building2,
   Calendar,
+  Camera,
   CheckCircle2,
   Clock,
   HardHat,
   MapPin,
   ShieldCheck,
   TrendingUp,
+  X,
 } from 'lucide-react';
 import { getSiteByShareCode, getSiteDailyLogs, getSiteTasks } from '../lib/supabase';
 import { ConstructionSite, SiteDailyLog, SiteTask } from '../types';
@@ -22,6 +24,7 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
   const [dailyLogs, setDailyLogs] = useState<SiteDailyLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -68,6 +71,15 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
 
   const completedTasksCount = tasks.filter((t) => t.status === 'confirmada_chefe').length;
   const progressPercent = tasks.length > 0 ? Math.round((completedTasksCount / tasks.length) * 100) : 0;
+
+  // Tarefas concluídas e aprovadas que possuem fotos anexadas
+  const approvedTasksWithPhotos = tasks.filter(
+    (t) =>
+      t.status === 'confirmada_chefe' &&
+      t.show_to_client !== false &&
+      t.completion_photos &&
+      t.completion_photos.length > 0
+  );
 
   return (
     <div className="client-portal-wrap" style={{ minHeight: '100vh', background: 'var(--bg-page)', color: 'var(--text-main)', padding: '30px 20px' }}>
@@ -135,6 +147,83 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
           </div>
         </div>
 
+        {/* FOTOS E COMPROVAÇÕES DO SERVIÇO APROVADAS */}
+        {approvedTasksWithPhotos.length > 0 && (
+          <div className="content-panel" style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <Camera size={18} color="var(--primary)" />
+              <h2 className="panel-title" style={{ margin: 0 }}>
+                Galeria de Serviços Concluídos
+              </h2>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+              Comprovações fotográficas dos serviços finalizados pela equipa e aprovados pela gerência
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
+              {approvedTasksWithPhotos.map((task) => (
+                <div
+                  key={task.id}
+                  style={{
+                    backgroundColor: 'var(--bg-card-subtle)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    padding: 12,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-main)' }}>
+                      {task.title}
+                    </div>
+                    <span className="badge-flat success" style={{ fontSize: 10 }}>
+                      APROVADO
+                    </span>
+                  </div>
+
+                  {task.description && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      {task.description}
+                    </div>
+                  )}
+
+                  {/* Grid de Fotos desta Tarefa */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))', gap: 6 }}>
+                    {task.completion_photos!.map((photoUrl, pIdx) => (
+                      <div
+                        key={pIdx}
+                        onClick={() => setPreviewPhoto(photoUrl)}
+                        style={{
+                          height: 70,
+                          borderRadius: 6,
+                          overflow: 'hidden',
+                          border: '1px solid var(--border-color)',
+                          cursor: 'pointer',
+                          backgroundColor: '#000',
+                        }}
+                        title="Clique para ver foto em tamanho grande"
+                      >
+                        <img
+                          src={photoUrl}
+                          alt={task.title}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border-color)' }}>
+                    <span>Executado por: {task.completed_by_name || 'Equipa'}</span>
+                    <span>Validado</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Diário de Bordo: O que foi feito no dia */}
         <div className="content-panel" style={{ marginBottom: 20 }}>
           <h2 className="panel-title" style={{ marginBottom: 12 }}>
@@ -200,7 +289,16 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
                 ) : (
                   tasks.map((task) => (
                     <tr key={task.id}>
-                      <td style={{ fontWeight: 600 }}>{task.title}</td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{task.title}</div>
+                        {task.completion_photos && task.completion_photos.length > 0 && task.status === 'confirmada_chefe' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                            <span style={{ fontSize: 11, color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <Camera size={11} /> {task.completion_photos.length} foto(s)
+                            </span>
+                          </div>
+                        )}
+                      </td>
                       <td>{task.due_date ? task.due_date.split('-').reverse().join('/') : '-'}</td>
                       <td>
                         <span
@@ -219,6 +317,53 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
           </div>
         </div>
       </div>
+
+      {/* Modal Lightbox de Foto para o Cliente */}
+      {previewPhoto && (
+        <div
+          className="flat-modal-backdrop"
+          style={{ zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.88)' }}
+          onClick={() => setPreviewPhoto(null)}
+        >
+          <div
+            style={{
+              position: 'relative',
+              maxWidth: '90vw',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{
+                position: 'absolute',
+                top: -40,
+                right: 0,
+                background: 'none',
+                border: 'none',
+                color: '#fff',
+                cursor: 'pointer',
+              }}
+              onClick={() => setPreviewPhoto(null)}
+            >
+              <X size={28} />
+            </button>
+            <img
+              src={previewPhoto}
+              alt="Serviço da Obra"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '85vh',
+                borderRadius: 8,
+                objectFit: 'contain',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

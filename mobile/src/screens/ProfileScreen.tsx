@@ -25,6 +25,7 @@ interface ProfileScreenProps {
   onToggleTheme: () => void;
   onLogout: () => void;
   onUpdateAvatar: (avatarUri: string) => Promise<void>;
+  onOpenSettings?: () => void;
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
@@ -35,6 +36,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   onToggleTheme,
   onLogout,
   onUpdateAvatar,
+  onOpenSettings,
 }) => {
   const isDark = theme === 'dark';
   const colors = {
@@ -322,6 +324,25 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </Text>
         </View>
       </View>
+
+      {/* Botão de Configurações do Aplicativo */}
+      {onOpenSettings && (
+        <TouchableOpacity
+          style={[
+            styles.actionButton,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+          onPress={onOpenSettings}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Ionicons name="settings-outline" size={18} color={colors.textMain} />
+            <Text style={[styles.actionButtonText, { color: colors.textMain }]}>
+              Configurações
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+      )}
 
       {/* Alternância de Tema Claro / Escuro */}
       <TouchableOpacity

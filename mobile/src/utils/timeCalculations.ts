@@ -54,9 +54,11 @@ export function calculateDailySummary(
   date: string,
   dayEntries: TimeEntry[]
 ): DailyWorkSummary {
-  const sorted = [...dayEntries].sort(
-    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
-  );
+  const sorted = [...dayEntries]
+    .filter((e) => !e.notes || !e.notes.startsWith('[JUSTIFICATIVA_FALTA]'))
+    .sort(
+      (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+    );
 
   const entrada = sorted.find((e) => e.entry_type === 'entrada') || null;
   const almoco = sorted.find((e) => e.entry_type === 'almoco') || null;
@@ -113,7 +115,11 @@ export function calculateMonthlySummaries(
   dailyList: DailyWorkSummary[];
 } {
   const prefix = `${year}-${String(monthZeroIndexed + 1).padStart(2, '0')}`;
-  const filtered = entries.filter((e) => e.work_date.startsWith(prefix));
+  const filtered = entries.filter(
+    (e) =>
+      e.work_date.startsWith(prefix) &&
+      (!e.notes || !e.notes.startsWith('[JUSTIFICATIVA_FALTA]'))
+  );
 
   const grouped: Record<string, TimeEntry[]> = {};
   for (const entry of filtered) {
