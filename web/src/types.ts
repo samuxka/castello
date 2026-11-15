@@ -186,14 +186,61 @@ export interface SiteWorkSession {
   id: string;
   company_id?: string | null;
   site_id: string;
+  team_id?: string | null; // Identificador permanente da equipa
   team_name: string; // Ex: 'Equipa 1', 'Equipa de Estrutura'
   leader_id?: string | null;
   leader_name: string;
   workers_count: number;
   work_date: string; // YYYY-MM-DD
-  hours_worked: number; // Ex: 4.0
+  hours_worked: number; // Duração da sessão (horas da equipa)
+  man_hours?: number | null; // Horas-homem efetivamente apuradas no turno
+  member_ids_snapshot?: string[]; // Snapshot dos membros presentes no turno
   description?: string | null;
   created_at?: string;
+}
+
+export type TeamSpecialty =
+  | 'Alvenaria'
+  | 'Reboco'
+  | 'Capoto'
+  | 'Cofragem'
+  | 'Pintura'
+  | 'Eletricidade'
+  | 'Canalização'
+  | 'Carpintaria'
+  | 'Pavimentação'
+  | 'Acabamentos'
+  | 'Outras';
+
+export type TeamOperationalStatus = 'disponivel' | 'alocada' | 'em_atividade' | 'arquivada';
+
+export interface TeamAllocationRecord {
+  id: string;
+  team_id: string;
+  team_name: string;
+  site_id: string;
+  site_name: string;
+  start_date: string; // YYYY-MM-DD
+  end_date?: string | null; // YYYY-MM-DD
+  start_time?: string | null; // HH:MM
+  end_time?: string | null; // HH:MM
+  status: 'planeada' | 'ativa' | 'concluida' | 'transferida' | 'cancelada';
+  changed_by?: string | null;
+  transfer_reason?: string | null;
+  notes?: string | null;
+  created_at: string;
+}
+
+export interface TeamActivityEvent {
+  id: string;
+  team_id: string;
+  type: 'composicao' | 'lider' | 'ocorrencia' | 'alocacao' | 'arquivamento' | 'tarefa' | 'sessao';
+  title: string;
+  description: string;
+  site_id?: string | null;
+  site_name?: string | null;
+  author_name?: string | null;
+  created_at: string;
 }
 
 export interface Team {
@@ -205,9 +252,19 @@ export interface Team {
   leader_phone?: string | null;
   member_ids: string[];
   member_names: string[];
+  specialties?: string[]; // Especialidades da equipa (ex: ['Alvenaria', 'Reboco'])
   current_site_id?: string | null;
   current_site_name?: string | null;
-  allocated_at?: string | null; // Data/Hora ISO do início da alocação na obra hoje
+  allocated_at?: string | null; // Data/Hora ISO do início da alocação na obra
+  allocation_end_date?: string | null; // Data prevista de conclusão da alocação (YYYY-MM-DD)
+  allocation_start_time?: string | null; // HH:MM registado (sem valores fictícios)
+  allocation_end_time?: string | null; // HH:MM registado
+  is_archived?: boolean; // Arquivamento preservando histórico
+  archived_at?: string | null;
+  member_joined_at?: Record<string, string>; // Data de entrada de cada membro (YYYY-MM-DD)
+  member_specialties?: Record<string, string>; // Especialidade individual na equipa
+  allocation_history?: TeamAllocationRecord[]; // Histórico estruturado de alocações
+  activity_log?: TeamActivityEvent[]; // Registo de alterações na composição, líder e ocorrências
   notes?: string | null;
   created_at?: string;
 }
@@ -223,6 +280,9 @@ export interface SiteDocument {
   status: 'disponivel' | 'em_revisao' | 'arquivado';
 }
 
+export type TaskPriority = 'baixa' | 'media' | 'alta' | 'urgente';
+export type TaskExecutionStatus = 'pendente' | 'em_execucao' | 'concluida';
+
 export interface SiteTask {
   id: string;
   site_id: string;
@@ -231,10 +291,21 @@ export interface SiteTask {
   description?: string | null;
   assigned_to_id?: string | null;
   assigned_to_name?: string | null;
+  assigned_team_id?: string | null;
+  assigned_team_name?: string | null;
+  priority?: TaskPriority;
+  start_date?: string | null; // YYYY-MM-DD
+  progress?: number; // 0 a 100
+  execution_status?: TaskExecutionStatus;
+  planned_hours?: number | null; // Horas planeadas para comparação previsto vs realizado
+  service_quantity?: number | null; // Quantidade física executada (ex: 120)
+  service_unit?: string | null; // Unidade de medida (ex: 'm² de reboco', 'm² de capoto')
+  before_photos?: string[]; // Fotografias ANTES da execução
+  observations?: string | null; // Observações operacionais registadas
   status: TaskStatus;
   completed_by_name?: string | null;
   completed_at?: string | null;
-  completion_photos?: string[]; // Fotos enviadas pelo colaborador na conclusão
+  completion_photos?: string[]; // Fotos enviadas na conclusão (DEPOIS)
   confirmed_by_name?: string | null;
   confirmed_at?: string | null;
   show_to_client?: boolean; // Se aprovada para aparecer no portal do cliente

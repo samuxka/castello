@@ -127,6 +127,15 @@ export default function App() {
   const [selectedVehicleForDetail, setSelectedVehicleForDetail] = useState<Vehicle | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => getSavedTheme().mode);
   const [themeColor, setThemeColor] = useState<ThemeColor>(() => getSavedTheme().color);
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= 900 : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileViewport(window.innerWidth <= 900);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     applyTheme(themeColor, theme);
@@ -380,7 +389,7 @@ export default function App() {
     setEmpForm({
       full_name: emp.full_name,
       email: emp.email,
-      access_code: emp.access_code || '123456',
+      access_code: emp.access_code || '',
       job_title: emp.job_title,
       phone: emp.phone || '',
       hourly_rate: String(emp.hourly_rate),
@@ -1637,8 +1646,9 @@ export default function App() {
                       </select>
                     </div>
 
-                    {/* Alternância de Visualização: Cards vs Lista */}
+                    {/* Alternância de Visualização: Cards vs Lista (Oculto no Mobile) */}
                     <div
+                      className="view-mode-toggle-desktop"
                       style={{
                         display: 'flex',
                         border: '1px solid var(--border-color)',
@@ -1687,7 +1697,7 @@ export default function App() {
                 </div>
 
                 {/* Exibição em Tabela ou em Cards */}
-                {empViewMode === 'table' ? (
+                {empViewMode === 'table' && !isMobileViewport ? (
                   <div className="content-panel">
                     <div className="flat-table-wrap">
                       <table className="flat-table">
@@ -1949,6 +1959,15 @@ export default function App() {
                 companyId={activeCompany.id}
                 employees={employees}
                 sites={sites}
+                entries={entries}
+                onOpenEmployee={(emp) => {
+                  setSelectedEmployeeForDetail(emp);
+                  setCurrentPage('funcionarios');
+                }}
+                onOpenSite={(site) => {
+                  setSelectedSiteForDetail(site);
+                  setCurrentPage('obras');
+                }}
                 showNotice={showNotice}
               />
             )}
@@ -2048,8 +2067,9 @@ export default function App() {
                       </select>
                     </div>
 
-                    {/* Alternância de Visualização: Cards vs Lista */}
+                    {/* Alternância de Visualização: Cards vs Lista (Oculto no Mobile) */}
                     <div
+                      className="view-mode-toggle-desktop"
                       style={{
                         display: 'flex',
                         border: '1px solid var(--border-color)',
@@ -2097,7 +2117,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {siteViewMode === 'table' ? (
+                {siteViewMode === 'table' && !isMobileViewport ? (
                   <div className="content-panel">
                     <div className="flat-table-wrap">
                       <table className="flat-table">
@@ -2411,7 +2431,7 @@ export default function App() {
                 </div>
 
                 <div className="flat-form-group">
-                  <label>PIN / Senha de Acesso *</label>
+                  <label>PIN / Código de Acesso *</label>
                   <input
                     required
                     value={empForm.access_code}

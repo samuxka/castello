@@ -645,7 +645,7 @@ export function VehicleDetailPage({
       </div>
 
       {/* Navegação entre Abas */}
-      <div style={{ display: 'flex', borderBottom: '2px solid var(--border-color)', gap: 8 }}>
+      <div className="responsive-tabs-bar" style={{ display: 'flex', borderBottom: '2px solid var(--border-color)', gap: 8 }}>
         <button
           onClick={() => setActiveTab('geral')}
           style={{
@@ -1584,7 +1584,7 @@ export function VehicleDetailPage({
                 </select>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-2">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Quantidade a Carregar *</label>
                   <input
@@ -1608,7 +1608,7 @@ export function VehicleDetailPage({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+              <div className="flat-modal-actions" style={{ marginTop: 10 }}>
                 <button
                   type="button"
                   className="btn-flat-secondary"
@@ -1716,7 +1716,7 @@ export function VehicleDetailPage({
             </div>
 
             <form onSubmit={handleCreateMaintenance} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-2">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Tipo de Serviço *</label>
                   <select
@@ -1773,7 +1773,7 @@ export function VehicleDetailPage({
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-2">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>KM no Momento do Serviço *</label>
                   <input
@@ -1796,7 +1796,7 @@ export function VehicleDetailPage({
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-2">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Custo do Serviço (€)</label>
                   <input
@@ -1831,7 +1831,7 @@ export function VehicleDetailPage({
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+              <div className="flat-modal-actions" style={{ marginTop: 10 }}>
                 <button
                   type="button"
                   className="btn-flat-secondary"
@@ -1872,7 +1872,7 @@ export function VehicleDetailPage({
             </div>
 
             <form onSubmit={handleSaveWeeklyAssignment} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-2">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Dia da Semana *</label>
                   <select

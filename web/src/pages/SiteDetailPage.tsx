@@ -130,8 +130,6 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
   const [bossNameInput, setBossNameInput] = useState('');
   const [approveForClient, setApproveForClient] = useState(true);
 
-  const [copiedLink, setCopiedLink] = useState(false);
-
   const loadSiteData = async () => {
     try {
       const [t, l, d, sm, wh, fin, meas] = await Promise.all([
@@ -393,11 +391,9 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
     }
   };
 
-  const handleCopyClientLink = () => {
-    const clientUrl = `${window.location.origin}?obra=${site.share_code}`;
-    navigator.clipboard.writeText(clientUrl);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 3000);
+  const handleOpenClientPage = () => {
+    const clientUrl = `${window.location.origin}${window.location.pathname}?obra=${site.share_code}`;
+    window.location.href = clientUrl;
   };
 
   // Contadores
@@ -425,11 +421,11 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button
             className="btn-flat-primary"
-            onClick={handleCopyClientLink}
+            onClick={handleOpenClientPage}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
             <ExternalLink size={15} />
-            {copiedLink ? 'Link do Cliente Copiado!' : 'Copiar Link para o Cliente'}
+            Página do Cliente
           </button>
         </div>
       </div>

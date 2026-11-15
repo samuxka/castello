@@ -747,8 +747,143 @@ html, body {
    RESPONSIVIDADE (Tablets e Smartphones)
    ========================================================================== */
 
+/* Utilitários Responsivos para Grids de Formulários, Tabs, Calendário e Listas */
+.responsive-form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.responsive-form-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.responsive-form-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.responsive-tabs-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--border-color);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.responsive-tabs-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.responsive-tabs-bar button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.emp-attendance-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  text-align: center;
+  width: 100%;
+}
+
+.emp-attendance-cell {
+  min-height: 68px;
+  padding: 6px;
+  border-radius: 8px;
+}
+
+.emp-attendance-label-desktop {
+  display: inline-flex;
+}
+
+.emp-attendance-label-mobile {
+  display: none;
+}
+
+.calendar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.calendar-search-box {
+  position: relative;
+  min-width: 230px;
+  flex: 0 1 280px;
+}
+
+.calendar-month-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2.3fr) minmax(300px, 1fr);
+  gap: 18px;
+  align-items: start;
+  width: 100%;
+}
+
+.calendar-month-panel {
+  padding: 18px;
+}
+
+.calendar-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.calendar-month-cell {
+  min-height: 104px;
+  padding: 7px;
+  border-radius: 8px;
+}
+
+.calendar-event-dots-mobile {
+  display: none;
+}
+
+.mobile-only-cards {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .calendar-month-layout {
+    grid-template-columns: 1fr !important;
+    gap: 14px;
+  }
+}
+
 /* Telas até 900px (Tablets e Telas Menores) */
 @media (max-width: 900px) {
+  .responsive-form-grid-3,
+  .responsive-form-grid-4 {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 12px;
+  }
+
+  .view-mode-toggle-desktop {
+    display: none !important;
+  }
+
+  .desktop-only-table {
+    display: none !important;
+  }
+
+  .mobile-only-cards {
+    display: flex !important;
+    flex-direction: column;
+    gap: 12px;
+  }
+
   .app-container {
     flex-direction: column;
   }
@@ -853,18 +988,103 @@ html, body {
     overflow-x: hidden;
   }
 
+  .content-panel {
+    padding: 14px 12px;
+    margin-bottom: 16px;
+  }
+
+  .responsive-form-grid-2,
+  .responsive-form-grid-3,
+  .responsive-form-grid-4 {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .responsive-tabs-bar {
+    gap: 4px !important;
+  }
+
+  .responsive-tabs-bar button {
+    padding: 10px 12px !important;
+    font-size: 12px !important;
+    gap: 6px !important;
+  }
+
+  .emp-attendance-calendar-grid {
+    gap: 4px !important;
+  }
+
+  .emp-attendance-cell {
+    min-height: 50px !important;
+    padding: 4px 2px !important;
+    border-radius: 6px !important;
+  }
+
+  .emp-attendance-label-desktop {
+    display: none !important;
+  }
+
+  .emp-attendance-label-mobile {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 8px !important;
+    font-weight: 800;
+    line-height: 1.1;
+    padding: 1px 2px;
+  }
+
+  .calendar-header-actions {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  .calendar-search-box {
+    min-width: 0 !important;
+    flex: 1 1 200px !important;
+  }
+
+  .calendar-month-panel {
+    padding: 14px 12px !important;
+  }
+
+  .calendar-month-grid {
+    gap: 4px !important;
+  }
+
+  .calendar-month-cell {
+    min-height: 54px !important;
+    padding: 4px 3px !important;
+    border-radius: 6px !important;
+  }
+
+  .calendar-event-pill-desktop {
+    display: none !important;
+  }
+
+  .calendar-event-dots-mobile {
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    margin-top: 4px;
+  }
+
   .view-header {
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
   }
 
-  .view-header .btn-flat-primary,
-  .view-header .btn-flat-secondary {
+  .view-header > .btn-flat-primary,
+  .view-header > .btn-flat-secondary {
     width: 100%;
     justify-content: center;
   }
+
 
   .panel-header-inline {
     flex-direction: column;

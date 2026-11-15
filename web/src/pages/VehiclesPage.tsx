@@ -46,6 +46,13 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'plate-asc' | 'brand-asc' | 'km-desc' | 'km-asc' | 'year-desc'>('plate-asc');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 900 : false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 900);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -479,8 +486,9 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
             </select>
           </div>
 
-          {/* Alternância de Visualização: Cards vs Lista */}
+          {/* Alternância de Visualização: Cards vs Lista (Oculto no Mobile) */}
           <div
+            className="view-mode-toggle-desktop"
             style={{
               display: 'flex',
               border: '1px solid var(--border-color)',
@@ -529,7 +537,7 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
       </div>
 
       {/* Visualização de Frota: Tabela vs Cards */}
-      {viewMode === 'table' ? (
+      {viewMode === 'table' && !isMobile ? (
         <div className="content-panel" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto', maxHeight: '520px', overflowY: 'auto' }}>
             <table className="flat-table" style={{ width: '100%' }}>
@@ -999,8 +1007,8 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
               </button>
             </div>
 
-            <form onSubmit={handleSave} style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.5fr 1.5fr', gap: 12 }}>
+            <form onSubmit={handleSave} style={{ padding: '18px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="responsive-form-grid-3">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Matrícula / Placa *</label>
                   <input
@@ -1038,7 +1046,7 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-3">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Tipo de Carrinha</label>
                   <select
@@ -1078,7 +1086,7 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-2">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Motorista / Condutor Habitual</label>
                   <select
@@ -1112,7 +1120,7 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-3">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Próxima Inspeção Periódica</label>
                   <input
@@ -1145,7 +1153,7 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-2">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Combustível</label>
                   <select

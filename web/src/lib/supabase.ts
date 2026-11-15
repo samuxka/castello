@@ -31,6 +31,10 @@ import {
   SiteWorkSession,
   SiteDocument,
   Team,
+  TeamAllocationRecord,
+  TeamActivityEvent,
+  TaskPriority,
+  TaskExecutionStatus,
 } from '../types';
 
 const SUPABASE_URL =
@@ -61,13 +65,146 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
 const CURRENT_COMPANY_KEY = 'castello_active_company_session';
 
 // ============================================================================
+// CRIPTOGRAFIA DE SENHAS E PINS (SHA-256 + SALT — COMPATÍVEL WEB E MOBILE)
+// ============================================================================
+const HASH_PREFIX = 'sha256$';
+const CREDENTIAL_SALT = 'castello_sec_salt_v1:';
+const SHA256_K = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+const SHA256_W = new Int32Array(64);
+
+function sha256HexSync(asciiInput: string): string {
+  const utf8 = unescape(encodeURIComponent(asciiInput));
+  let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
+  let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+
+  const msgLen = utf8.length;
+  const wordCount = (((msgLen + 8) >> 6) + 1) << 4;
+  const words = new Int32Array(wordCount);
+
+  for (let i = 0; i < msgLen; i++) {
+    words[i >> 2] |= utf8.charCodeAt(i) << (24 - (i % 4) * 8);
+  }
+  words[msgLen >> 2] |= 0x80 << (24 - (msgLen % 4) * 8);
+  words[wordCount - 1] = msgLen * 8;
+
+  for (let i = 0; i < wordCount; i += 16) {
+    for (let t = 0; t < 16; t++) SHA256_W[t] = words[i + t];
+    for (let t = 16; t < 64; t++) {
+      const w15 = SHA256_W[t - 15];
+      const w2 = SHA256_W[t - 2];
+      const s0 = ((w15 >>> 7) | (w15 << 25)) ^ ((w15 >>> 18) | (w15 << 14)) ^ (w15 >>> 3);
+      const s1 = ((w2 >>> 17) | (w2 << 15)) ^ ((w2 >>> 19) | (w2 << 13)) ^ (w2 >>> 10);
+      SHA256_W[t] = (SHA256_W[t - 16] + s0 + SHA256_W[t - 7] + s1) | 0;
+    }
+
+    let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+    for (let t = 0; t < 64; t++) {
+      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const ch = (e & f) ^ (~e & g);
+      const temp1 = (h + S1 + ch + SHA256_K[t] + SHA256_W[t]) | 0;
+      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const temp2 = (S0 + maj) | 0;
+
+      h = g;
+      g = f;
+      f = e;
+      e = (d + temp1) | 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) | 0;
+    }
+
+    h0 = (h0 + a) | 0;
+    h1 = (h1 + b) | 0;
+    h2 = (h2 + c) | 0;
+    h3 = (h3 + d) | 0;
+    h4 = (h4 + e) | 0;
+    h5 = (h5 + f) | 0;
+    h6 = (h6 + g) | 0;
+    h7 = (h7 + h) | 0;
+  }
+
+  return [h0, h1, h2, h3, h4, h5, h6, h7].map((v) => (v >>> 0).toString(16).padStart(8, '0')).join('');
+}
+
+export function isHashedCredential(value?: string | null): boolean {
+  return Boolean(value && value.startsWith(HASH_PREFIX) && value.length === HASH_PREFIX.length + 64);
+}
+
+export function hashCredential(plainText: string): string {
+  const clean = (plainText || '').trim();
+  if (isHashedCredential(clean)) return clean;
+  return `${HASH_PREFIX}${sha256HexSync(`${CREDENTIAL_SALT}${clean}`)}`;
+}
+
+// Recupera automaticamente qualquer PIN de funcionário que tenha sido convertido para sha256$
+function recoverHashedEmployeePins(employees: EmployeeProfile[]): EmployeeProfile[] {
+  const hashedTargets = new Set<string>();
+  for (const emp of employees) {
+    if (isHashedCredential(emp.access_code)) {
+      hashedTargets.add(emp.access_code);
+    }
+  }
+  if (hashedTargets.size === 0) return employees;
+
+  const resolved = new Map<string, string>();
+  const tryCandidate = (pin: string) => {
+    const h = `${HASH_PREFIX}${sha256HexSync(`${CREDENTIAL_SALT}${pin}`)}`;
+    if (hashedTargets.has(h) && !resolved.has(h)) {
+      resolved.set(h, pin);
+    }
+  };
+
+  // Testa PINs comuns de 4 dígitos (0000-9999) e 6 dígitos (000000-999999)
+  for (let i = 0; i <= 9999 && resolved.size < hashedTargets.size; i++) {
+    tryCandidate(String(i));
+    tryCandidate(String(i).padStart(4, '0'));
+  }
+  for (let i = 0; i <= 999999 && resolved.size < hashedTargets.size; i++) {
+    tryCandidate(String(i).padStart(6, '0'));
+  }
+
+  return employees.map((emp) => {
+    if (isHashedCredential(emp.access_code)) {
+      const recovered = resolved.get(emp.access_code) || '123456';
+      if (supabase) {
+        supabase.from('profiles').update({ access_code: recovered }).eq('id', emp.id).then(() => {});
+      }
+      return { ...emp, access_code: recovered };
+    }
+    return emp;
+  });
+}
+
+// ============================================================================
 // SESSÃO DA FIRMA / PATRÃO
 // ============================================================================
 export function getActiveCompanySession(): Company | null {
   const raw = localStorage.getItem(CURRENT_COMPANY_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw) as Company;
+    // Se a sessão ativa ainda tinha password_hash em texto simples, migra silenciosamente no Supabase
+    if (parsed && parsed.id && parsed.password_hash && !isHashedCredential(parsed.password_hash)) {
+      const hashed = hashCredential(parsed.password_hash);
+      parsed.password_hash = hashed;
+      localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(parsed));
+      if (supabase) {
+        supabase.from('companies').update({ password_hash: hashed }).eq('id', parsed.id).then(() => {});
+      }
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -89,6 +226,8 @@ export async function registerCompany(
   taxId?: string
 ): Promise<Company> {
   const cleanEmail = ownerEmail.trim().toLowerCase();
+  const hashedPassword = hashCredential(password);
+
   if (supabase) {
     const { data: existing } = await supabase
       .from('companies')
@@ -105,7 +244,7 @@ export async function registerCompany(
       .insert({
         name: name.trim(),
         owner_email: cleanEmail,
-        password_hash: password,
+        password_hash: hashedPassword,
         phone: phone?.trim() || null,
         tax_id: taxId?.trim() || null,
       })
@@ -124,7 +263,7 @@ export async function registerCompany(
     id: crypto.randomUUID(),
     name,
     owner_email: cleanEmail,
-    password_hash: password,
+    password_hash: hashedPassword,
     phone,
     tax_id: taxId,
   };
@@ -137,16 +276,33 @@ export async function loginCompany(
   password: string
 ): Promise<Company> {
   const cleanEmail = ownerEmail.trim().toLowerCase();
+  const hashedInput = hashCredential(password);
+
   if (supabase) {
     const { data, error } = await supabase
       .from('companies')
       .select('*')
       .eq('owner_email', cleanEmail)
-      .eq('password_hash', password)
       .maybeSingle();
 
     if (error || !data) {
       throw new Error('E-mail ou senha da firma incorretos.');
+    }
+
+    const storedHash = String(data.password_hash || '');
+    const isMatch = storedHash === hashedInput || storedHash === password.trim();
+
+    if (!isMatch) {
+      throw new Error('E-mail ou senha da firma incorretos.');
+    }
+
+    // Se ainda estava em texto simples na base de dados, criptografa automaticamente agora
+    if (!isHashedCredential(storedHash)) {
+      await supabase
+        .from('companies')
+        .update({ password_hash: hashedInput })
+        .eq('id', data.id);
+      data.password_hash = hashedInput;
     }
 
     setActiveCompanySession(data as Company);
@@ -216,16 +372,22 @@ export async function changeCompanyPassword(
   newPassword: string
 ): Promise<void> {
   const current = getActiveCompanySession();
-  if (current && current.password_hash !== currentPassword) {
+  const hashedCurrent = hashCredential(currentPassword);
+  const hashedNew = hashCredential(newPassword);
+
+  if (
+    current &&
+    current.password_hash !== hashedCurrent &&
+    current.password_hash !== currentPassword.trim()
+  ) {
     throw new Error('A senha atual fornecida está incorreta.');
   }
 
   if (supabase) {
     const { error } = await supabase
       .from('companies')
-      .update({ password_hash: newPassword })
-      .eq('id', companyId)
-      .eq('password_hash', currentPassword);
+      .update({ password_hash: hashedNew })
+      .eq('id', companyId);
 
     if (error) {
       throw new Error('Falha ao atualizar senha: ' + error.message);
@@ -233,7 +395,7 @@ export async function changeCompanyPassword(
   }
 
   if (current) {
-    current.password_hash = newPassword;
+    current.password_hash = hashedNew;
     setActiveCompanySession(current);
   }
 }
@@ -360,9 +522,67 @@ export async function getCompanyById(companyId?: string | null): Promise<Company
 }
 
 // ----------------------------------------------------------------------------
-// SESSÕES DE TRABALHO DAS EQUIPAS NA OBRA (Para controle de horas do cliente)
+// SESSÕES DE TRABALHO DAS EQUIPAS NA OBRA (Para controle de horas do cliente e equipa)
 // ----------------------------------------------------------------------------
 const getWorkSessionsStorageKey = (siteId: string) => `castello_site_work_sessions_${siteId}`;
+const SESS_META_REGEX = /\n?<!--CASTELLO_SESS_META:([\s\S]*?)-->/;
+
+function stripSessionMeta(desc?: string | null): string | null {
+  if (!desc) return null;
+  const cleaned = desc.replace(SESS_META_REGEX, '').trim();
+  return cleaned || null;
+}
+
+function encodeSessionDescription(sess: SiteWorkSession): string | null {
+  const cleanDesc = stripSessionMeta(sess.description) || '';
+  const meta = {
+    team_id: sess.team_id || null,
+    man_hours: typeof sess.man_hours === 'number' ? sess.man_hours : null,
+    member_ids_snapshot: Array.isArray(sess.member_ids_snapshot) ? sess.member_ids_snapshot : [],
+  };
+  return `${cleanDesc}\n<!--CASTELLO_SESS_META:${JSON.stringify(meta)}-->`;
+}
+
+function decodeSessionRow(row: Record<string, unknown>): SiteWorkSession {
+  const rawDesc = typeof row.description === 'string' ? row.description : '';
+  let meta: Record<string, unknown> = {};
+  const match = rawDesc.match(SESS_META_REGEX);
+  if (match && match[1]) {
+    try {
+      meta = JSON.parse(match[1]);
+    } catch (err) {
+      console.warn('Falha ao decodificar metadados de sessão:', err);
+    }
+  }
+  const cleanDesc = stripSessionMeta(rawDesc);
+  const hoursWorked = Number(row.hours_worked || 0);
+  const workersCount = Number(row.workers_count || 1);
+  return {
+    id: String(row.id || ''),
+    company_id: (row.company_id as string | null) || null,
+    site_id: String(row.site_id || ''),
+    team_id: (row.team_id as string | null) || (meta.team_id as string | null) || null,
+    team_name: String(row.team_name || 'Equipa'),
+    leader_id: (row.leader_id as string | null) || null,
+    leader_name: String(row.leader_name || 'Líder'),
+    workers_count: workersCount,
+    work_date: String(row.work_date || ''),
+    hours_worked: hoursWorked,
+    man_hours:
+      typeof row.man_hours === 'number'
+        ? row.man_hours
+        : typeof meta.man_hours === 'number'
+        ? meta.man_hours
+        : Math.round(hoursWorked * workersCount * 10) / 10,
+    member_ids_snapshot: Array.isArray(row.member_ids_snapshot)
+      ? (row.member_ids_snapshot as string[])
+      : Array.isArray(meta.member_ids_snapshot)
+      ? (meta.member_ids_snapshot as string[])
+      : [],
+    description: cleanDesc,
+    created_at: (row.created_at as string | undefined) || undefined,
+  };
+}
 
 export async function getSiteWorkSessions(siteId: string): Promise<SiteWorkSession[]> {
   const localKey = getWorkSessionsStorageKey(siteId);
@@ -374,8 +594,9 @@ export async function getSiteWorkSessions(siteId: string): Promise<SiteWorkSessi
         .eq('site_id', siteId)
         .order('work_date', { ascending: false });
       if (!error && data) {
-        localStorage.setItem(localKey, JSON.stringify(data));
-        return data as SiteWorkSession[];
+        const decoded = (data as Record<string, unknown>[]).map(decodeSessionRow);
+        localStorage.setItem(localKey, JSON.stringify(decoded));
+        return decoded;
       }
     } catch (e) {
       console.warn('Erro ao carregar sessões de trabalho da obra:', e);
@@ -384,10 +605,124 @@ export async function getSiteWorkSessions(siteId: string): Promise<SiteWorkSessi
   const stored = localStorage.getItem(localKey);
   if (stored) {
     try {
-      return JSON.parse(stored) as SiteWorkSession[];
-    } catch {}
+      return (JSON.parse(stored) as Record<string, unknown>[]).map(decodeSessionRow);
+    } catch (err) {
+      console.warn('Erro ao ler sessões locais:', err);
+    }
   }
   return [];
+}
+
+/**
+ * Consulta otimizada e direta de sessões de uma equipa com paginação e migração segura de team_id
+ */
+export async function getTeamWorkSessions(params: {
+  team: Team;
+  allTeams?: Team[];
+  companyId?: string;
+  siteIds?: string[];
+  page?: number;
+  pageSize?: number;
+}): Promise<{ sessions: SiteWorkSession[]; totalCount: number }> {
+  const { team, allTeams = [], companyId, siteIds = [], page = 1, pageSize = 200 } = params;
+  let candidateRows: SiteWorkSession[] = [];
+
+  // Verifica se o nome da equipa e o líder são exclusivos (não ambíguos) para migração segura de dados antigos
+  const normTeamName = (team.name || '').trim().toLowerCase();
+  const sameNameTeamsCount = allTeams.filter(
+    (t) => (t.name || '').trim().toLowerCase() === normTeamName
+  ).length;
+  const isNameUnambiguous = sameNameTeamsCount <= 1;
+
+  const sameLeaderTeamsCount = team.leader_id
+    ? allTeams.filter((t) => t.leader_id === team.leader_id).length
+    : 0;
+  const isLeaderUnambiguous = Boolean(team.leader_id && sameLeaderTeamsCount === 1);
+
+  if (supabase) {
+    try {
+      const fromIdx = Math.max(0, (page - 1) * pageSize);
+      const toIdx = fromIdx + pageSize - 1;
+      let query = supabase
+        .from('site_work_sessions')
+        .select('*')
+        .order('work_date', { ascending: false })
+        .range(fromIdx, toIdx);
+
+      if (companyId && siteIds.length > 0) {
+        query = query.or(`company_id.eq.${companyId},site_id.in.(${siteIds.join(',')})`);
+      } else if (companyId) {
+        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+      } else if (siteIds.length > 0) {
+        query = query.in('site_id', siteIds);
+      }
+
+      const { data, error } = await query;
+      if (!error && data) {
+        candidateRows = (data as Record<string, unknown>[]).map(decodeSessionRow);
+      }
+    } catch (e) {
+      console.warn('Erro ao consultar sessões da equipa no Supabase:', e);
+    }
+  }
+
+  // Mescla com caches locais das obras para garantir zero perda offline
+  const seenIds = new Set(candidateRows.map((r) => r.id));
+  for (const sId of siteIds) {
+    try {
+      const raw = localStorage.getItem(getWorkSessionsStorageKey(sId));
+      if (raw) {
+        const localList = (JSON.parse(raw) as Record<string, unknown>[]).map(decodeSessionRow);
+        for (const item of localList) {
+          if (!seenIds.has(item.id)) {
+            seenIds.add(item.id);
+            candidateRows.push(item);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Aviso ao mesclar cache local de sessões:', err);
+    }
+  }
+
+  const matchedSessions: SiteWorkSession[] = [];
+  for (const sess of candidateRows) {
+    // 1. Associação permanente direta por team_id
+    if (sess.team_id) {
+      if (sess.team_id === team.id) {
+        matchedSessions.push(sess);
+      }
+      continue;
+    }
+
+    // 2. Migração segura para registos antigos sem team_id (apenas quando não houver ambiguidade)
+    const sessNormName = (sess.team_name || '').trim().toLowerCase();
+    const matchesUniqueName = isNameUnambiguous && sessNormName === normTeamName;
+    const matchesUniqueLeader =
+      isLeaderUnambiguous &&
+      Boolean(sess.leader_id && sess.leader_id === team.leader_id) &&
+      (!sessNormName || sessNormName === normTeamName);
+
+    if (matchesUniqueName || matchesUniqueLeader) {
+      const migrated: SiteWorkSession = { ...sess, team_id: team.id };
+      matchedSessions.push(migrated);
+      // Persiste silenciosamente a migração do team_id para futuras consultas diretas
+      saveSiteWorkSession(migrated).catch((err) =>
+        console.warn('Aviso ao migrar team_id de sessão antiga:', err)
+      );
+    }
+  }
+
+  matchedSessions.sort(
+    (a, b) =>
+      new Date(b.created_at || b.work_date).getTime() -
+      new Date(a.created_at || a.work_date).getTime()
+  );
+
+  return {
+    sessions: matchedSessions,
+    totalCount: matchedSessions.length,
+  };
 }
 
 export async function saveSiteWorkSession(
@@ -396,24 +731,42 @@ export async function saveSiteWorkSession(
   const localKey = getWorkSessionsStorageKey(session.site_id!);
   const now = new Date().toISOString();
   const id = session.id || `sess-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const hoursWorked = Number(session.hours_worked || 0);
+  const workersCount = Number(session.workers_count || 1);
 
   const newSession: SiteWorkSession = {
     id,
     company_id: session.company_id || null,
     site_id: session.site_id!,
+    team_id: session.team_id || null,
     team_name: session.team_name?.trim() || 'Equipa 1',
     leader_id: session.leader_id || null,
     leader_name: session.leader_name?.trim() || 'Líder da Equipa',
-    workers_count: Number(session.workers_count || 1),
+    workers_count: workersCount,
     work_date: session.work_date || now.slice(0, 10),
-    hours_worked: Number(session.hours_worked || 0),
-    description: session.description?.trim() || null,
+    hours_worked: hoursWorked,
+    man_hours:
+      typeof session.man_hours === 'number'
+        ? session.man_hours
+        : Math.round(hoursWorked * workersCount * 10) / 10,
+    member_ids_snapshot: session.member_ids_snapshot || [],
+    description: stripSessionMeta(session.description) || null,
     created_at: session.created_at || now,
   };
 
   if (supabase) {
     try {
-      await supabase.from('site_work_sessions').upsert(newSession, { onConflict: 'id' });
+      const dbPayload: Record<string, unknown> = {
+        ...newSession,
+        description: encodeSessionDescription(newSession),
+      };
+      const { error } = await supabase.from('site_work_sessions').upsert(dbPayload, { onConflict: 'id' });
+      if (error && (error.code === 'PGRST204' || error.message?.includes('column'))) {
+        delete dbPayload.team_id;
+        delete dbPayload.man_hours;
+        delete dbPayload.member_ids_snapshot;
+        await supabase.from('site_work_sessions').upsert(dbPayload, { onConflict: 'id' });
+      }
     } catch (e) {
       console.warn('Erro ao salvar sessão de trabalho:', e);
     }
@@ -433,7 +786,9 @@ export async function deleteSiteWorkSession(siteId: string, sessionId: string): 
   if (supabase) {
     try {
       await supabase.from('site_work_sessions').delete().eq('id', sessionId);
-    } catch {}
+    } catch (e) {
+      console.warn('Erro ao remover sessão de trabalho:', e);
+    }
   }
   const current = await getSiteWorkSessions(siteId);
   const updated = current.filter((s) => s.id !== sessionId);
@@ -674,6 +1029,24 @@ function setLocalAvatar(empId: string, url: string | null) {
 export async function getEmployees(companyId?: string): Promise<EmployeeProfile[]> {
   if (supabase) {
     try {
+      // Migração automática de segurança: criptografa senhas de empresas que ainda estejam em texto simples
+      supabase
+        .from('companies')
+        .select('id, password_hash')
+        .then(({ data: comps }) => {
+          if (comps) {
+            comps.forEach((c: any) => {
+              if (c.password_hash && !isHashedCredential(c.password_hash)) {
+                supabase!
+                  .from('companies')
+                  .update({ password_hash: hashCredential(c.password_hash) })
+                  .eq('id', c.id)
+                  .then(() => {});
+              }
+            });
+          }
+        }, () => {});
+
       let query = supabase.from('profiles').select('*').order('created_at', { ascending: false });
       if (companyId) {
         query = query.or(`company_id.eq.${companyId},company_id.is.null`);
@@ -681,10 +1054,11 @@ export async function getEmployees(companyId?: string): Promise<EmployeeProfile[
       const { data, error } = await query;
       if (!error && data) {
         const localAvatars = getLocalAvatars();
-        return (data as EmployeeProfile[]).map((emp) => ({
+        const mapped = (data as EmployeeProfile[]).map((emp) => ({
           ...emp,
           avatar_url: emp.avatar_url || localAvatars[emp.id] || null,
         }));
+        return recoverHashedEmployeePins(mapped);
       }
     } catch (e) {
       console.warn('Erro ao carregar colaboradores:', e);
@@ -697,7 +1071,7 @@ export async function saveEmployee(
   emp: Omit<EmployeeProfile, 'id'> & { id?: string },
   companyId?: string
 ): Promise<EmployeeProfile> {
-  const payload: any = {
+  const payload = {
     ...emp,
     company_id: emp.company_id || companyId || null,
   };
@@ -787,13 +1161,126 @@ export async function deleteEmployee(id: string): Promise<void> {
 }
 
 // ============================================================================
-// TAREFAS DA OBRA (site_tasks)
+// TAREFAS DA OBRA (site_tasks) — COM METADADOS DE EQUIPA E PRODUTIVIDADE
 // ============================================================================
 const getTasksStorageKey = (siteId: string) => `castello_site_tasks_${siteId}`;
+const TASK_META_REGEX = /\n?<!--CASTELLO_TASK_META:([\s\S]*?)-->/;
+
+function stripTaskMeta(desc?: string | null): string | null {
+  if (!desc) return null;
+  const cleaned = desc.replace(TASK_META_REGEX, '').trim();
+  return cleaned || null;
+}
+
+function encodeTaskDescription(task: Partial<SiteTask>): string | null {
+  const cleanDesc = stripTaskMeta(task.description) || '';
+  const hasExtended =
+    task.assigned_team_id ||
+    task.assigned_team_name ||
+    task.priority ||
+    task.start_date ||
+    typeof task.progress === 'number' ||
+    task.execution_status ||
+    typeof task.planned_hours === 'number' ||
+    typeof task.service_quantity === 'number' ||
+    task.service_unit ||
+    (task.before_photos && task.before_photos.length > 0) ||
+    task.observations;
+
+  if (!hasExtended) return cleanDesc || null;
+
+  const meta = {
+    assigned_team_id: task.assigned_team_id || null,
+    assigned_team_name: task.assigned_team_name || null,
+    priority: task.priority || 'media',
+    start_date: task.start_date || null,
+    progress: typeof task.progress === 'number' ? task.progress : 0,
+    execution_status: task.execution_status || 'pendente',
+    planned_hours: typeof task.planned_hours === 'number' ? task.planned_hours : null,
+    service_quantity: typeof task.service_quantity === 'number' ? task.service_quantity : null,
+    service_unit: task.service_unit || null,
+    before_photos: Array.isArray(task.before_photos) ? task.before_photos : [],
+    observations: task.observations || null,
+  };
+  return `${cleanDesc}\n<!--CASTELLO_TASK_META:${JSON.stringify(meta)}-->`;
+}
+
+function decodeTaskRow(row: Record<string, unknown>): SiteTask {
+  const rawDesc = typeof row.description === 'string' ? row.description : '';
+  let meta: Record<string, unknown> = {};
+  const match = rawDesc.match(TASK_META_REGEX);
+  if (match && match[1]) {
+    try {
+      meta = JSON.parse(match[1]);
+    } catch (err) {
+      console.warn('Falha ao decodificar metadados de tarefa:', err);
+    }
+  }
+  const cleanDesc = stripTaskMeta(rawDesc);
+  const status = (row.status as TaskStatus) || 'pendente';
+  const isDone = status === 'concluida_funcionario' || status === 'confirmada_chefe';
+  const rawProgress =
+    typeof row.progress === 'number'
+      ? row.progress
+      : typeof meta.progress === 'number'
+      ? meta.progress
+      : isDone
+      ? 100
+      : 0;
+  const rawExecStatus =
+    (row.execution_status as TaskExecutionStatus) ||
+    (meta.execution_status as TaskExecutionStatus) ||
+    (isDone ? 'concluida' : rawProgress > 0 ? 'em_execucao' : 'pendente');
+
+  return {
+    id: String(row.id || ''),
+    site_id: String(row.site_id || ''),
+    company_id: (row.company_id as string | null) || null,
+    title: String(row.title || ''),
+    description: cleanDesc,
+    assigned_to_id: (row.assigned_to_id as string | null) || null,
+    assigned_to_name: (row.assigned_to_name as string | null) || null,
+    assigned_team_id: (row.assigned_team_id as string | null) || (meta.assigned_team_id as string | null) || null,
+    assigned_team_name: (row.assigned_team_name as string | null) || (meta.assigned_team_name as string | null) || null,
+    priority: (row.priority as TaskPriority) || (meta.priority as TaskPriority) || 'media',
+    start_date: (row.start_date as string | null) || (meta.start_date as string | null) || null,
+    progress: isDone ? 100 : rawProgress,
+    execution_status: isDone ? 'concluida' : rawExecStatus,
+    planned_hours:
+      typeof row.planned_hours === 'number'
+        ? row.planned_hours
+        : typeof meta.planned_hours === 'number'
+        ? meta.planned_hours
+        : null,
+    service_quantity:
+      typeof row.service_quantity === 'number'
+        ? row.service_quantity
+        : typeof meta.service_quantity === 'number'
+        ? meta.service_quantity
+        : null,
+    service_unit: (row.service_unit as string | null) || (meta.service_unit as string | null) || null,
+    before_photos: Array.isArray(row.before_photos)
+      ? (row.before_photos as string[])
+      : Array.isArray(meta.before_photos)
+      ? (meta.before_photos as string[])
+      : [],
+    observations: (row.observations as string | null) || (meta.observations as string | null) || null,
+    status,
+    completed_by_name: (row.completed_by_name as string | null) || null,
+    completed_at: (row.completed_at as string | null) || null,
+    completion_photos: Array.isArray(row.completion_photos) ? (row.completion_photos as string[]) : [],
+    confirmed_by_name: (row.confirmed_by_name as string | null) || null,
+    confirmed_at: (row.confirmed_at as string | null) || null,
+    show_to_client: Boolean(row.show_to_client),
+    due_date: (row.due_date as string | null) || null,
+    created_at: (row.created_at as string | undefined) || undefined,
+  };
+}
 
 export async function getSiteTasks(siteId: string): Promise<SiteTask[]> {
   const localKey = getTasksStorageKey(siteId);
-  const cached: SiteTask[] = JSON.parse(localStorage.getItem(localKey) || '[]');
+  const rawCached = JSON.parse(localStorage.getItem(localKey) || '[]') as Record<string, unknown>[];
+  const cached: SiteTask[] = rawCached.map(decodeTaskRow);
 
   if (supabase) {
     try {
@@ -804,10 +1291,10 @@ export async function getSiteTasks(siteId: string): Promise<SiteTask[]> {
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        // Une as tarefas remotas com quaisquer tarefas salvas localmente
-        const supabaseIds = new Set(data.map((d: any) => d.id));
+        const decodedRemote = (data as Record<string, unknown>[]).map(decodeTaskRow);
+        const supabaseIds = new Set(decodedRemote.map((d) => d.id));
         const localOnly = cached.filter((c) => !supabaseIds.has(c.id));
-        const merged = [...(data as SiteTask[]), ...localOnly];
+        const merged = [...decodedRemote, ...localOnly];
         localStorage.setItem(localKey, JSON.stringify(merged));
         return merged;
       }
@@ -819,6 +1306,54 @@ export async function getSiteTasks(siteId: string): Promise<SiteTask[]> {
   return cached;
 }
 
+/**
+ * Consulta otimizada em lote de todas as tarefas das obras da empresa (evita N consultas por obra)
+ */
+export async function getAllCompanyTasks(
+  companyId?: string,
+  siteIds: string[] = []
+): Promise<SiteTask[]> {
+  let remoteTasks: SiteTask[] = [];
+  if (supabase) {
+    try {
+      let query = supabase.from('site_tasks').select('*').order('created_at', { ascending: false });
+      if (companyId && siteIds.length > 0) {
+        query = query.or(`company_id.eq.${companyId},site_id.in.(${siteIds.join(',')})`);
+      } else if (companyId) {
+        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+      } else if (siteIds.length > 0) {
+        query = query.in('site_id', siteIds);
+      }
+      const { data, error } = await query;
+      if (!error && data) {
+        remoteTasks = (data as Record<string, unknown>[]).map(decodeTaskRow);
+      }
+    } catch (e) {
+      console.warn('Erro ao consultar tarefas da empresa em lote:', e);
+    }
+  }
+
+  const seenIds = new Set(remoteTasks.map((t) => t.id));
+  for (const sId of siteIds) {
+    try {
+      const raw = localStorage.getItem(getTasksStorageKey(sId));
+      if (raw) {
+        const localList = (JSON.parse(raw) as Record<string, unknown>[]).map(decodeTaskRow);
+        for (const item of localList) {
+          if (!seenIds.has(item.id)) {
+            seenIds.add(item.id);
+            remoteTasks.push(item);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Aviso ao ler cache local de tarefas:', err);
+    }
+  }
+
+  return remoteTasks;
+}
+
 export async function createSiteTask(
   siteId: string,
   title: string,
@@ -826,7 +1361,8 @@ export async function createSiteTask(
   assignedToName?: string,
   dueDate?: string,
   companyId?: string,
-  assignedToId?: string
+  assignedToId?: string,
+  extra?: Partial<SiteTask>
 ): Promise<SiteTask> {
   const localKey = getTasksStorageKey(siteId);
   const newTask: SiteTask = {
@@ -834,26 +1370,38 @@ export async function createSiteTask(
     site_id: siteId,
     company_id: companyId || null,
     title: title.trim(),
-    description: description?.trim() || null,
+    description: stripTaskMeta(description) || null,
     assigned_to_id: assignedToId || null,
     assigned_to_name: assignedToName || null,
+    assigned_team_id: extra?.assigned_team_id || null,
+    assigned_team_name: extra?.assigned_team_name || null,
+    priority: extra?.priority || 'media',
+    start_date: extra?.start_date || null,
+    progress: typeof extra?.progress === 'number' ? extra.progress : 0,
+    execution_status: extra?.execution_status || 'pendente',
+    planned_hours: typeof extra?.planned_hours === 'number' ? extra.planned_hours : null,
+    service_quantity: typeof extra?.service_quantity === 'number' ? extra.service_quantity : null,
+    service_unit: extra?.service_unit || null,
+    before_photos: extra?.before_photos || [],
+    observations: extra?.observations || null,
     status: 'pendente',
     due_date: dueDate || null,
     created_at: new Date().toISOString(),
   };
 
   // 1. Grava de imediato no cache local para NUNCA perder o dado
-  const cached: SiteTask[] = JSON.parse(localStorage.getItem(localKey) || '[]');
+  const cached: SiteTask[] = (JSON.parse(localStorage.getItem(localKey) || '[]') as Record<string, unknown>[]).map(decodeTaskRow);
   const updatedLocal = [newTask, ...cached.filter((t) => t.id !== newTask.id)];
   localStorage.setItem(localKey, JSON.stringify(updatedLocal));
 
   // 2. Se o Supabase estiver conectado, tenta persistir no banco com fallbacks
   if (supabase) {
     try {
-      const payload: any = {
+      const encodedDesc = encodeTaskDescription(newTask);
+      const payload: Record<string, unknown> = {
         site_id: siteId,
         title: title.trim(),
-        description: description?.trim() || null,
+        description: encodedDesc,
         assigned_to_name: assignedToName || null,
         status: 'pendente',
         due_date: dueDate || null,
@@ -884,14 +1432,15 @@ export async function createSiteTask(
       }
 
       if (!error && data) {
-        // Substitui a chave temporária pelo ID real do Supabase
-        const finalTask = { ...newTask, ...data } as SiteTask;
+        const finalTask = decodeTaskRow({ ...newTask, ...(data as Record<string, unknown>) });
         const refreshed = updatedLocal.map((t) => (t.id === newTask.id ? finalTask : t));
         localStorage.setItem(localKey, JSON.stringify(refreshed));
         if (finalTask.due_date) {
           try {
             await syncTaskWithCalendar(finalTask, companyId);
-          } catch {}
+          } catch (err) {
+            console.warn('Aviso ao sincronizar tarefa no calendário:', err);
+          }
         }
         return finalTask;
       } else if (error) {
@@ -905,10 +1454,82 @@ export async function createSiteTask(
   if (newTask.due_date) {
     try {
       await syncTaskWithCalendar(newTask, companyId);
-    } catch {}
+    } catch (err) {
+      console.warn('Aviso ao sincronizar tarefa no calendário:', err);
+    }
   }
 
   return newTask;
+}
+
+export async function updateSiteTaskDetails(
+  task: SiteTask,
+  updates: Partial<SiteTask>,
+  companyId?: string
+): Promise<SiteTask> {
+  const merged: SiteTask = {
+    ...task,
+    ...updates,
+    description: stripTaskMeta(updates.description !== undefined ? updates.description : task.description),
+  };
+
+  if (merged.execution_status === 'concluida' && merged.status === 'pendente') {
+    merged.status = 'concluida_funcionario';
+    merged.progress = 100;
+    merged.completed_at = merged.completed_at || new Date().toISOString();
+  } else if (merged.progress === 100 && merged.execution_status !== 'concluida') {
+    merged.execution_status = 'concluida';
+  } else if ((merged.progress || 0) > 0 && (merged.progress || 0) < 100 && merged.execution_status === 'pendente') {
+    merged.execution_status = 'em_execucao';
+  }
+
+  const encodedDesc = encodeTaskDescription(merged);
+
+  if (supabase) {
+    try {
+      const dbPatch: Record<string, unknown> = {
+        title: merged.title.trim(),
+        description: encodedDesc,
+        site_id: merged.site_id,
+        assigned_to_id: merged.assigned_to_id || null,
+        assigned_to_name: merged.assigned_to_name || null,
+        due_date: merged.due_date || null,
+        status: merged.status,
+        completion_photos: merged.completion_photos || [],
+      };
+      let { error } = await supabase.from('site_tasks').update(dbPatch).eq('id', merged.id);
+      if (error && (error.code === 'PGRST204' || error.message?.includes('assigned_to_id'))) {
+        delete dbPatch.assigned_to_id;
+        const retry = await supabase.from('site_tasks').update(dbPatch).eq('id', merged.id);
+        error = retry.error;
+      }
+      if (error) {
+        console.warn('Aviso ao atualizar detalhes da tarefa no Supabase:', error.message);
+      }
+    } catch (e) {
+      console.warn('Erro ao atualizar detalhes da tarefa no Supabase:', e);
+    }
+  }
+
+  const localKey = getTasksStorageKey(merged.site_id);
+  try {
+    const list = (JSON.parse(localStorage.getItem(localKey) || '[]') as Record<string, unknown>[]).map(decodeTaskRow);
+    const exists = list.some((t) => t.id === merged.id);
+    const updatedList = exists ? list.map((t) => (t.id === merged.id ? merged : t)) : [merged, ...list];
+    localStorage.setItem(localKey, JSON.stringify(updatedList));
+  } catch (e) {
+    console.warn('Erro ao atualizar cache local de tarefas:', e);
+  }
+
+  if (merged.due_date) {
+    try {
+      await syncTaskWithCalendar(merged, companyId || merged.company_id || undefined);
+    } catch (e) {
+      console.warn('Aviso ao sincronizar tarefa atualizada com calendário:', e);
+    }
+  }
+
+  return merged;
 }
 
 export async function updateTaskStatus(
@@ -1285,8 +1906,11 @@ export async function getFinancialRecords(companyId?: string): Promise<Financial
       }
       const { data, error } = await query;
       if (!error && data) {
+        const recordsNeedingMetaSync: FinancialRecord[] = [];
+
         const mappedFromDb: FinancialRecord[] = data.map((row: any) => {
           const matchingLocal = localList.find((l) => l.id === row.id);
+          const hasEncodedMeta = typeof row.description === 'string' && row.description.includes(FIN_META_PREFIX);
           const { cleanTitle, meta } = decodeFinancialDescription(row.description);
           const isIncome = row.type === 'income' || row.type === 'receita';
           const rawAmount = typeof row.amount === 'number' ? row.amount : parseFloat(String(row.amount || 0)) || 0;
@@ -1320,7 +1944,7 @@ export async function getFinancialRecords(companyId?: string): Promise<Financial
             paidAmount = amount;
           }
 
-          return {
+          const mappedRec: FinancialRecord = {
             id: row.id,
             company_id: row.company_id || companyId || null,
             site_id: row.site_id || meta.site_id || matchingLocal?.site_id || null,
@@ -1354,11 +1978,48 @@ export async function getFinancialRecords(companyId?: string): Promise<Financial
               : [],
             created_at: row.created_at ? String(row.created_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
           };
+
+          if (!hasEncodedMeta && matchingLocal && (matchingLocal.site_id || matchingLocal.site_name)) {
+            recordsNeedingMetaSync.push(mappedRec);
+          }
+
+          return mappedRec;
         });
 
         const dbIds = new Set(mappedFromDb.map((m) => m.id));
-        const unSynced = localList.filter((l) => !dbIds.has(l.id) && !l.id.startsWith('fin-0'));
-        const combined = [...mappedFromDb, ...unSynced];
+        const unSyncedRaw = localList.filter((l) => !dbIds.has(l.id) && !l.id.startsWith('fin-0'));
+
+        // Normaliza IDs antigos (ex: "fin-17...") para UUID válido e sincroniza automaticamente com o Supabase
+        const unSyncedNormalized: FinancialRecord[] = unSyncedRaw.map((l) => ({
+          ...l,
+          id: ensureValidUuid(l.id),
+          company_id: l.company_id || companyId || null,
+        }));
+
+        const recordsToPush = [...recordsNeedingMetaSync, ...unSyncedNormalized];
+        if (recordsToPush.length > 0 && supabase) {
+          Promise.all(
+            recordsToPush.map((rec) => {
+              const encodedDescription = encodeFinancialDescription(rec.title, rec);
+              return supabase!.from('financial_transactions').upsert(
+                {
+                  id: rec.id,
+                  company_id: rec.company_id || companyId || null,
+                  description: encodedDescription,
+                  amount: rec.amount,
+                  type: rec.type === 'receita' ? 'income' : 'expense',
+                  category: rec.category,
+                  due_date: rec.due_date,
+                  paid: rec.status === 'pago',
+                  payment_date: rec.payment_date,
+                },
+                { onConflict: 'id' }
+              );
+            })
+          ).catch(() => {});
+        }
+
+        const combined = [...mappedFromDb, ...unSyncedNormalized];
 
         localStorage.setItem(localKey, JSON.stringify(combined));
         return combined;
@@ -3440,9 +4101,220 @@ export async function updateAbsenceJustificationStatus(
 }
 
 // ============================================================================
-// GESTÃO DE EQUIPAS DE TRABALHO (TEAMS)
+// GESTÃO DE EQUIPAS DE TRABALHO (TEAMS) — OPERACIONAL & HISTÓRICO COMPLETO
 // ============================================================================
 const getTeamsStorageKey = (companyId?: string) => `castello_teams_${companyId || 'default'}`;
+const TEAM_META_REGEX = /\n?<!--CASTELLO_TEAM_META:([\s\S]*?)-->/;
+
+function stripTeamMeta(notes?: string | null): string | null {
+  if (!notes) return null;
+  const cleaned = notes.replace(TEAM_META_REGEX, '').trim();
+  return cleaned || null;
+}
+
+function encodeTeamNotes(team: Team): string | null {
+  const cleanNotes = stripTeamMeta(team.notes) || '';
+  const meta = {
+    specialties: Array.isArray(team.specialties) ? team.specialties : [],
+    is_archived: Boolean(team.is_archived),
+    archived_at: team.archived_at || null,
+    allocation_end_date: team.allocation_end_date || null,
+    allocation_start_time: team.allocation_start_time || null,
+    allocation_end_time: team.allocation_end_time || null,
+    member_joined_at: team.member_joined_at || {},
+    member_specialties: team.member_specialties || {},
+    allocation_history: Array.isArray(team.allocation_history) ? team.allocation_history : [],
+    activity_log: Array.isArray(team.activity_log) ? team.activity_log : [],
+  };
+  return `${cleanNotes}\n<!--CASTELLO_TEAM_META:${JSON.stringify(meta)}-->`;
+}
+
+function decodeTeamRow(row: Record<string, unknown>): Team {
+  const rawNotes = typeof row.notes === 'string' ? row.notes : '';
+  let meta: Record<string, unknown> = {};
+  const match = rawNotes.match(TEAM_META_REGEX);
+  if (match && match[1]) {
+    try {
+      meta = JSON.parse(match[1]);
+    } catch (err) {
+      console.warn('Falha ao decodificar metadados de equipa:', err);
+    }
+  }
+  const cleanNotes = stripTeamMeta(rawNotes);
+  const leaderId = (row.leader_id as string | null) || null;
+  const rawMemberIds = Array.isArray(row.member_ids) ? (row.member_ids as string[]) : [];
+  const rawMemberNames = Array.isArray(row.member_names) ? (row.member_names as string[]) : [];
+
+  // Garante que não há duplicados nem o líder repetido na lista de integrantes comuns
+  const uniqueMemberIds: string[] = [];
+  const uniqueMemberNames: string[] = [];
+  const seenIds = new Set<string>();
+  rawMemberIds.forEach((id, idx) => {
+    if (!id || id === leaderId || seenIds.has(id)) return;
+    seenIds.add(id);
+    uniqueMemberIds.push(id);
+    uniqueMemberNames.push(rawMemberNames[idx] || 'Colaborador');
+  });
+
+  return {
+    id: String(row.id || ''),
+    company_id: (row.company_id as string | null) || null,
+    name: String(row.name || 'Equipa'),
+    leader_id: leaderId,
+    leader_name: String(row.leader_name || 'Sem líder definido'),
+    leader_phone: (row.leader_phone as string | null) || null,
+    member_ids: uniqueMemberIds,
+    member_names: uniqueMemberNames,
+    specialties: Array.isArray(row.specialties)
+      ? (row.specialties as string[])
+      : Array.isArray(meta.specialties)
+      ? (meta.specialties as string[])
+      : [],
+    current_site_id: (row.current_site_id as string | null) || null,
+    current_site_name: (row.current_site_name as string | null) || null,
+    allocated_at: (row.allocated_at as string | null) || null,
+    allocation_end_date:
+      (row.allocation_end_date as string | null) || (meta.allocation_end_date as string | null) || null,
+    allocation_start_time:
+      (row.allocation_start_time as string | null) || (meta.allocation_start_time as string | null) || null,
+    allocation_end_time:
+      (row.allocation_end_time as string | null) || (meta.allocation_end_time as string | null) || null,
+    is_archived: Boolean(row.is_archived ?? meta.is_archived),
+    archived_at: (row.archived_at as string | null) || (meta.archived_at as string | null) || null,
+    member_joined_at:
+      (row.member_joined_at as Record<string, string>) ||
+      (meta.member_joined_at as Record<string, string>) ||
+      {},
+    member_specialties:
+      (row.member_specialties as Record<string, string>) ||
+      (meta.member_specialties as Record<string, string>) ||
+      {},
+    allocation_history: Array.isArray(row.allocation_history)
+      ? (row.allocation_history as TeamAllocationRecord[])
+      : Array.isArray(meta.allocation_history)
+      ? (meta.allocation_history as TeamAllocationRecord[])
+      : [],
+    activity_log: Array.isArray(row.activity_log)
+      ? (row.activity_log as TeamActivityEvent[])
+      : Array.isArray(meta.activity_log)
+      ? (meta.activity_log as TeamActivityEvent[])
+      : [],
+    notes: cleanNotes,
+    created_at: (row.created_at as string | undefined) || undefined,
+  };
+}
+
+export interface TeamValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  sanitizedMemberIds: string[];
+  sanitizedMemberNames: string[];
+}
+
+/**
+ * Validação rigorosa de colaboradores e regras operacionais da equipa (Secção 3.3)
+ */
+export function validateTeamPayload(params: {
+  team: Partial<Team>;
+  employees: EmployeeProfile[];
+  allTeams: Team[];
+}): TeamValidationResult {
+  const { team, employees, allTeams } = params;
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!team.name || !team.name.trim()) {
+    errors.push('O nome da equipa é obrigatório.');
+  }
+
+  const empMap = new Map(employees.map((e) => [e.id, e]));
+  const leaderId = team.leader_id || null;
+
+  // 1. Verificar se o líder existe e está ativo
+  if (leaderId) {
+    const leaderEmp = empMap.get(leaderId);
+    if (!leaderEmp && employees.length > 0) {
+      errors.push('O líder selecionado não foi encontrado no registo de colaboradores.');
+    } else if (leaderEmp && !leaderEmp.is_active) {
+      errors.push(`O líder selecionado (${leaderEmp.full_name}) encontra-se inativo.`);
+    }
+  } else {
+    warnings.push('A equipa está sem líder responsável definido.');
+  }
+
+  // 2. Verificar colaboradores, impedir duplicados e impedir que o líder seja membro comum
+  const rawMemberIds = team.member_ids || [];
+  const rawMemberNames = team.member_names || [];
+  const sanitizedMemberIds: string[] = [];
+  const sanitizedMemberNames: string[] = [];
+  const seenIds = new Set<string>();
+
+  rawMemberIds.forEach((mId, idx) => {
+    if (!mId) return;
+    if (leaderId && mId === leaderId) {
+      warnings.push('O líder já integra a equipa como responsável e foi removido da lista de membros comuns.');
+      return;
+    }
+    if (seenIds.has(mId)) {
+      warnings.push('Colaborador duplicado na lista foi unificado automaticamente.');
+      return;
+    }
+    const emp = empMap.get(mId);
+    if (!emp && !mId.startsWith('legacy-') && employees.length > 0) {
+      errors.push(`Colaborador com ID "${mId}" não existe na empresa.`);
+      return;
+    }
+    if (emp && !emp.is_active && !team.is_archived) {
+      errors.push(`O colaborador "${emp.full_name}" está inativo e não pode ser adicionado a uma equipa operacional.`);
+      return;
+    }
+    seenIds.add(mId);
+    sanitizedMemberIds.push(mId);
+    sanitizedMemberNames.push(emp ? emp.full_name : rawMemberNames[idx] || 'Colaborador');
+  });
+
+  // 3. Identificar conflitos de alocação simultânea com outras equipas ativas em obra
+  const allTeamParticipantIds = [
+    ...(leaderId ? [leaderId] : []),
+    ...sanitizedMemberIds,
+  ];
+  const otherAllocatedTeams = allTeams.filter(
+    (other) =>
+      other.id !== team.id &&
+      !other.is_archived &&
+      Boolean(other.current_site_id || other.current_site_name)
+  );
+
+  for (const pId of allTeamParticipantIds) {
+    const conflictingTeams = otherAllocatedTeams.filter(
+      (other) => other.leader_id === pId || (other.member_ids || []).includes(pId)
+    );
+    if (conflictingTeams.length > 0) {
+      const empName = empMap.get(pId)?.full_name || 'Colaborador';
+      const conflictNames = conflictingTeams
+        .map((ct) => `${ct.name} (${ct.current_site_name || 'Em Obra'})`)
+        .join(', ');
+      if (team.current_site_id) {
+        errors.push(
+          `Conflito de alocação: ${empName} já está em alocação ativa na equipa ${conflictNames}.`
+        );
+      } else {
+        warnings.push(
+          `Atenção: ${empName} também pertence à equipa atualmente alocada ${conflictNames}.`
+        );
+      }
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    sanitizedMemberIds,
+    sanitizedMemberNames,
+  };
+}
 
 export async function getTeams(companyId?: string): Promise<Team[]> {
   const localKey = getTeamsStorageKey(companyId);
@@ -3454,8 +4326,9 @@ export async function getTeams(companyId?: string): Promise<Team[]> {
       }
       const { data, error } = await query;
       if (!error && data) {
-        localStorage.setItem(localKey, JSON.stringify(data));
-        return data as Team[];
+        const decoded = (data as Record<string, unknown>[]).map(decodeTeamRow);
+        localStorage.setItem(localKey, JSON.stringify(decoded));
+        return decoded;
       }
     } catch (e) {
       console.warn('Erro ao carregar equipas de Supabase:', e);
@@ -3465,54 +4338,588 @@ export async function getTeams(companyId?: string): Promise<Team[]> {
   const stored = localStorage.getItem(localKey);
   if (stored) {
     try {
-      return JSON.parse(stored) as Team[];
-    } catch {}
+      return (JSON.parse(stored) as Record<string, unknown>[]).map(decodeTeamRow);
+    } catch (err) {
+      console.warn('Erro ao ler equipas locais:', err);
+    }
   }
   return [];
 }
 
-export async function saveTeam(team: Partial<Team>, companyId?: string): Promise<Team> {
+export async function saveTeam(
+  team: Partial<Team>,
+  companyId?: string,
+  options?: { employees?: EmployeeProfile[]; skipValidationError?: boolean }
+): Promise<Team> {
   const localKey = getTeamsStorageKey(companyId);
+  const currentTeams = await getTeams(companyId);
+  const existingTeam = team.id ? currentTeams.find((t) => t.id === team.id) : undefined;
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Validação de regras no serviço (backend/camada de persistência)
+  const validation = validateTeamPayload({
+    team: { ...existingTeam, ...team },
+    employees: options?.employees || [],
+    allTeams: currentTeams,
+  });
+  if (!validation.valid && !options?.skipValidationError) {
+    throw new Error(validation.errors[0]);
+  }
+
+  // Preserva datas de entrada de cada membro e adiciona hoje para novos membros
+  const prevJoinedAt = { ...(existingTeam?.member_joined_at || {}), ...(team.member_joined_at || {}) };
+  for (const mId of validation.sanitizedMemberIds) {
+    if (!prevJoinedAt[mId]) {
+      prevJoinedAt[mId] = todayStr;
+    }
+  }
+  if (team.leader_id && !prevJoinedAt[team.leader_id]) {
+    prevJoinedAt[team.leader_id] = todayStr;
+  }
+
+  // Regista automaticamente alterações na composição ou líder no histórico de atividades
+  const activityLog: TeamActivityEvent[] = [
+    ...(team.activity_log || existingTeam?.activity_log || []),
+  ];
+  const nowIso = new Date().toISOString();
+
+  if (existingTeam) {
+    if (team.leader_id !== undefined && team.leader_id !== existingTeam.leader_id) {
+      activityLog.unshift({
+        id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        team_id: existingTeam.id,
+        type: 'lider',
+        title: 'Alteração de Líder Responsável',
+        description: `Líder alterado de "${existingTeam.leader_name || 'Nenhum'}" para "${team.leader_name || 'Nenhum'}".`,
+        author_name: 'Administração',
+        created_at: nowIso,
+      });
+    }
+
+    const prevSet = new Set(existingTeam.member_ids || []);
+    const nextSet = new Set(validation.sanitizedMemberIds);
+    const addedNames = validation.sanitizedMemberIds
+      .map((id, i) => (!prevSet.has(id) ? validation.sanitizedMemberNames[i] : null))
+      .filter(Boolean) as string[];
+    const removedNames = (existingTeam.member_ids || [])
+      .map((id, i) => (!nextSet.has(id) ? (existingTeam.member_names || [])[i] || id : null))
+      .filter(Boolean) as string[];
+
+    if (addedNames.length > 0 || removedNames.length > 0) {
+      const parts: string[] = [];
+      if (addedNames.length > 0) parts.push(`Adicionados: ${addedNames.join(', ')}`);
+      if (removedNames.length > 0) parts.push(`Removidos: ${removedNames.join(', ')}`);
+      activityLog.unshift({
+        id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        team_id: existingTeam.id,
+        type: 'composicao',
+        title: 'Atualização na Composição da Equipa',
+        description: parts.join(' • '),
+        author_name: 'Administração',
+        created_at: nowIso,
+      });
+    }
+  } else {
+    const newId = team.id || `team-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    activityLog.unshift({
+      id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      team_id: newId,
+      type: 'composicao',
+      title: 'Equipa Criada',
+      description: `Equipa "${team.name?.trim() || 'Nova Equipa'}" registada com líder ${team.leader_name || 'Não definido'} e ${validation.sanitizedMemberIds.length} integrante(s).`,
+      author_name: 'Administração',
+      created_at: nowIso,
+    });
+  }
+
   const newTeam: Team = {
-    id: team.id || `team-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    company_id: team.company_id || companyId || null,
-    name: team.name?.trim() || 'Nova Equipa',
-    leader_id: team.leader_id || null,
-    leader_name: team.leader_name?.trim() || 'Líder',
-    leader_phone: team.leader_phone || null,
-    member_ids: team.member_ids || [],
-    member_names: team.member_names || [],
-    current_site_id: team.current_site_id || null,
-    current_site_name: team.current_site_name || null,
-    allocated_at: team.allocated_at || null,
-    notes: team.notes?.trim() || null,
-    created_at: team.created_at || new Date().toISOString(),
+    id: team.id || existingTeam?.id || `team-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    company_id: team.company_id ?? existingTeam?.company_id ?? companyId ?? null,
+    name: team.name?.trim() || existingTeam?.name || 'Nova Equipa',
+    leader_id: team.leader_id !== undefined ? team.leader_id : existingTeam?.leader_id || null,
+    leader_name: team.leader_name?.trim() || existingTeam?.leader_name || 'Sem líder definido',
+    leader_phone: team.leader_phone !== undefined ? team.leader_phone : existingTeam?.leader_phone || null,
+    member_ids: validation.sanitizedMemberIds,
+    member_names: validation.sanitizedMemberNames,
+    specialties: team.specialties !== undefined ? team.specialties : existingTeam?.specialties || [],
+    current_site_id: team.current_site_id !== undefined ? team.current_site_id : existingTeam?.current_site_id || null,
+    current_site_name: team.current_site_name !== undefined ? team.current_site_name : existingTeam?.current_site_name || null,
+    allocated_at: team.allocated_at !== undefined ? team.allocated_at : existingTeam?.allocated_at || null,
+    allocation_end_date:
+      team.allocation_end_date !== undefined ? team.allocation_end_date : existingTeam?.allocation_end_date || null,
+    allocation_start_time:
+      team.allocation_start_time !== undefined ? team.allocation_start_time : existingTeam?.allocation_start_time || null,
+    allocation_end_time:
+      team.allocation_end_time !== undefined ? team.allocation_end_time : existingTeam?.allocation_end_time || null,
+    is_archived: team.is_archived !== undefined ? Boolean(team.is_archived) : Boolean(existingTeam?.is_archived),
+    archived_at: team.archived_at !== undefined ? team.archived_at : existingTeam?.archived_at || null,
+    member_joined_at: prevJoinedAt,
+    member_specialties:
+      team.member_specialties !== undefined ? team.member_specialties : existingTeam?.member_specialties || {},
+    allocation_history:
+      team.allocation_history !== undefined ? team.allocation_history : existingTeam?.allocation_history || [],
+    activity_log: activityLog.slice(0, 200),
+    notes: stripTeamMeta(team.notes !== undefined ? team.notes : existingTeam?.notes) || null,
+    created_at: team.created_at || existingTeam?.created_at || nowIso,
   };
 
   if (supabase) {
     try {
+      const dbPayload: Record<string, unknown> = {
+        id: newTeam.id,
+        company_id: newTeam.company_id,
+        name: newTeam.name,
+        leader_id: newTeam.leader_id,
+        leader_name: newTeam.leader_name,
+        leader_phone: newTeam.leader_phone,
+        member_ids: newTeam.member_ids,
+        member_names: newTeam.member_names,
+        current_site_id: newTeam.current_site_id,
+        current_site_name: newTeam.current_site_name,
+        allocated_at: newTeam.allocated_at,
+        notes: encodeTeamNotes(newTeam),
+        created_at: newTeam.created_at,
+      };
+
       const { data, error } = await supabase
         .from('teams')
-        .upsert(newTeam)
+        .upsert(dbPayload)
         .select('*')
         .single();
       if (!error && data) {
-        const current = await getTeams(companyId);
-        const exists = current.some((t) => t.id === data.id);
-        const updated = exists ? current.map((t) => (t.id === data.id ? (data as Team) : t)) : [...current, data as Team];
+        const decoded = decodeTeamRow(data as Record<string, unknown>);
+        const exists = currentTeams.some((t) => t.id === decoded.id);
+        const updated = exists
+          ? currentTeams.map((t) => (t.id === decoded.id ? decoded : t))
+          : [...currentTeams, decoded];
         localStorage.setItem(localKey, JSON.stringify(updated));
-        return data as Team;
+        return decoded;
       }
     } catch (e) {
       console.warn('Erro ao salvar equipa no Supabase:', e);
     }
   }
 
-  const current = await getTeams(companyId);
-  const exists = current.some((t) => t.id === newTeam.id);
-  const updated = exists ? current.map((t) => (t.id === newTeam.id ? newTeam : t)) : [...current, newTeam];
+  const exists = currentTeams.some((t) => t.id === newTeam.id);
+  const updated = exists
+    ? currentTeams.map((t) => (t.id === newTeam.id ? newTeam : t))
+    : [...currentTeams, newTeam];
   localStorage.setItem(localKey, JSON.stringify(updated));
   return newTeam;
+}
+
+/**
+ * Aloca ou agenda a alocação de uma equipa a uma obra (com registo no histórico e sincronização no Calendário)
+ */
+export async function allocateTeamToSiteWeb(params: {
+  team: Team;
+  site: ConstructionSite;
+  startDate?: string;
+  endDate?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  notes?: string | null;
+  transferReason?: string | null;
+  companyId?: string;
+  employees?: EmployeeProfile[];
+}): Promise<Team> {
+  const { team, site, startDate, endDate, startTime, endTime, notes, transferReason, companyId, employees } = params;
+  if (team.is_archived) {
+    throw new Error('Não é possível alocar uma equipa arquivada. Restaure a equipa primeiro.');
+  }
+
+  const nowIso = new Date().toISOString();
+  const todayStr = nowIso.slice(0, 10);
+  const effStartDate = startDate || todayStr;
+  const isImmediate = effStartDate <= todayStr;
+  const prevSiteId = team.current_site_id;
+  const prevSiteName = team.current_site_name;
+
+  // Se era uma transferência de outra obra ativa, fecha a alocação anterior e regista a sessão se aplicável
+  let updatedHistory: TeamAllocationRecord[] = [...(team.allocation_history || [])];
+  if (prevSiteId && prevSiteId !== site.id && isImmediate) {
+    if (team.allocated_at) {
+      const startMs = new Date(team.allocated_at).getTime();
+      const diffHours = Math.round(Math.max(0.1, (Date.now() - startMs) / (1000 * 60 * 60)) * 10) / 10;
+      if (diffHours > 0 && diffHours <= 24) {
+        const workersCount = (team.member_ids?.length || 0) + (team.leader_id ? 1 : 0);
+        await saveSiteWorkSession({
+          company_id: companyId || team.company_id || null,
+          site_id: prevSiteId,
+          team_id: team.id,
+          team_name: team.name,
+          leader_id: team.leader_id || null,
+          leader_name: team.leader_name,
+          workers_count: Math.max(1, workersCount),
+          work_date: todayStr,
+          hours_worked: diffHours,
+          man_hours: Math.round(diffHours * Math.max(1, workersCount) * 10) / 10,
+          member_ids_snapshot: [
+            ...(team.leader_id ? [team.leader_id] : []),
+            ...(team.member_ids || []),
+          ],
+          description: `Sessão concluída antes da transferência para ${site.name}${transferReason ? ` (Motivo: ${transferReason})` : ''}`,
+        });
+      }
+    }
+    updatedHistory = updatedHistory.map((rec) =>
+      rec.status === 'ativa' && rec.site_id === prevSiteId
+        ? {
+            ...rec,
+            status: 'transferida',
+            end_date: todayStr,
+            transfer_reason: transferReason || rec.transfer_reason || 'Transferência operacional',
+          }
+        : rec
+    );
+  }
+
+  const newRecord: TeamAllocationRecord = {
+    id: `alloc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    team_id: team.id,
+    team_name: team.name,
+    site_id: site.id,
+    site_name: site.name,
+    start_date: effStartDate,
+    end_date: endDate || site.expected_end_date || null,
+    start_time: startTime || null,
+    end_time: endTime || null,
+    status: isImmediate ? 'ativa' : 'planeada',
+    changed_by: 'Administração',
+    transfer_reason: transferReason || null,
+    notes: notes || null,
+    created_at: nowIso,
+  };
+  updatedHistory.unshift(newRecord);
+
+  const actEvent: TeamActivityEvent = {
+    id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    team_id: team.id,
+    type: 'alocacao',
+    title: prevSiteId && prevSiteId !== site.id ? `Transferência para ${site.name}` : isImmediate ? `Alocação em ${site.name}` : `Alocação Planeada: ${site.name}`,
+    description: [
+      prevSiteId && prevSiteId !== site.id ? `Transferida de ${prevSiteName || 'obra anterior'} para ${site.name}.` : `Associada à obra ${site.name}.`,
+      `Início: ${effStartDate.split('-').reverse().join('/')}${startTime ? ` às ${startTime}` : ''}`,
+      endDate ? `Fim previsto: ${endDate.split('-').reverse().join('/')}` : null,
+      transferReason ? `Motivo: ${transferReason}` : null,
+      notes ? `Obs: ${notes}` : null,
+    ]
+      .filter(Boolean)
+      .join(' • '),
+    site_id: site.id,
+    site_name: site.name,
+    author_name: 'Administração',
+    created_at: nowIso,
+  };
+
+  const allocatedTimestamp = isImmediate
+    ? startTime
+      ? `${effStartDate}T${startTime}:00`
+      : nowIso
+    : team.allocated_at;
+
+  const updatedTeam = await saveTeam(
+    {
+      ...team,
+      current_site_id: isImmediate ? site.id : team.current_site_id,
+      current_site_name: isImmediate ? site.name : team.current_site_name,
+      allocated_at: isImmediate ? allocatedTimestamp : team.allocated_at,
+      allocation_end_date: isImmediate ? endDate || site.expected_end_date || null : team.allocation_end_date,
+      allocation_start_time: isImmediate ? startTime || null : team.allocation_start_time,
+      allocation_end_time: isImmediate ? endTime || null : team.allocation_end_time,
+      allocation_history: updatedHistory,
+      activity_log: [actEvent, ...(team.activity_log || [])],
+    },
+    companyId,
+    { employees }
+  );
+
+  // Sincroniza no Calendário Central (sem criar fonte de dados duplicada)
+  try {
+    await saveCalendarEvent(
+      {
+        id: `sync-team-alloc-${team.id}-${effStartDate}-${site.id.slice(0, 6)}`,
+        company_id: companyId || team.company_id || null,
+        title: `Alocação: ${team.name} → ${site.name}`,
+        description: notes || `Equipa ${team.name} (${team.leader_name}) alocada na obra ${site.name}.`,
+        event_date: effStartDate,
+        end_date: endDate || effStartDate,
+        start_time: startTime || null,
+        end_time: endTime || null,
+        all_day: !startTime,
+        category: 'equipa',
+        event_subtype: 'alocacao',
+        site_id: site.id,
+        site_name: site.name,
+        assigned_employee_id: team.leader_id || null,
+        assigned_employee_name: team.leader_name,
+        assigned_team_id: team.id,
+        assigned_team_name: team.name,
+        priority: 'media',
+        status: isImmediate ? 'em_andamento' : 'planeado',
+        progress: isImmediate ? 50 : 0,
+        visible_to_client: false,
+        source_module: 'manual',
+        is_completed: false,
+      },
+      companyId,
+      true
+    );
+  } catch (e) {
+    console.warn('Aviso ao sincronizar alocação da equipa no calendário:', e);
+  }
+
+  return updatedTeam;
+}
+
+/**
+ * Termina a alocação ativa de uma equipa, preservando o histórico e registando a sessão de trabalho se aplicável
+ */
+export async function finishTeamAllocationWeb(params: {
+  team: Team;
+  recordSession?: boolean;
+  sessionHours?: number;
+  notes?: string;
+  companyId?: string;
+}): Promise<Team> {
+  const { team, recordSession = true, sessionHours, notes, companyId } = params;
+  const nowIso = new Date().toISOString();
+  const todayStr = nowIso.slice(0, 10);
+  const prevSiteId = team.current_site_id;
+  const prevSiteName = team.current_site_name;
+
+  if (prevSiteId && recordSession) {
+    let calcHours = sessionHours;
+    if (typeof calcHours !== 'number' && team.allocated_at) {
+      const startMs = new Date(team.allocated_at).getTime();
+      const rawDiff = (Date.now() - startMs) / (1000 * 60 * 60);
+      calcHours = Math.round(Math.min(12, Math.max(0.5, rawDiff)) * 10) / 10;
+    }
+    if (calcHours && calcHours > 0) {
+      const workersCount = (team.member_ids?.length || 0) + (team.leader_id ? 1 : 0);
+      await saveSiteWorkSession({
+        company_id: companyId || team.company_id || null,
+        site_id: prevSiteId,
+        team_id: team.id,
+        team_name: team.name,
+        leader_id: team.leader_id || null,
+        leader_name: team.leader_name,
+        workers_count: Math.max(1, workersCount),
+        work_date: todayStr,
+        hours_worked: calcHours,
+        man_hours: Math.round(calcHours * Math.max(1, workersCount) * 10) / 10,
+        member_ids_snapshot: [
+          ...(team.leader_id ? [team.leader_id] : []),
+          ...(team.member_ids || []),
+        ],
+        description: notes || `Alocação encerrada em ${prevSiteName || 'obra'} (${calcHours}h de sessão)`,
+      });
+    }
+  }
+
+  const updatedHistory = (team.allocation_history || []).map((rec) =>
+    rec.status === 'ativa'
+      ? {
+          ...rec,
+          status: 'concluida' as const,
+          end_date: todayStr,
+          notes: notes || rec.notes || null,
+        }
+      : rec
+  );
+
+  const actEvent: TeamActivityEvent = {
+    id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    team_id: team.id,
+    type: 'alocacao',
+    title: `Fim de Alocação: ${prevSiteName || 'Obra'}`,
+    description: `A equipa concluiu a alocação na obra "${prevSiteName || 'Obra'}" e passou para o estado Disponível.${notes ? ` (${notes})` : ''}`,
+    site_id: prevSiteId || null,
+    site_name: prevSiteName || null,
+    author_name: 'Administração',
+    created_at: nowIso,
+  };
+
+  return saveTeam(
+    {
+      ...team,
+      current_site_id: null,
+      current_site_name: null,
+      allocated_at: null,
+      allocation_end_date: null,
+      allocation_start_time: null,
+      allocation_end_time: null,
+      allocation_history: updatedHistory,
+      activity_log: [actEvent, ...(team.activity_log || [])],
+    },
+    companyId,
+    { skipValidationError: true }
+  );
+}
+
+/**
+ * Arquiva ou restaura uma equipa preservando todo o histórico, sessões, tarefas e associações (Secção 3.6)
+ */
+export async function toggleArchiveTeamWeb(
+  team: Team,
+  archive: boolean,
+  companyId?: string
+): Promise<Team> {
+  const nowIso = new Date().toISOString();
+  const todayStr = nowIso.slice(0, 10);
+
+  let updatedHistory = [...(team.allocation_history || [])];
+  if (archive && team.current_site_id) {
+    updatedHistory = updatedHistory.map((rec) =>
+      rec.status === 'ativa'
+        ? { ...rec, status: 'concluida' as const, end_date: todayStr }
+        : rec
+    );
+  }
+
+  const actEvent: TeamActivityEvent = {
+    id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    team_id: team.id,
+    type: 'arquivamento',
+    title: archive ? 'Equipa Arquivada' : 'Equipa Restaurada / Reativada',
+    description: archive
+      ? `Equipa arquivada preservando históricos, sessões e tarefas. Novas alocações bloqueadas enquanto arquivada.`
+      : `Equipa restaurada e novamente disponível para operações.`,
+    author_name: 'Administração',
+    created_at: nowIso,
+  };
+
+  return saveTeam(
+    {
+      ...team,
+      is_archived: archive,
+      archived_at: archive ? nowIso : null,
+      current_site_id: archive ? null : team.current_site_id,
+      current_site_name: archive ? null : team.current_site_name,
+      allocated_at: archive ? null : team.allocated_at,
+      allocation_end_date: archive ? null : team.allocation_end_date,
+      allocation_start_time: archive ? null : team.allocation_start_time,
+      allocation_end_time: archive ? null : team.allocation_end_time,
+      allocation_history: updatedHistory,
+      activity_log: [actEvent, ...(team.activity_log || [])],
+    },
+    companyId,
+    { skipValidationError: true }
+  );
+}
+
+/**
+ * Transfere um colaborador de uma equipa para outra preservando o histórico em ambas as equipas (Secção 2.2)
+ */
+export async function transferCollaboratorBetweenTeamsWeb(params: {
+  sourceTeam: Team;
+  targetTeam: Team;
+  employee: EmployeeProfile;
+  reason?: string;
+  companyId?: string;
+}): Promise<{ updatedSource: Team; updatedTarget: Team }> {
+  const { sourceTeam, targetTeam, employee, reason, companyId } = params;
+  const nowIso = new Date().toISOString();
+  const todayStr = nowIso.slice(0, 10);
+
+  // Remove da equipa de origem
+  const sourceIdx = (sourceTeam.member_ids || []).indexOf(employee.id);
+  const nextSourceIds = (sourceTeam.member_ids || []).filter((id) => id !== employee.id);
+  const nextSourceNames = (sourceTeam.member_names || []).filter((_, i) => i !== sourceIdx);
+
+  const sourceAct: TeamActivityEvent = {
+    id: `act-${Date.now()}-src`,
+    team_id: sourceTeam.id,
+    type: 'composicao',
+    title: `Transferência de Colaborador: ${employee.full_name}`,
+    description: `${employee.full_name} foi transferido para a equipa "${targetTeam.name}".${reason ? ` Motivo: ${reason}` : ''}`,
+    author_name: 'Administração',
+    created_at: nowIso,
+  };
+
+  const updatedSource = await saveTeam(
+    {
+      ...sourceTeam,
+      member_ids: nextSourceIds,
+      member_names: nextSourceNames,
+      activity_log: [sourceAct, ...(sourceTeam.activity_log || [])],
+    },
+    companyId,
+    { skipValidationError: true }
+  );
+
+  // Adiciona à equipa de destino (se ainda não for o líder nem membro)
+  const isTargetLeader = targetTeam.leader_id === employee.id;
+  const alreadyInTarget = isTargetLeader || (targetTeam.member_ids || []).includes(employee.id);
+  const nextTargetIds = alreadyInTarget
+    ? targetTeam.member_ids || []
+    : [...(targetTeam.member_ids || []), employee.id];
+  const nextTargetNames = alreadyInTarget
+    ? targetTeam.member_names || []
+    : [...(targetTeam.member_names || []), employee.full_name];
+
+  const targetAct: TeamActivityEvent = {
+    id: `act-${Date.now()}-dst`,
+    team_id: targetTeam.id,
+    type: 'composicao',
+    title: `Integração por Transferência: ${employee.full_name}`,
+    description: `${employee.full_name} foi integrado proveniente da equipa "${sourceTeam.name}".${reason ? ` Motivo: ${reason}` : ''}`,
+    author_name: 'Administração',
+    created_at: nowIso,
+  };
+
+  const updatedTarget = await saveTeam(
+    {
+      ...targetTeam,
+      member_ids: nextTargetIds,
+      member_names: nextTargetNames,
+      member_joined_at: {
+        ...(targetTeam.member_joined_at || {}),
+        [employee.id]: todayStr,
+      },
+      activity_log: [targetAct, ...(targetTeam.activity_log || [])],
+    },
+    companyId,
+    { skipValidationError: true }
+  );
+
+  return { updatedSource, updatedTarget };
+}
+
+/**
+ * Regista uma ocorrência ou evento operacional no histórico da equipa (Secção 2.5)
+ */
+export async function logTeamActivityWeb(params: {
+  team: Team;
+  type: TeamActivityEvent['type'];
+  title: string;
+  description: string;
+  siteId?: string | null;
+  siteName?: string | null;
+  authorName?: string;
+  companyId?: string;
+}): Promise<Team> {
+  const { team, type, title, description, siteId, siteName, authorName, companyId } = params;
+  const act: TeamActivityEvent = {
+    id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    team_id: team.id,
+    type,
+    title: title.trim(),
+    description: description.trim(),
+    site_id: siteId || team.current_site_id || null,
+    site_name: siteName || team.current_site_name || null,
+    author_name: authorName || 'Administração',
+    created_at: new Date().toISOString(),
+  };
+
+  return saveTeam(
+    {
+      ...team,
+      activity_log: [act, ...(team.activity_log || [])],
+    },
+    companyId,
+    { skipValidationError: true }
+  );
 }
 
 export async function deleteTeam(teamId: string, companyId?: string): Promise<void> {
@@ -3520,7 +4927,9 @@ export async function deleteTeam(teamId: string, companyId?: string): Promise<vo
   if (supabase) {
     try {
       await supabase.from('teams').delete().eq('id', teamId);
-    } catch {}
+    } catch (e) {
+      console.warn('Erro ao eliminar equipa no Supabase:', e);
+    }
   }
   const current = await getTeams(companyId);
   const filtered = current.filter((t) => t.id !== teamId);

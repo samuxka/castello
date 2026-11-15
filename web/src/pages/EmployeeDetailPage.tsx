@@ -187,8 +187,8 @@ export function EmployeeDetailPage({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || !email.trim() || !accessCode.trim()) {
-      alert('Preencha os campos obrigatórios (Nome, E-mail e PIN).');
+    if (!fullName.trim() || !email.trim()) {
+      alert('Preencha os campos obrigatórios (Nome e E-mail).');
       return;
     }
 
@@ -199,7 +199,7 @@ export function EmployeeDetailPage({
         company_id: employee.company_id,
         full_name: fullName.trim(),
         email: email.trim().toLowerCase(),
-        access_code: accessCode.trim(),
+        access_code: accessCode.trim() ? accessCode.trim() : employee.access_code,
         role: employee.role || 'funcionario',
         job_title: jobTitle.trim(),
         phone: phone.trim() || null,
@@ -241,23 +241,23 @@ export function EmployeeDetailPage({
         <div
           className="content-panel"
           style={{
-            padding: '24px 28px',
+            padding: '20px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
-            gap: 20,
+            gap: 16,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-            <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', minWidth: 0, flex: '1 1 250px' }}>
+            <div style={{ position: 'relative', width: 64, height: 64, flexShrink: 0 }}>
               {avatarUrl || employee.avatar_url ? (
                 <img
                   src={avatarUrl || employee.avatar_url || ''}
                   alt={employee.full_name}
                   style={{
-                    width: 72,
-                    height: 72,
+                    width: 64,
+                    height: 64,
                     borderRadius: '50%',
                     objectFit: 'cover',
                     border: '3px solid var(--primary)',
@@ -266,15 +266,15 @@ export function EmployeeDetailPage({
               ) : (
                 <div
                   style={{
-                    width: 72,
-                    height: 72,
+                    width: 64,
+                    height: 64,
                     borderRadius: '50%',
                     backgroundColor: 'var(--primary)',
                     color: '#ffffff',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: 28,
+                    fontSize: 24,
                     fontWeight: 800,
                     border: '3px solid var(--border-color)',
                   }}
@@ -315,16 +315,16 @@ export function EmployeeDetailPage({
                 />
               </label>
             </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <h1 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-main)', margin: 0, wordBreak: 'break-word' }}>
                   {employee.full_name}
                 </h1>
                 <span
                   style={{
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: 700,
-                    padding: '3px 8px',
+                    padding: '2px 8px',
                     borderRadius: 6,
                     backgroundColor: employee.is_active ? 'var(--success-subtle)' : 'var(--danger-subtle)',
                     color: employee.is_active ? 'var(--success)' : 'var(--danger)',
@@ -335,12 +335,22 @@ export function EmployeeDetailPage({
                   {employee.is_active ? 'Ativo' : 'Inativo'}
                 </span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6, color: 'var(--text-muted)', fontSize: 13 }}>
-                <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{employee.job_title}</span>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '4px 10px',
+                  marginTop: 6,
+                  color: 'var(--text-muted)',
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{employee.job_title}</span>
                 <span>•</span>
-                <span>PIN: <strong>{employee.access_code}</strong></span>
+                <span>PIN: <strong style={{ color: 'var(--text-main)' }}>{employee.access_code}</strong></span>
                 <span>•</span>
-                <span>{employee.email}</span>
+                <span style={{ wordBreak: 'break-all' }}>{employee.email}</span>
               </div>
             </div>
           </div>
@@ -351,10 +361,12 @@ export function EmployeeDetailPage({
             style={{
               display: 'inline-flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: 8,
               padding: '10px 18px',
               fontSize: 13,
               fontWeight: 700,
+              flex: '0 1 auto',
             }}
             onClick={() => setAddPresenceModalOpen(true)}
           >
@@ -417,7 +429,7 @@ export function EmployeeDetailPage({
         </div>
 
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 14 }}>
+          <div className="responsive-form-grid-2">
             <div className="flat-form-group">
               <label style={{ fontSize: 13, fontWeight: 700 }}>Nome Completo *</label>
               <input
@@ -438,7 +450,7 @@ export function EmployeeDetailPage({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 14 }}>
+          <div className="responsive-form-grid-3">
             <div className="flat-form-group">
               <label style={{ fontSize: 13, fontWeight: 700 }}>E-mail de Acesso ao App *</label>
               <input
@@ -474,7 +486,7 @@ export function EmployeeDetailPage({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 14 }}>
+          <div className="responsive-form-grid-4">
             <div className="flat-form-group">
               <label style={{ fontSize: 13, fontWeight: 700 }}>Taxa Horária (€/h)</label>
               <input
@@ -518,7 +530,7 @@ export function EmployeeDetailPage({
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+          <div className="flat-modal-actions" style={{ marginTop: 10 }}>
             <button
               type="submit"
               disabled={saving}
@@ -529,6 +541,7 @@ export function EmployeeDetailPage({
                 fontWeight: 700,
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: 8,
               }}
             >
@@ -729,20 +742,13 @@ export function EmployeeDetailPage({
             </div>
 
             {/* Grelha do Calendário */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(7, 1fr)',
-                gap: 8,
-                textAlign: 'center',
-              }}
-            >
+            <div className="emp-attendance-calendar-grid">
               {/* Cabeçalho dos dias da semana */}
               {WEEKDAYS_SHORT.map((w, idx) => (
                 <div
                   key={idx}
                   style={{
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: 700,
                     color: 'var(--text-muted)',
                     padding: '6px 0',
@@ -759,8 +765,8 @@ export function EmployeeDetailPage({
                   return (
                     <div
                       key={`empty-${idx}`}
+                      className="emp-attendance-cell"
                       style={{
-                        minHeight: 64,
                         backgroundColor: 'transparent',
                       }}
                     />
@@ -771,6 +777,7 @@ export function EmployeeDetailPage({
                 let borderColor = 'var(--border-color)';
                 let textColor = 'var(--text-main)';
                 let label = '';
+                let shortLabel = '';
                 let isClickable = Boolean(cell.justif);
 
                 if (cell.hasWorked) {
@@ -778,6 +785,7 @@ export function EmployeeDetailPage({
                   borderColor = 'var(--success)';
                   textColor = 'var(--success)';
                   label = 'PRESENÇA';
+                  shortLabel = 'PRES.';
                 } else if (cell.isAbsent) {
                   if (cell.justif) {
                     if (cell.justif.status === 'aprovada') {
@@ -785,48 +793,53 @@ export function EmployeeDetailPage({
                       borderColor = '#10B981';
                       textColor = '#10B981';
                       label = 'JUSTIFICADA';
+                      shortLabel = 'JUST.';
                     } else if (cell.justif.status === 'rejeitada') {
                       bgColor = 'rgba(220, 38, 38, 0.15)';
                       borderColor = 'var(--danger)';
                       textColor = 'var(--danger)';
                       label = 'FALTA REJEITADA';
+                      shortLabel = 'REJ.';
                     } else {
                       bgColor = 'rgba(245, 158, 11, 0.15)';
                       borderColor = 'var(--warning)';
                       textColor = 'var(--warning)';
                       label = 'JUSTIF. PENDENTE';
+                      shortLabel = 'PEND.';
                     }
                   } else {
                     bgColor = 'rgba(220, 38, 38, 0.10)';
                     borderColor = 'rgba(220, 38, 38, 0.4)';
                     textColor = 'var(--danger)';
                     label = 'FALTA';
+                    shortLabel = 'FALTA';
                   }
                 } else if (cell.isWeekend) {
                   bgColor = 'rgba(148, 163, 184, 0.04)';
                   textColor = 'var(--text-muted)';
                   label = 'FOLGA';
+                  shortLabel = 'FOLGA';
                 } else if (cell.isBeforeAdmission) {
                   bgColor = 'transparent';
                   textColor = 'var(--text-muted)';
                   label = 'PRÉ-ADMISSÃO';
+                  shortLabel = '—';
                 } else {
                   textColor = 'var(--text-muted)';
                   label = '';
+                  shortLabel = '';
                 }
 
                 return (
                   <div
                     key={cell.dateStr}
+                    className="emp-attendance-cell"
                     onClick={() => {
                       if (cell.justif) {
                         setActiveJustifModal(cell.justif);
                       }
                     }}
                     style={{
-                      minHeight: 68,
-                      padding: 6,
-                      borderRadius: 8,
                       backgroundColor: bgColor,
                       border: `1px solid ${borderColor}`,
                       display: 'flex',
@@ -835,6 +848,7 @@ export function EmployeeDetailPage({
                       alignItems: 'center',
                       cursor: isClickable ? 'pointer' : 'default',
                       transition: 'transform 0.15s, box-shadow 0.15s',
+                      overflow: 'hidden',
                     }}
                     title={
                       cell.justif
@@ -842,26 +856,45 @@ export function EmployeeDetailPage({
                         : undefined
                     }
                   >
-                    <span style={{ fontSize: 13, fontWeight: 700, color: textColor }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: textColor }}>
                       {cell.day}
                     </span>
 
                     {label && (
-                      <span
-                        style={{
-                          fontSize: 9,
-                          fontWeight: 700,
-                          padding: '2px 4px',
-                          borderRadius: 4,
-                          color: textColor,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 3,
-                        }}
-                      >
-                        {cell.justif && <FileText size={9} />}
-                        {label}
-                      </span>
+                      <>
+                        <span
+                          className="emp-attendance-label-desktop"
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            padding: '2px 4px',
+                            borderRadius: 4,
+                            color: textColor,
+                            alignItems: 'center',
+                            gap: 3,
+                          }}
+                        >
+                          {cell.justif && <FileText size={9} />}
+                          {label}
+                        </span>
+                        <span
+                          className="emp-attendance-label-mobile"
+                          style={{
+                            fontSize: 8,
+                            fontWeight: 800,
+                            color: textColor,
+                            alignItems: 'center',
+                            gap: 2,
+                            lineHeight: 1.1,
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {shortLabel}
+                        </span>
+                      </>
                     )}
                   </div>
                 );
@@ -1334,7 +1367,7 @@ export function EmployeeDetailPage({
                 Adicione a picagem de ponto para <strong>{employee.full_name}</strong>. Esta presença será registada com estado <strong>Aprovado</strong> diretamente.
               </p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-2">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Data do Ponto *</label>
                   <input
@@ -1358,7 +1391,7 @@ export function EmployeeDetailPage({
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 12 }}>
+              <div className="responsive-form-grid-2">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Tipo de Registo *</label>
                   <select
@@ -1400,7 +1433,7 @@ export function EmployeeDetailPage({
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10, borderTop: '1px solid var(--border-color)', paddingTop: 14 }}>
+              <div className="flat-modal-actions" style={{ marginTop: 10, borderTop: '1px solid var(--border-color)', paddingTop: 14 }}>
                 <button
                   type="button"
                   className="btn-flat-secondary"
@@ -1413,7 +1446,7 @@ export function EmployeeDetailPage({
                   type="submit"
                   className="btn-flat-primary"
                   disabled={submittingPresence}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                 >
                   <Check size={16} />
                   {submittingPresence ? 'Gravando Presença...' : 'Gravar Presença'}

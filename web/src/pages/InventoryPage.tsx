@@ -41,6 +41,13 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
   const [siteFilter, setSiteFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'name-asc' | 'name-desc' | 'qty-desc' | 'qty-asc' | 'price-desc'>('name-asc');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 900 : false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 900);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Modal de criação / edição
   const [modalOpen, setModalOpen] = useState(false);
@@ -437,8 +444,9 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
             </select>
           </div>
 
-          {/* Alternância de Visualização: Cards vs Lista */}
+          {/* Alternância de Visualização: Cards vs Lista (Oculto no Mobile) */}
           <div
+            className="view-mode-toggle-desktop"
             style={{
               display: 'flex',
               border: '1px solid var(--border-color)',
@@ -487,7 +495,7 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
       </div>
 
       {/* Visualização de Inventário: Tabela vs Cards */}
-      {viewMode === 'table' ? (
+      {viewMode === 'table' && !isMobile ? (
         <div className="content-panel" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto', maxHeight: '520px', overflowY: 'auto' }}>
             <table className="flat-table" style={{ width: '100%' }}>
@@ -795,28 +803,29 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
           >
             <div
               style={{
-                padding: '18px 24px',
+                padding: '16px 20px',
                 borderBottom: '1px solid var(--border-color)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                gap: 8,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Boxes size={20} color="var(--primary)" />
-                <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <Boxes size={20} color="var(--primary)" style={{ flexShrink: 0 }} />
+                <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
                   {editingItem ? 'Editar Item do Inventário' : 'Novo Item no Inventário'}
                 </h2>
               </div>
               <button
                 onClick={() => setModalOpen(false)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', flexShrink: 0 }}
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSave} style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <form onSubmit={handleSave} style={{ padding: '18px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div className="flat-form-group">
                 <label style={{ fontSize: 12, fontWeight: 700 }}>Nome do Item / Equipamento *</label>
                 <input
@@ -829,7 +838,7 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-2">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Categoria</label>
                   <select
@@ -857,7 +866,7 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-3">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Quantidade Total *</label>
                   <input
@@ -897,7 +906,7 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
+              <div className="responsive-form-grid-2">
                 <div className="flat-form-group">
                   <label style={{ fontSize: 12, fontWeight: 700 }}>Alocar na Obra</label>
                   <select
@@ -915,7 +924,7 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
                 </div>
 
                 <div className="flat-form-group">
-                  <label style={{ fontSize: 12, fontWeight: 700 }}>Valor Unitário (€ / R$)</label>
+                  <label style={{ fontSize: 12, fontWeight: 700 }}>Valor Unitário (€)</label>
                   <input
                     type="text"
                     placeholder="Ex: 450.00"
@@ -948,7 +957,7 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+              <div className="flat-modal-actions" style={{ marginTop: 10 }}>
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
@@ -961,7 +970,7 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
                   type="submit"
                   disabled={saving}
                   className="btn-flat-primary"
-                  style={{ padding: '10px 20px', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}
+                  style={{ padding: '10px 20px', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                 >
                   <Save size={16} />
                   {saving ? 'Salvando...' : 'Salvar Item'}

@@ -52,6 +52,7 @@ export interface SiteWorkSession {
   id: string;
   company_id?: string | null;
   site_id: string;
+  team_id?: string | null;
   team_name: string; // Ex: 'Equipa 1'
   leader_id?: string | null;
   leader_name: string;
@@ -71,6 +72,8 @@ export interface Team {
   leader_phone?: string | null;
   member_ids: string[];
   member_names: string[];
+  specialties?: string[];
+  is_archived?: boolean;
   current_site_id?: string | null;
   current_site_name?: string | null;
   allocated_at?: string | null;

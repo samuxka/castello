@@ -280,7 +280,9 @@ export function CalendarPage({
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [dateRangeStart, setDateRangeStart] = useState<string>('');
   const [dateRangeEnd, setDateRangeEnd] = useState<string>('');
-  const [showFiltersBar, setShowFiltersBar] = useState<boolean>(true);
+  const [showFiltersBar, setShowFiltersBar] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth > 768 : true
+  );
 
   // Drag & Drop state
   const [draggedEventId, setDraggedEventId] = useState<string | null>(null);
@@ -1261,7 +1263,7 @@ export function CalendarPage({
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className="calendar-header-actions">
           {/* Alternância entre visualizações: Dia, Semana, Mês e Cronograma */}
           <div
             style={{
@@ -1271,6 +1273,8 @@ export function CalendarPage({
               borderRadius: 8,
               padding: 3,
               gap: 2,
+              overflowX: 'auto',
+              maxWidth: '100%',
             }}
           >
             {(
@@ -1582,9 +1586,9 @@ export function CalendarPage({
             </h2>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end', minWidth: 0 }}>
             {/* Campo de Pesquisa */}
-            <div style={{ position: 'relative', minWidth: 230, flex: '0 1 280px' }}>
+            <div className="calendar-search-box">
               <Search
                 size={14}
                 color="var(--text-muted)"
@@ -1874,22 +1878,12 @@ export function CalendarPage({
           {/* VISUALIZAÇÃO 1: MENSAL (GRELHA + PAINEL DO DIA SELECIONADO)      */}
           {/* ================================================================ */}
           {viewMode === 'mes' && (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 2.3fr) minmax(300px, 1fr)',
-                gap: 18,
-                alignItems: 'start',
-                width: '100%',
-              }}
-            >
+            <div className="calendar-month-layout">
               {/* Grelha Mensal */}
-              <div className="content-panel" style={{ padding: 18, margin: 0, minWidth: 0, overflow: 'hidden' }}>
+              <div className="content-panel calendar-month-panel" style={{ margin: 0, minWidth: 0, overflow: 'hidden' }}>
                 <div
+                  className="calendar-month-grid"
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                    gap: 6,
                     marginBottom: 8,
                   }}
                 >
@@ -1911,19 +1905,13 @@ export function CalendarPage({
                   ))}
                 </div>
 
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                    gap: 6,
-                  }}
-                >
+                <div className="calendar-month-grid">
                   {/* Células vazias antes do dia 1 */}
                   {Array.from({ length: startingDayOffset }).map((_, idx) => (
                     <div
                       key={`empty-${idx}`}
+                      className="calendar-month-cell"
                       style={{
-                        minHeight: 104,
                         minWidth: 0,
                         borderRadius: 8,
                         backgroundColor: 'rgba(255,255,255,0.01)',
@@ -1945,6 +1933,7 @@ export function CalendarPage({
                     return (
                       <div
                         key={dateStr}
+                        className="calendar-month-cell"
                         onClick={() => setSelectedDateStr(dateStr)}
                         onDoubleClick={() => openNewEventModal(dateStr)}
                         onDragOver={(e) => {
@@ -1959,11 +1948,9 @@ export function CalendarPage({
                           handleDropOnDate(dateStr);
                         }}
                         style={{
-                          minHeight: 104,
                           minWidth: 0,
                           overflow: 'hidden',
                           borderRadius: 8,
-                          padding: 7,
                           backgroundColor: isDragTarget
                             ? 'var(--primary-subtle)'
                             : isSelected
@@ -2008,7 +1995,11 @@ export function CalendarPage({
                           )}
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4, minWidth: 0, width: '100%' }}>
+                        {/* Eventos em Texto (Desktop) */}
+                        <div
+                          className="calendar-event-pill-desktop"
+                          style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4, minWidth: 0, width: '100%' }}
+                        >
                           {dayEvts.slice(0, 3).map((ev) => {
                             const catMeta = getCategoryMeta(ev.category);
                             const hasConflict = conflictMap.has(ev.id);
@@ -2065,6 +2056,27 @@ export function CalendarPage({
                             </div>
                           )}
                         </div>
+
+                        {/* Indicadores Compactos por Cor (Mobile) */}
+                        {dayEvts.length > 0 && (
+                          <div className="calendar-event-dots-mobile">
+                            {dayEvts.slice(0, 4).map((ev) => {
+                              const catMeta = getCategoryMeta(ev.category);
+                              return (
+                                <span
+                                  key={ev.id}
+                                  style={{
+                                    width: 6,
+                                    height: 6,
+                                    borderRadius: '50%',
+                                    backgroundColor: catMeta.color,
+                                    display: 'inline-block',
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -2507,7 +2519,7 @@ export function CalendarPage({
                           cursor: 'pointer',
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flex: 1, minWidth: 260 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
                           {/* Bloco de Horário */}
                           <div
                             style={{
@@ -3033,7 +3045,7 @@ export function CalendarPage({
                       </div>
                     )}
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 12 }}>
+                    <div className="responsive-form-grid-2" style={{ fontSize: 12 }}>
                       <div className="content-panel" style={{ padding: 10, margin: 0 }}>
                         <div style={{ color: 'var(--text-muted)', fontSize: 10, fontWeight: 700 }}>PERÍODO</div>
                         <div style={{ fontWeight: 700, color: 'var(--text-main)', marginTop: 2 }}>

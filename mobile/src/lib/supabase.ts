@@ -1012,6 +1012,7 @@ export async function saveSiteWorkSessionMobile(
     id: session.id || `sess-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     company_id: session.company_id || null,
     site_id: session.site_id!,
+    team_id: session.team_id || null,
     team_name: session.team_name?.trim() || 'Equipa 1',
     leader_id: session.leader_id || null,
     leader_name: session.leader_name?.trim() || 'Líder da Equipa',
@@ -1024,7 +1025,12 @@ export async function saveSiteWorkSessionMobile(
 
   if (supabase) {
     try {
-      await supabase.from('site_work_sessions').upsert(newSession, { onConflict: 'id' });
+      const { error } = await supabase.from('site_work_sessions').upsert(newSession, { onConflict: 'id' });
+      if (error && (error.code === 'PGRST204' || error.message?.includes('team_id'))) {
+        const fallbackPayload = { ...newSession } as Record<string, unknown>;
+        delete fallbackPayload.team_id;
+        await supabase.from('site_work_sessions').upsert(fallbackPayload, { onConflict: 'id' });
+      }
     } catch (e) {
       console.warn('Erro ao gravar sessão no Supabase:', e);
     }
@@ -1043,6 +1049,25 @@ export async function saveSiteWorkSessionMobile(
 // GESTÃO DE EQUIPAS E ALOCAÇÃO DE OBRAS PELO LÍDER (MOBILE)
 // ----------------------------------------------------------------------------
 const TEAMS_MOBILE_KEY = '@castello:teams';
+const TEAM_META_REGEX_MOBILE = /\n?<!--CASTELLO_TEAM_META:([\s\S]*?)-->/;
+
+function decodeTeamMobileRow(row: any): Team {
+  const rawNotes = typeof row.notes === 'string' ? row.notes : '';
+  let meta: any = {};
+  const match = rawNotes.match(TEAM_META_REGEX_MOBILE);
+  if (match && match[1]) {
+    try {
+      meta = JSON.parse(match[1]);
+    } catch {}
+  }
+  const cleanNotes = rawNotes.replace(TEAM_META_REGEX_MOBILE, '').trim() || null;
+  return {
+    ...row,
+    specialties: Array.isArray(row.specialties) ? row.specialties : Array.isArray(meta.specialties) ? meta.specialties : [],
+    is_archived: Boolean(row.is_archived ?? meta.is_archived),
+    notes: cleanNotes,
+  } as Team;
+}
 
 export async function fetchTeamsMobile(companyId?: string): Promise<Team[]> {
   if (supabase) {
@@ -1053,8 +1078,9 @@ export async function fetchTeamsMobile(companyId?: string): Promise<Team[]> {
       }
       const { data, error } = await query;
       if (!error && data) {
-        await AsyncStorage.setItem(TEAMS_MOBILE_KEY, JSON.stringify(data));
-        return data as Team[];
+        const decoded = data.map(decodeTeamMobileRow);
+        await AsyncStorage.setItem(TEAMS_MOBILE_KEY, JSON.stringify(decoded));
+        return decoded;
       }
     } catch (e) {
       console.warn('Erro ao carregar equipas no mobile:', e);
@@ -1062,7 +1088,7 @@ export async function fetchTeamsMobile(companyId?: string): Promise<Team[]> {
   }
   try {
     const raw = await AsyncStorage.getItem(TEAMS_MOBILE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) return (JSON.parse(raw) as any[]).map(decodeTeamMobileRow);
   } catch {}
   return [];
 }
@@ -1072,7 +1098,7 @@ export async function fetchUserTeamMobile(
   employeeName: string,
   companyId?: string
 ): Promise<Team | null> {
-  const allTeams = await fetchTeamsMobile(companyId);
+  const allTeams = (await fetchTeamsMobile(companyId)).filter((t) => !t.is_archived);
   const normName = (employeeName || '').trim().toLowerCase();
   const found = allTeams.find(
     (t) =>
@@ -1147,6 +1173,7 @@ export async function changeTeamSiteMobile(params: {
     sessionCreated = await saveSiteWorkSessionMobile({
       company_id: companyId || team.company_id || null,
       site_id: team.current_site_id,
+      team_id: team.id,
       team_name: team.name,
       leader_id: team.leader_id,
       leader_name: team.leader_name,
@@ -1188,6 +1215,7 @@ export async function finishTeamShiftMobile(params: {
     sessionCreated = await saveSiteWorkSessionMobile({
       company_id: companyId || team.company_id || null,
       site_id: team.current_site_id,
+      team_id: team.id,
       team_name: team.name,
       leader_id: team.leader_id,
       leader_name: team.leader_name,
