@@ -14,6 +14,14 @@ import {
   UserCheck,
   Users,
   X,
+  FileText,
+  Upload,
+  Download,
+  Package,
+  Boxes,
+  ArrowRightLeft,
+  DollarSign,
+  TrendingUp,
 } from 'lucide-react';
 import {
   addSiteDailyLog,
@@ -22,23 +30,84 @@ import {
   getSiteDailyLogs,
   getSiteTasks,
   updateTaskStatus,
+  getSiteDocuments,
+  saveSiteDocument,
+  deleteSiteDocument,
+  getSiteInventory,
+  allocateItemToSite,
+  returnItemFromSite,
+  getInventoryItems,
+  getFinancialRecords,
+  getSiteMeasurements,
+  getSiteFinancialConfigs,
 } from '../lib/supabase';
-import { ConstructionSite, EmployeeProfile, SiteDailyLog, SiteTask } from '../types';
+import {
+  ConstructionSite,
+  EmployeeProfile,
+  SiteDailyLog,
+  SiteTask,
+  SiteDocument,
+  InventoryItem,
+  FinancialRecord,
+  SiteMeasurement,
+} from '../types';
+import {
+  computeSiteProfitability,
+  formatDatePt,
+  formatEuro,
+  getCategoryDefinition,
+  getEffectivePaidAmount,
+  getEffectiveRemainingAmount,
+} from '../lib/financialCalculations';
+import { uploadImageToCloudinary } from '../lib/cloudinary';
+import { customConfirm, customAlert } from '../context/DialogContext';
 
 interface SiteDetailPageProps {
   site: ConstructionSite;
   employees: EmployeeProfile[];
+  financialRecords?: FinancialRecord[];
   onBack: () => void;
+  onOpenFinancialModule?: () => void;
+  showNotice?: (msg: string) => void;
 }
 
 export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
   site,
   employees,
+  financialRecords,
   onBack,
+  onOpenFinancialModule,
+  showNotice,
 }) => {
   const [tasks, setTasks] = useState<SiteTask[]>([]);
   const [dailyLogs, setDailyLogs] = useState<SiteDailyLog[]>([]);
-  const [activeTab, setActiveTab] = useState<'tarefas' | 'diario'>('tarefas');
+  const [documents, setDocuments] = useState<SiteDocument[]>([]);
+  const [siteMaterials, setSiteMaterials] = useState<InventoryItem[]>([]);
+  const [warehouseStock, setWarehouseStock] = useState<InventoryItem[]>([]);
+  const [siteFinRecords, setSiteFinRecords] = useState<FinancialRecord[]>([]);
+  const [siteMeasurements, setSiteMeasurements] = useState<SiteMeasurement[]>([]);
+  const [activeTab, setActiveTab] = useState<'tarefas' | 'diario' | 'documentos' | 'materiais' | 'financeiro'>('tarefas');
+
+  // Modal Documento
+  const [docModalOpen, setDocModalOpen] = useState(false);
+  const [docName, setDocName] = useState('');
+  const [docType, setDocType] = useState('Contrato de Empreitada');
+  const [docFileUrl, setDocFileUrl] = useState('');
+  const [docFileSize, setDocFileSize] = useState('');
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [savingDoc, setSavingDoc] = useState(false);
+
+  // Modal Alocação de Material
+  const [allocateModalOpen, setAllocateModalOpen] = useState(false);
+  const [selectedStockItemId, setSelectedStockItemId] = useState('');
+  const [allocateQty, setAllocateQty] = useState(1);
+  const [allocatingMat, setAllocatingMat] = useState(false);
+
+  // Modal Devolução de Material
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
+  const [selectedReturnItem, setSelectedReturnItem] = useState<InventoryItem | null>(null);
+  const [returnQty, setReturnQty] = useState(1);
+  const [returningMat, setReturningMat] = useState(false);
 
   // Modal Nova Tarefa
   const [taskModalOpen, setTaskModalOpen] = useState(false);
@@ -64,17 +133,190 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
 
   const loadSiteData = async () => {
-    const [t, l] = await Promise.all([
-      getSiteTasks(site.id),
-      getSiteDailyLogs(site.id),
-    ]);
-    setTasks(t);
-    setDailyLogs(l);
+    try {
+      const [t, l, d, sm, wh, fin, meas] = await Promise.all([
+        getSiteTasks(site.id),
+        getSiteDailyLogs(site.id),
+        getSiteDocuments(site.id),
+        getSiteInventory(site.id, site.company_id || undefined),
+        getInventoryItems(site.company_id || undefined),
+        getFinancialRecords(site.company_id || undefined),
+        getSiteMeasurements(site.company_id || undefined, site.id),
+      ]);
+      setTasks(t);
+      setDailyLogs(l);
+      setDocuments(d);
+      setSiteMaterials(sm);
+      setWarehouseStock(wh);
+      setSiteFinRecords(fin.filter((r) => r.site_id === site.id && r.status !== 'cancelado'));
+      setSiteMeasurements(meas);
+    } catch (err) {
+      console.error('Erro ao carregar dados da obra:', err);
+    }
   };
 
   useEffect(() => {
     loadSiteData();
-  }, [site.id]);
+  }, [site.id, financialRecords?.length]);
+
+  const siteProfitability = React.useMemo(() => {
+    const configs = getSiteFinancialConfigs(site.company_id || undefined);
+    const activeRecs =
+      financialRecords && financialRecords.length > 0
+        ? financialRecords.filter((r) => r.site_id === site.id && r.status !== 'cancelado')
+        : siteFinRecords;
+    return computeSiteProfitability(site, activeRecs, siteMeasurements, configs);
+  }, [site, financialRecords, siteFinRecords, siteMeasurements]);
+
+  // Handlers de Documentos
+  const handleDocFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingDoc(true);
+    try {
+      const sizeStr = file.size > 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.round(file.size / 1024)} KB`;
+      setDocFileSize(sizeStr);
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = reader.result as string;
+        try {
+          const url = await uploadImageToCloudinary(base64, 'castello_docs');
+          setDocFileUrl(url);
+          if (!docName.trim()) {
+            setDocName(file.name.replace(/\.[^/.]+$/, ''));
+          }
+        } catch {
+          // Fallback para link local/base64
+          setDocFileUrl(base64);
+        } finally {
+          setUploadingDoc(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setUploadingDoc(false);
+      alert('Erro ao processar ficheiro.');
+    }
+  };
+
+  const handleSaveDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!docName.trim()) {
+      alert('Por favor introduza o nome do documento.');
+      return;
+    }
+    setSavingDoc(true);
+    try {
+      await saveSiteDocument({
+        site_id: site.id,
+        name: docName.trim(),
+        doc_type: docType,
+        file_url: docFileUrl.trim() || null,
+        file_size: docFileSize || 'PDF / Digital',
+        uploaded_at: new Date().toISOString().slice(0, 10),
+        status: 'disponivel',
+      });
+      await loadSiteData();
+      setDocModalOpen(false);
+      setDocName('');
+      setDocFileUrl('');
+      setDocFileSize('');
+      if (showNotice) showNotice('Documento anexado com sucesso e visível para o cliente!');
+    } catch (err: any) {
+      alert('Erro ao guardar documento: ' + (err.message || 'Tente novamente.'));
+    } finally {
+      setSavingDoc(false);
+    }
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    const confirmed = await customConfirm({
+      title: 'Eliminar Documento',
+      message: 'Tem a certeza que deseja eliminar este documento da obra?',
+      type: 'danger',
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) return;
+    try {
+      await deleteSiteDocument(site.id, docId);
+      await loadSiteData();
+      if (showNotice) showNotice('Documento removido.');
+    } catch (err: any) {
+      customAlert({
+        title: 'Erro ao Eliminar',
+        message: 'Erro ao eliminar documento: ' + (err.message || 'Tente novamente.'),
+        type: 'error',
+      });
+    }
+  };
+
+  // Handlers de Materiais
+  const handleAllocateMaterial = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStockItemId) {
+      alert('Selecione um material do armazém.');
+      return;
+    }
+    const item = warehouseStock.find((i) => i.id === selectedStockItemId);
+    if (!item) return;
+    if (allocateQty <= 0 || allocateQty > item.available_quantity) {
+      alert(`Quantidade inválida. Quantidade máxima disponível em armazém: ${item.available_quantity}`);
+      return;
+    }
+
+    setAllocatingMat(true);
+    try {
+      await allocateItemToSite(
+        item.id,
+        site.id,
+        site.name,
+        Number(allocateQty),
+        site.company_id || undefined
+      );
+      await loadSiteData();
+      setAllocateModalOpen(false);
+      setSelectedStockItemId('');
+      setAllocateQty(1);
+      if (showNotice) showNotice('Material alocado com sucesso a esta obra!');
+    } catch (err: any) {
+      alert('Erro ao alocar material: ' + (err.message || 'Tente novamente.'));
+    } finally {
+      setAllocatingMat(false);
+    }
+  };
+
+  const handleReturnMaterial = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedReturnItem) return;
+    const maxQty = selectedReturnItem.allocated_quantity || 0;
+    if (returnQty <= 0 || returnQty > maxQty) {
+      alert(`Quantidade inválida. Quantidade alocada nesta obra: ${maxQty}`);
+      return;
+    }
+
+    setReturningMat(true);
+    try {
+      await returnItemFromSite(
+        selectedReturnItem.id,
+        site.id,
+        Number(returnQty),
+        site.company_id || undefined
+      );
+      await loadSiteData();
+      setReturnModalOpen(false);
+      setSelectedReturnItem(null);
+      setReturnQty(1);
+      if (showNotice) showNotice('Material devolvido ao armazém central.');
+    } catch (err: any) {
+      alert('Erro ao devolver material: ' + (err.message || 'Tente novamente.'));
+    } finally {
+      setReturningMat(false);
+    }
+  };
 
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -257,7 +499,7 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
         </div>
       </div>
 
-      {/* Navegação entre Tarefas e Diário de Bordo */}
+      {/* Navegação entre Tarefas, Diário de Bordo, Documentos e Materiais */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <button
           className={`btn-flat-secondary ${activeTab === 'tarefas' ? 'active' : ''}`}
@@ -279,6 +521,51 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
           onClick={() => setActiveTab('diario')}
         >
           Diário de Bordo ({dailyLogs.length})
+        </button>
+
+        <button
+          className={`btn-flat-secondary ${activeTab === 'documentos' ? 'active' : ''}`}
+          style={{
+            backgroundColor: activeTab === 'documentos' ? 'var(--primary)' : 'var(--bg-card)',
+            color: activeTab === 'documentos' ? '#ffffff' : 'var(--text-main)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+          onClick={() => setActiveTab('documentos')}
+        >
+          <FileText size={15} />
+          Documentos ({documents.length})
+        </button>
+
+        <button
+          className={`btn-flat-secondary ${activeTab === 'materiais' ? 'active' : ''}`}
+          style={{
+            backgroundColor: activeTab === 'materiais' ? 'var(--primary)' : 'var(--bg-card)',
+            color: activeTab === 'materiais' ? '#ffffff' : 'var(--text-main)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+          onClick={() => setActiveTab('materiais')}
+        >
+          <Boxes size={15} />
+          Materiais na Obra ({siteMaterials.length})
+        </button>
+
+        <button
+          className={`btn-flat-secondary ${activeTab === 'financeiro' ? 'active' : ''}`}
+          style={{
+            backgroundColor: activeTab === 'financeiro' ? 'var(--primary)' : 'var(--bg-card)',
+            color: activeTab === 'financeiro' ? '#ffffff' : 'var(--text-main)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+          onClick={() => setActiveTab('financeiro')}
+        >
+          <DollarSign size={15} />
+          Resumo Financeiro ({formatEuro(siteProfitability.cashBalance)})
         </button>
       </div>
 
@@ -451,7 +738,14 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
                           <button
                             className="btn-flat-danger"
                             onClick={async () => {
-                              if (confirm('Excluir esta tarefa?')) {
+                              const confirmed = await customConfirm({
+                                title: 'Excluir Tarefa',
+                                message: `Tem certeza que deseja excluir a tarefa "${task.title}"?`,
+                                type: 'danger',
+                                confirmText: 'Excluir',
+                                cancelText: 'Cancelar',
+                              });
+                              if (confirmed) {
                                 await deleteTask(task.id);
                                 await loadSiteData();
                               }
@@ -515,6 +809,480 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
                 </div>
               ))
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* ABA 3: DOCUMENTOS DA OBRA                                          */}
+      {/* ================================================================== */}
+      {activeTab === 'documentos' && (
+        <div className="content-panel">
+          <div className="panel-header-inline" style={{ marginBottom: 16 }}>
+            <div>
+              <h2 className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FileText size={18} color="var(--primary)" />
+                Documentos & Contratos da Obra
+              </h2>
+              <p className="panel-subtitle">
+                Faça o upload dos documentos e ficheiros que ficam acessíveis tanto para a gestão quanto para o cliente na sua página de acompanhamento
+              </p>
+            </div>
+            <button
+              className="btn-flat-primary"
+              onClick={() => {
+                setDocName('');
+                setDocType('Contrato de Empreitada');
+                setDocFileUrl('');
+                setDocFileSize('');
+                setDocModalOpen(true);
+              }}
+            >
+              <Plus size={16} />
+              Anexar Documento
+            </button>
+          </div>
+
+          {documents.length === 0 ? (
+            <div
+              style={{
+                padding: '40px 20px',
+                textAlign: 'center',
+                backgroundColor: 'var(--bg-card-subtle)',
+                borderRadius: 8,
+                border: '1px dashed var(--border-color)',
+              }}
+            >
+              <FileText size={36} color="var(--text-muted)" style={{ margin: '0 auto 10px' }} />
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)', margin: '0 0 4px' }}>
+                Nenhum documento anexado ainda
+              </h3>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 16px', maxWidth: 440, marginLeft: 'auto', marginRight: 'auto' }}>
+                Anexe contratos, orçamentos, alvarás ou plantas da obra. Os ficheiros carregados aqui aparecem instantaneamente na aba de documentos do cliente.
+              </p>
+              <button
+                className="btn-flat-primary"
+                onClick={() => setDocModalOpen(true)}
+                style={{ padding: '7px 16px', fontSize: 12 }}
+              >
+                <Upload size={14} /> Carregar Primeiro Documento
+              </button>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="flat-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)', fontSize: 11 }}>
+                    <th style={{ padding: '10px 14px' }}>Nome do Documento</th>
+                    <th style={{ padding: '10px 14px' }}>Tipo</th>
+                    <th style={{ padding: '10px 14px' }}>Data de Envio</th>
+                    <th style={{ padding: '10px 14px' }}>Tamanho</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {documents.map((doc) => (
+                    <tr key={doc.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '12px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div
+                            style={{
+                              width: 34,
+                              height: 34,
+                              borderRadius: 6,
+                              backgroundColor: 'var(--primary-subtle)',
+                              color: 'var(--primary)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FileText size={16} />
+                          </div>
+                          <div>
+                            <strong style={{ color: 'var(--text-main)', display: 'block' }}>
+                              {doc.name}
+                            </strong>
+                            <span style={{ fontSize: 11, color: 'var(--success)' }}>
+                              Disponível no Portal do Cliente
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td style={{ padding: '12px 14px' }}>
+                        <span className="badge-flat primary" style={{ fontSize: 11 }}>
+                          {doc.doc_type}
+                        </span>
+                      </td>
+
+                      <td style={{ padding: '12px 14px', color: 'var(--text-muted)' }}>
+                        {doc.uploaded_at ? doc.uploaded_at.split('-').reverse().join('/') : '-'}
+                      </td>
+
+                      <td style={{ padding: '12px 14px', color: 'var(--text-muted)' }}>
+                        {doc.file_size || 'Digital'}
+                      </td>
+
+                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', gap: 6 }}>
+                          {doc.file_url ? (
+                            <a
+                              href={doc.file_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn-flat-secondary"
+                              style={{
+                                padding: '5px 10px',
+                                fontSize: 11,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                textDecoration: 'none',
+                              }}
+                              title="Abrir ou descarregar ficheiro"
+                            >
+                              <Download size={13} /> Abrir
+                            </a>
+                          ) : (
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)', padding: '5px 8px' }}>
+                              Sem anexo
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDocument(doc.id)}
+                            className="btn-icon"
+                            style={{ padding: 6, color: 'var(--danger)' }}
+                            title="Eliminar Documento"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* ABA 4: MATERIAIS ALOCADOS NA OBRA                                  */}
+      {/* ================================================================== */}
+      {activeTab === 'materiais' && (
+        <div className="content-panel">
+          <div className="panel-header-inline" style={{ marginBottom: 16 }}>
+            <div>
+              <h2 className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Boxes size={18} color="var(--primary)" />
+                Materiais e Equipamentos na Obra
+              </h2>
+              <p className="panel-subtitle">
+                Controle de ferramentas, máquinas e consumíveis enviados do armazém central para o estaleiro desta obra (visível na app e web)
+              </p>
+            </div>
+            <button
+              className="btn-flat-primary"
+              onClick={() => {
+                setSelectedStockItemId(warehouseStock.find((i) => i.available_quantity > 0)?.id || '');
+                setAllocateQty(1);
+                setAllocateModalOpen(true);
+              }}
+            >
+              <Plus size={16} />
+              Alocar Material do Armazém
+            </button>
+          </div>
+
+          {siteMaterials.length === 0 ? (
+            <div
+              style={{
+                padding: '40px 20px',
+                textAlign: 'center',
+                backgroundColor: 'var(--bg-card-subtle)',
+                borderRadius: 8,
+                border: '1px dashed var(--border-color)',
+              }}
+            >
+              <Boxes size={36} color="var(--text-muted)" style={{ margin: '0 auto 10px' }} />
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)', margin: '0 0 4px' }}>
+                Nenhum material alocado a esta obra
+              </h3>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 16px', maxWidth: 440, marginLeft: 'auto', marginRight: 'auto' }}>
+                Aloque materiais, ferramentas ou equipamentos do seu inventário central para esta obra para que a equipa no local possa consultá-los no telemóvel.
+              </p>
+              <button
+                className="btn-flat-primary"
+                onClick={() => setAllocateModalOpen(true)}
+                style={{ padding: '7px 16px', fontSize: 12 }}
+              >
+                <Plus size={14} /> Alocar Primeiro Material
+              </button>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="flat-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)', fontSize: 11 }}>
+                    <th style={{ padding: '10px 14px' }}>Material / Ferramenta</th>
+                    <th style={{ padding: '10px 14px' }}>Categoria</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'center' }}>Qtd. na Obra</th>
+                    <th style={{ padding: '10px 14px' }}>Estado / Condição</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {siteMaterials.map((item) => (
+                    <tr key={item.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '12px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div
+                            style={{
+                              width: 34,
+                              height: 34,
+                              borderRadius: 6,
+                              backgroundColor: 'var(--primary-subtle)',
+                              color: 'var(--primary)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <Package size={16} />
+                          </div>
+                          <div>
+                            <strong style={{ color: 'var(--text-main)', display: 'block' }}>
+                              {item.name}
+                            </strong>
+                            {item.serial_number && (
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                S/N: {item.serial_number}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td style={{ padding: '12px 14px' }}>
+                        <span className="badge-flat secondary" style={{ fontSize: 11 }}>
+                          {item.category}
+                        </span>
+                      </td>
+
+                      <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                        <span
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 800,
+                            color: 'var(--primary)',
+                            padding: '3px 8px',
+                            borderRadius: 4,
+                            backgroundColor: 'var(--primary-subtle)',
+                          }}
+                        >
+                          {item.allocated_quantity} un.
+                        </span>
+                      </td>
+
+                      <td style={{ padding: '12px 14px' }}>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: item.condition === 'novo' ? 'var(--success)' : 'var(--text-muted)',
+                            textTransform: 'capitalize',
+                          }}
+                        >
+                          {item.condition}
+                        </span>
+                      </td>
+
+                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedReturnItem(item);
+                            setReturnQty(item.allocated_quantity || 1);
+                            setReturnModalOpen(true);
+                          }}
+                          className="btn-flat-secondary"
+                          style={{
+                            padding: '5px 10px',
+                            fontSize: 11,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                          title="Devolver ao Armazém Central"
+                        >
+                          <ArrowRightLeft size={13} /> Devolver
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ABA 5: RESUMO FINANCEIRO DA OBRA (INTEGRADO COM MÓDULO FINANCEIRO) */}
+      {activeTab === 'financeiro' && (
+        <div className="content-panel">
+          <div className="panel-header-inline">
+            <div>
+              <h2 className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <TrendingUp size={18} color="var(--primary)" />
+                Resumo Financeiro, Orçamento e Rentabilidade da Obra
+              </h2>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Dados sincronizados diretamente com o Centro de Gestão Financeira e Autos de Medição
+              </p>
+            </div>
+            {onOpenFinancialModule && (
+              <button className="btn-flat-primary" onClick={onOpenFinancialModule}>
+                <DollarSign size={15} /> Abrir Módulo Financeiro Completo
+              </button>
+            )}
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))',
+              gap: 12,
+              marginBottom: 18,
+            }}
+          >
+            <div className="kpi-box" style={{ borderTop: '3px solid #2563EB' }}>
+              <div className="kpi-label">Valor Contratado (Cliente)</div>
+              <div className="kpi-value" style={{ fontSize: 19 }}>
+                {formatEuro(siteProfitability.contractedValue, true)}
+              </div>
+              <div className="kpi-detail">Receita contratual prevista</div>
+            </div>
+
+            <div className="kpi-box" style={{ borderTop: '3px solid #64748B' }}>
+              <div className="kpi-label">Orçamento Interno de Custos</div>
+              <div className="kpi-value" style={{ fontSize: 19 }}>
+                {formatEuro(siteProfitability.costBudget, true)}
+              </div>
+              <div className="kpi-detail">
+                Consumido/Comprometido: {siteProfitability.budgetCommittedPct.toFixed(1)}%
+              </div>
+            </div>
+
+            <div className="kpi-box" style={{ borderTop: '3px solid #10B981' }}>
+              <div className="kpi-label">Receitas Recebidas</div>
+              <div className="kpi-value" style={{ fontSize: 19, color: '#10B981' }}>
+                {formatEuro(siteProfitability.receivedRevenue, true)}
+              </div>
+              <div className="kpi-detail">
+                Pendente a receber: {formatEuro(siteProfitability.pendingRevenue)}
+              </div>
+            </div>
+
+            <div className="kpi-box" style={{ borderTop: '3px solid #EF4444' }}>
+              <div className="kpi-label">Custos Realizados (Pagos)</div>
+              <div className="kpi-value" style={{ fontSize: 19, color: '#EF4444' }}>
+                {formatEuro(siteProfitability.realizedCosts, true)}
+              </div>
+              <div className="kpi-detail">
+                Comprometidos a pagar: {formatEuro(siteProfitability.committedCosts)}
+              </div>
+            </div>
+
+            <div className="kpi-box" style={{ borderTop: '3px solid #7C3AED' }}>
+              <div className="kpi-label">Saldo de Caixa da Obra</div>
+              <div
+                className="kpi-value"
+                style={{
+                  fontSize: 19,
+                  color: siteProfitability.cashBalance >= 0 ? '#2563EB' : '#EF4444',
+                }}
+              >
+                {formatEuro(siteProfitability.cashBalance, true)}
+              </div>
+              <div className="kpi-detail">
+                Margem Prevista: {siteProfitability.forecastMarginPct.toFixed(1)}% (
+                {formatEuro(siteProfitability.forecastResult)})
+              </div>
+            </div>
+          </div>
+
+          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>
+            Movimentações Financeiras desta Obra ({siteFinRecords.length})
+          </h3>
+          <div className="flat-table-wrap">
+            <table className="flat-table">
+              <thead>
+                <tr>
+                  <th>Vencimento</th>
+                  <th>Descrição</th>
+                  <th>Categoria</th>
+                  <th>Entidade</th>
+                  <th style={{ textAlign: 'right' }}>Valor (€)</th>
+                  <th style={{ textAlign: 'center' }}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {siteFinRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                      Nenhum lançamento financeiro registado para esta obra.
+                    </td>
+                  </tr>
+                ) : (
+                  siteFinRecords.map((r) => {
+                    const cat = getCategoryDefinition(r.category, r.type);
+                    const paid = getEffectivePaidAmount(r);
+                    const rem = getEffectiveRemainingAmount(r);
+                    return (
+                      <tr key={r.id}>
+                        <td>{formatDatePt(r.due_date)}</td>
+                        <td style={{ fontWeight: 700 }}>{r.title}</td>
+                        <td>{cat.label}</td>
+                        <td>{r.entity_name || '—'}</td>
+                        <td
+                          style={{
+                            textAlign: 'right',
+                            fontWeight: 800,
+                            color: r.type === 'receita' ? '#10B981' : '#EF4444',
+                          }}
+                        >
+                          {r.type === 'receita' ? '+' : '-'} {formatEuro(r.amount, true)}
+                          {r.status === 'parcial' && (
+                            <div style={{ fontSize: 10.5, color: '#F59E0B' }}>
+                              Pago: {formatEuro(paid)} • Restante: {formatEuro(rem)}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span
+                            className={`badge-flat ${
+                              r.status === 'pago'
+                                ? 'success'
+                                : r.status === 'parcial'
+                                ? 'warning'
+                                : 'primary'
+                            }`}
+                          >
+                            {r.status.toUpperCase()}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -789,6 +1557,316 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
                 boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* MODAL: ANEXAR NOVO DOCUMENTO                                       */}
+      {/* ================================================================== */}
+      {docModalOpen && (
+        <div className="flat-modal-backdrop">
+          <div className="flat-modal-box" style={{ maxWidth: 500, width: '95%' }}>
+            <div className="flat-modal-header">
+              <h3 className="flat-modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FileText size={18} color="var(--primary)" />
+                Anexar Documento à Obra
+              </h3>
+              <button
+                type="button"
+                className="btn-flat-secondary"
+                onClick={() => setDocModalOpen(false)}
+                disabled={savingDoc}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDocument}>
+              <div className="flat-form-group">
+                <label>Nome do Documento *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Contrato Assinado, Orçamento Aprovado, Planta..."
+                  value={docName}
+                  onChange={(e) => setDocName(e.target.value)}
+                />
+              </div>
+
+              <div className="flat-form-group">
+                <label>Tipo de Documento *</label>
+                <select value={docType} onChange={(e) => setDocType(e.target.value)}>
+                  <option value="Contrato de Empreitada">Contrato de Empreitada</option>
+                  <option value="Orçamento Detalhado">Orçamento Detalhado</option>
+                  <option value="Alvará / Licença">Alvará / Licença Camarária</option>
+                  <option value="Projeto de Arquitetura">Projeto de Arquitetura / Plantas</option>
+                  <option value="Certificado Energético">Certificado Energético / Segurança</option>
+                  <option value="Aditamento / Auto">Aditamento / Auto de Medição</option>
+                  <option value="Outro Documento">Outro Documento</option>
+                </select>
+              </div>
+
+              <div className="flat-form-group">
+                <label style={{ display: 'block', marginBottom: 6 }}>Ficheiro do Documento (Upload)</label>
+                {docFileUrl ? (
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: 8,
+                      backgroundColor: 'var(--bg-card-subtle)',
+                      border: '1px solid var(--border-color)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <FileText size={20} color="var(--primary)" />
+                      <div>
+                        <strong style={{ fontSize: 13, color: 'var(--text-main)', display: 'block' }}>
+                          Ficheiro carregado com sucesso
+                        </strong>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          Tamanho: {docFileSize || 'Normal'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDocFileUrl('');
+                        setDocFileSize('');
+                      }}
+                      className="btn-icon"
+                      style={{ color: 'var(--danger)' }}
+                      title="Remover ficheiro"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ) : (
+                  <label
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      padding: '24px 16px',
+                      borderRadius: 8,
+                      border: '2px dashed var(--border-color)',
+                      backgroundColor: 'var(--bg-card-subtle)',
+                      cursor: uploadingDoc ? 'not-allowed' : 'pointer',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <input
+                      type="file"
+                      accept=".pdf,image/*,.doc,.docx"
+                      style={{ display: 'none' }}
+                      disabled={uploadingDoc}
+                      onChange={handleDocFileUpload}
+                    />
+                    <div
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--primary-subtle)',
+                        color: 'var(--primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {uploadingDoc ? (
+                        <div style={{ width: 18, height: 18, border: '2px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                      ) : (
+                        <Upload size={18} />
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)' }}>
+                        {uploadingDoc ? 'A enviar ficheiro para a nuvem...' : 'Clique para carregar o ficheiro (PDF ou Imagem)'}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        Upload direto do seu dispositivo
+                      </div>
+                    </div>
+                  </label>
+                )}
+              </div>
+
+              <div className="flat-modal-actions" style={{ marginTop: 16 }}>
+                <button
+                  type="button"
+                  className="btn-flat-secondary"
+                  onClick={() => setDocModalOpen(false)}
+                  disabled={savingDoc}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn-flat-primary"
+                  disabled={savingDoc || uploadingDoc}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  {savingDoc ? 'A guardar...' : 'Anexar à Obra'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* MODAL: ALOCAR MATERIAL DO ARMAZÉM                                  */}
+      {/* ================================================================== */}
+      {allocateModalOpen && (
+        <div className="flat-modal-backdrop">
+          <div className="flat-modal-box" style={{ maxWidth: 480, width: '95%' }}>
+            <div className="flat-modal-header">
+              <h3 className="flat-modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Boxes size={18} color="var(--primary)" />
+                Alocar Material do Armazém Central
+              </h3>
+              <button
+                type="button"
+                className="btn-flat-secondary"
+                onClick={() => setAllocateModalOpen(false)}
+                disabled={allocatingMat}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAllocateMaterial}>
+              <div className="flat-form-group">
+                <label>Selecionar Material / Ferramenta do Armazém *</label>
+                <select
+                  required
+                  value={selectedStockItemId}
+                  onChange={(e) => {
+                    setSelectedStockItemId(e.target.value);
+                    setAllocateQty(1);
+                  }}
+                >
+                  <option value="">Selecione o material...</option>
+                  {warehouseStock
+                    .filter((i) => i.available_quantity > 0)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} ({item.category}) — Disponível: {item.available_quantity} un.
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {selectedStockItemId && (
+                <div className="flat-form-group">
+                  <label>
+                    Quantidade a Alocar para esta Obra * (Máx:{' '}
+                    {warehouseStock.find((i) => i.id === selectedStockItemId)?.available_quantity || 1})
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={warehouseStock.find((i) => i.id === selectedStockItemId)?.available_quantity || 1}
+                    required
+                    value={allocateQty}
+                    onChange={(e) => setAllocateQty(Math.max(1, parseInt(e.target.value) || 1))}
+                  />
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    O estoque será debitado do armazém central e passará a constar como alocado nesta obra.
+                  </span>
+                </div>
+              )}
+
+              <div className="flat-modal-actions" style={{ marginTop: 16 }}>
+                <button
+                  type="button"
+                  className="btn-flat-secondary"
+                  onClick={() => setAllocateModalOpen(false)}
+                  disabled={allocatingMat}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn-flat-primary"
+                  disabled={allocatingMat || !selectedStockItemId}
+                >
+                  {allocatingMat ? 'A alocar...' : 'Confirmar Alocação'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* MODAL: DEVOLVER MATERIAL AO ARMAZÉM                                */}
+      {/* ================================================================== */}
+      {returnModalOpen && selectedReturnItem && (
+        <div className="flat-modal-backdrop">
+          <div className="flat-modal-box" style={{ maxWidth: 440, width: '95%' }}>
+            <div className="flat-modal-header">
+              <h3 className="flat-modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ArrowRightLeft size={18} color="var(--primary)" />
+                Devolver Material ao Armazém
+              </h3>
+              <button
+                type="button"
+                className="btn-flat-secondary"
+                onClick={() => setReturnModalOpen(false)}
+                disabled={returningMat}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleReturnMaterial}>
+              <div style={{ marginBottom: 14 }}>
+                <strong style={{ fontSize: 14, color: 'var(--text-main)', display: 'block' }}>
+                  {selectedReturnItem.name}
+                </strong>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Alocado atualmente nesta obra: <strong>{selectedReturnItem.allocated_quantity} un.</strong>
+                </span>
+              </div>
+
+              <div className="flat-form-group">
+                <label>Quantidade a Devolver *</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={selectedReturnItem.allocated_quantity || 1}
+                  required
+                  value={returnQty}
+                  onChange={(e) => setReturnQty(Math.max(1, parseInt(e.target.value) || 1))}
+                />
+              </div>
+
+              <div className="flat-modal-actions" style={{ marginTop: 16 }}>
+                <button
+                  type="button"
+                  className="btn-flat-secondary"
+                  onClick={() => setReturnModalOpen(false)}
+                  disabled={returningMat}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn-flat-primary"
+                  disabled={returningMat}
+                >
+                  {returningMat ? 'A devolver...' : 'Confirmar Devolução'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -51,14 +51,20 @@ export function DashboardCalendarCard({
 
   const getCategoryBadgeClass = (category: string) => {
     switch (category) {
+      case 'etapa_obra':
       case 'obra':
         return 'primary';
-      case 'reuniao':
+      case 'tarefa':
+        return 'primary';
+      case 'material':
+      case 'pagamento':
         return 'warning';
+      case 'equipa':
+        return 'success';
+      case 'compromisso':
+      case 'reuniao':
       case 'inspecao':
         return 'danger';
-      case 'pagamento':
-        return 'success';
       default:
         return 'primary';
     }
@@ -66,8 +72,17 @@ export function DashboardCalendarCard({
 
   const getCategoryLabel = (category: string) => {
     switch (category) {
+      case 'etapa_obra':
       case 'obra':
-        return 'Obra';
+        return 'Etapa Obra';
+      case 'tarefa':
+        return 'Tarefa';
+      case 'material':
+        return 'Material';
+      case 'equipa':
+        return 'Equipa';
+      case 'compromisso':
+        return 'Compromisso';
       case 'reuniao':
         return 'Reunião';
       case 'inspecao':
@@ -75,7 +90,7 @@ export function DashboardCalendarCard({
       case 'pagamento':
         return 'Pagamento';
       default:
-        return 'Outro';
+        return 'Evento';
     }
   };
 

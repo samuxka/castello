@@ -13,6 +13,8 @@ import {
   VehicleInventoryItem,
   InventoryItem,
   InventoryMovement,
+  SiteWorkSession,
+  Team,
 } from '../types';
 import { getLocalDateString } from '../utils/timeCalculations';
 
@@ -971,3 +973,262 @@ export async function submitVehicleReport(
   await AsyncStorage.setItem(localKey, JSON.stringify(updated));
   return newReport;
 }
+
+// ----------------------------------------------------------------------------
+// SESSÕES DE TRABALHO DA EQUIPA NA OBRA (Registadas pelo Líder da Equipa)
+// ----------------------------------------------------------------------------
+const SITE_SESSIONS_KEY = '@castello:site_work_sessions_';
+
+export async function fetchSiteWorkSessionsMobile(siteId: string): Promise<SiteWorkSession[]> {
+  const localKey = `${SITE_SESSIONS_KEY}${siteId}`;
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('site_work_sessions')
+        .select('*')
+        .eq('site_id', siteId)
+        .order('work_date', { ascending: false });
+      if (!error && data) {
+        await AsyncStorage.setItem(localKey, JSON.stringify(data));
+        return data as SiteWorkSession[];
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar sessões de trabalho:', e);
+    }
+  }
+  try {
+    const raw = await AsyncStorage.getItem(localKey);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+
+export async function saveSiteWorkSessionMobile(
+  session: Partial<SiteWorkSession>
+): Promise<SiteWorkSession> {
+  const localKey = `${SITE_SESSIONS_KEY}${session.site_id}`;
+  const now = new Date().toISOString();
+  const newSession: SiteWorkSession = {
+    id: session.id || `sess-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    company_id: session.company_id || null,
+    site_id: session.site_id!,
+    team_name: session.team_name?.trim() || 'Equipa 1',
+    leader_id: session.leader_id || null,
+    leader_name: session.leader_name?.trim() || 'Líder da Equipa',
+    workers_count: Number(session.workers_count || 1),
+    work_date: session.work_date || now.slice(0, 10),
+    hours_worked: Number(session.hours_worked || 0),
+    description: session.description?.trim() || null,
+    created_at: session.created_at || now,
+  };
+
+  if (supabase) {
+    try {
+      await supabase.from('site_work_sessions').upsert(newSession, { onConflict: 'id' });
+    } catch (e) {
+      console.warn('Erro ao gravar sessão no Supabase:', e);
+    }
+  }
+
+  const current = await fetchSiteWorkSessionsMobile(session.site_id!);
+  const exists = current.some((s) => s.id === newSession.id);
+  const updated = exists
+    ? current.map((s) => (s.id === newSession.id ? newSession : s))
+    : [newSession, ...current];
+  await AsyncStorage.setItem(localKey, JSON.stringify(updated));
+  return newSession;
+}
+
+// ----------------------------------------------------------------------------
+// GESTÃO DE EQUIPAS E ALOCAÇÃO DE OBRAS PELO LÍDER (MOBILE)
+// ----------------------------------------------------------------------------
+const TEAMS_MOBILE_KEY = '@castello:teams';
+
+export async function fetchTeamsMobile(companyId?: string): Promise<Team[]> {
+  if (supabase) {
+    try {
+      let query = supabase.from('teams').select('*').order('name', { ascending: true });
+      if (companyId) {
+        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+      }
+      const { data, error } = await query;
+      if (!error && data) {
+        await AsyncStorage.setItem(TEAMS_MOBILE_KEY, JSON.stringify(data));
+        return data as Team[];
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar equipas no mobile:', e);
+    }
+  }
+  try {
+    const raw = await AsyncStorage.getItem(TEAMS_MOBILE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+
+export async function fetchUserTeamMobile(
+  employeeId: string,
+  employeeName: string,
+  companyId?: string
+): Promise<Team | null> {
+  const allTeams = await fetchTeamsMobile(companyId);
+  const normName = (employeeName || '').trim().toLowerCase();
+  const found = allTeams.find(
+    (t) =>
+      t.leader_id === employeeId ||
+      t.leader_name?.trim().toLowerCase() === normName ||
+      (t.leader_name && normName && (normName.includes(t.leader_name.trim().toLowerCase()) || t.leader_name.trim().toLowerCase().includes(normName))) ||
+      t.member_ids?.includes(employeeId) ||
+      t.member_names?.some((m) => {
+        const mn = (m || '').trim().toLowerCase();
+        return mn === normName || (mn && normName && (normName.includes(mn) || mn.includes(normName)));
+      })
+  );
+  return found || null;
+}
+
+export async function allocateTeamToSiteMobile(
+  teamId: string,
+  siteId: string,
+  siteName: string,
+  companyId?: string
+): Promise<Team> {
+  const now = new Date().toISOString();
+  const updatePayload = {
+    current_site_id: siteId,
+    current_site_name: siteName,
+    allocated_at: now,
+  };
+
+  if (supabase) {
+    try {
+      await supabase.from('teams').update(updatePayload).eq('id', teamId);
+    } catch (e) {
+      console.warn('Erro ao alocar obra para equipa:', e);
+    }
+  }
+
+  const allTeams = await fetchTeamsMobile(companyId);
+  const updatedList = allTeams.map((t) =>
+    t.id === teamId ? { ...t, ...updatePayload } : t
+  );
+  await AsyncStorage.setItem(TEAMS_MOBILE_KEY, JSON.stringify(updatedList));
+  const updatedTeam = updatedList.find((t) => t.id === teamId)!;
+  return updatedTeam;
+}
+
+export async function changeTeamSiteMobile(params: {
+  team: Team;
+  newSiteId: string;
+  newSiteName: string;
+  companyId?: string;
+}): Promise<{ session: SiteWorkSession | null; updatedTeam: Team }> {
+  const { team, newSiteId, newSiteName, companyId } = params;
+  let sessionCreated: SiteWorkSession | null = null;
+  const now = new Date().toISOString();
+
+  // 1. Se estava alocada em outra obra, calcula as horas e registra no site_work_sessions da obra anterior
+  if (team.current_site_id && team.allocated_at) {
+    const startMs = new Date(team.allocated_at).getTime();
+    const endMs = Date.now();
+    const diffHours = Math.max(0.1, (endMs - startMs) / (1000 * 60 * 60));
+    const roundedHours = Math.round(diffHours * 10) / 10;
+
+    const startTimeFormatted = new Date(team.allocated_at).toLocaleTimeString('pt-PT', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const endTimeFormatted = new Date().toLocaleTimeString('pt-PT', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    sessionCreated = await saveSiteWorkSessionMobile({
+      company_id: companyId || team.company_id || null,
+      site_id: team.current_site_id,
+      team_name: team.name,
+      leader_id: team.leader_id,
+      leader_name: team.leader_name,
+      workers_count: (team.member_ids?.length || team.member_names?.length || 0) + 1,
+      work_date: now.slice(0, 10),
+      hours_worked: roundedHours,
+      description: `Turno cumprido das ${startTimeFormatted} às ${endTimeFormatted} (${roundedHours}h) antes da deslocação para ${newSiteName}`,
+    });
+  }
+
+  // 2. Aloca para a nova obra com o novo timestamp
+  const updatedTeam = await allocateTeamToSiteMobile(team.id, newSiteId, newSiteName, companyId);
+  return { session: sessionCreated, updatedTeam };
+}
+
+export async function finishTeamShiftMobile(params: {
+  team: Team;
+  companyId?: string;
+}): Promise<{ session: SiteWorkSession | null; updatedTeam: Team }> {
+  const { team, companyId } = params;
+  let sessionCreated: SiteWorkSession | null = null;
+  const now = new Date().toISOString();
+
+  if (team.current_site_id && team.allocated_at) {
+    const startMs = new Date(team.allocated_at).getTime();
+    const endMs = Date.now();
+    const diffHours = Math.max(0.1, (endMs - startMs) / (1000 * 60 * 60));
+    const roundedHours = Math.round(diffHours * 10) / 10;
+
+    const startTimeFormatted = new Date(team.allocated_at).toLocaleTimeString('pt-PT', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const endTimeFormatted = new Date().toLocaleTimeString('pt-PT', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    sessionCreated = await saveSiteWorkSessionMobile({
+      company_id: companyId || team.company_id || null,
+      site_id: team.current_site_id,
+      team_name: team.name,
+      leader_id: team.leader_id,
+      leader_name: team.leader_name,
+      workers_count: (team.member_ids?.length || team.member_names?.length || 0) + 1,
+      work_date: now.slice(0, 10),
+      hours_worked: roundedHours,
+      description: `Turno finalizado das ${startTimeFormatted} às ${endTimeFormatted} (${roundedHours}h trabalhadas no local)`,
+    });
+  }
+
+  const updatePayload = {
+    current_site_id: null,
+    current_site_name: null,
+    allocated_at: null,
+  };
+
+  if (supabase) {
+    try {
+      await supabase.from('teams').update(updatePayload).eq('id', team.id);
+    } catch {}
+  }
+
+  const allTeams = await fetchTeamsMobile(companyId);
+  const updatedList = allTeams.map((t) =>
+    t.id === team.id ? { ...t, ...updatePayload } : t
+  );
+  await AsyncStorage.setItem(TEAMS_MOBILE_KEY, JSON.stringify(updatedList));
+  const updatedTeam = updatedList.find((t) => t.id === team.id)!;
+  return { session: sessionCreated, updatedTeam };
+}
+
+// ----------------------------------------------------------------------------
+// MATERIAIS NA OBRA (SITE INVENTORY) MOBILE
+// ----------------------------------------------------------------------------
+export async function fetchSiteInventoryMobile(
+  siteId: string,
+  companyId?: string
+): Promise<InventoryItem[]> {
+  const stock = await fetchAvailableStock(companyId);
+  return stock.filter(
+    (item) => item.allocated_site_id === siteId && (item.allocated_quantity || 0) > 0
+  );
+}
+

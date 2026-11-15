@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { ConstructionSite, InventoryCategory, InventoryCondition, InventoryItem } from '../types';
 import { deleteInventoryItem, getInventoryItems, saveInventoryItem } from '../lib/supabase';
+import { customConfirm, customAlert } from '../context/DialogContext';
 
 interface InventoryPageProps {
   companyId?: string;
@@ -141,7 +142,14 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
   };
 
   const handleDelete = async (item: InventoryItem) => {
-    if (window.confirm(`Tem certeza que deseja excluir "${item.name}" do inventário?`)) {
+    const confirmed = await customConfirm({
+      title: 'Excluir do Inventário',
+      message: `Tem certeza que deseja excluir "${item.name}" do inventário?`,
+      type: 'danger',
+      confirmText: 'Excluir Item',
+      cancelText: 'Cancelar',
+    });
+    if (confirmed) {
       await deleteInventoryItem(item.id, companyId);
       await loadItems();
       showNotice('Item removido do inventário.');
@@ -489,7 +497,7 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
                   <th>Categoria</th>
                   <th>Quantidades</th>
                   <th>Localização / Obra</th>
-                  <th>Estado</th>
+                  <th style={{ textAlign: 'center', width: 70 }}>Estado</th>
                   <th style={{ textAlign: 'right' }}>Ações</th>
                 </tr>
               </thead>
@@ -570,21 +578,19 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
                           )}
                         </td>
 
-                        <td>
+                        <td style={{ textAlign: 'center' }}>
                           <span
+                            title={badge.label}
                             style={{
-                              fontSize: 11,
-                              fontWeight: 700,
-                              padding: '3px 8px',
-                              borderRadius: 6,
-                              backgroundColor: badge.bg,
-                              color: badge.text,
-                              border: `1px solid ${badge.border}`,
-                              textTransform: 'uppercase',
+                              width: 14,
+                              height: 14,
+                              borderRadius: '50%',
+                              backgroundColor: badge.text,
+                              boxShadow: `0 0 8px ${badge.border}`,
+                              display: 'inline-block',
+                              cursor: 'help',
                             }}
-                          >
-                            {badge.label}
-                          </span>
+                          />
                         </td>
 
                         <td style={{ textAlign: 'right' }}>

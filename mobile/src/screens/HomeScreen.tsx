@@ -8,9 +8,11 @@ import {
   ScrollView,
   AppState,
   AppStateStatus,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ConstructionSite, EmployeeProfile, EntryType, TimeEntry } from '../types';
+import { ConstructionSite, EmployeeProfile, EntryType, Team, TimeEntry } from '../types';
 import {
   calculateDailySummary,
   calculateMonthlySummaries,
@@ -26,6 +28,14 @@ import {
   startLunchTimer,
   stopRingingAlarm,
 } from '../utils/alarmService';
+import {
+  fetchSites,
+  fetchUserTeamMobile,
+  allocateTeamToSiteMobile,
+  changeTeamSiteMobile,
+  finishTeamShiftMobile,
+} from '../lib/supabase';
+import { showCustomAlert, showCustomConfirm } from '../context/DialogContext';
 
 interface HomeScreenProps {
   employee: EmployeeProfile;
@@ -77,6 +87,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     primary: '#2563EB',
     cardSubtle: isDark ? '#172554' : '#EFF6FF',
     primaryBorder: isDark ? '#1E3A8A' : '#BFDBFE',
+    success: '#16A34A',
   };
 
   const [now, setNow] = useState<Date>(new Date());
@@ -159,6 +170,138 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     alarmTriggeredRef.current = false;
     setAlarmRinging(false);
     setLunchTimer(null);
+  };
+
+  // ==========================================================================
+  // GESTÃO DE EQUIPA E ALOCAÇÃO DE OBRA PELO LÍDER
+  // ==========================================================================
+  const [userTeam, setUserTeam] = useState<Team | null>(null);
+  const [loadingTeam, setLoadingTeam] = useState<boolean>(false);
+  const [teamModalVisible, setTeamModalVisible] = useState<boolean>(false);
+  const [sitesList, setSitesList] = useState<ConstructionSite[]>([]);
+  const [siteSelectModalVisible, setSiteSelectModalVisible] = useState<boolean>(false);
+  const [teamActionLoading, setTeamActionLoading] = useState<boolean>(false);
+
+  const loadTeamData = async () => {
+    setLoadingTeam(true);
+    try {
+      const team = await fetchUserTeamMobile(
+        employee.id,
+        employee.full_name,
+        employee.company_id || undefined
+      );
+      setUserTeam(team);
+    } catch (e) {
+      console.warn('Erro ao carregar equipa do colaborador:', e);
+    } finally {
+      setLoadingTeam(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTeamData();
+    fetchSites()
+      .then((data) => setSitesList(data || []))
+      .catch(() => {});
+  }, [employee.id]);
+
+  const isTeamLeader = Boolean(
+    userTeam &&
+      (userTeam.leader_id === employee.id ||
+        userTeam.leader_name?.trim().toLowerCase() === employee.full_name?.trim().toLowerCase() ||
+        employee.role === 'patrao')
+  );
+
+  const getElapsedWorkTimeString = () => {
+    if (!userTeam?.allocated_at) return '0h 00m';
+    const startMs = new Date(userTeam.allocated_at).getTime();
+    const diffMs = Math.max(0, now.getTime() - startMs);
+    const totalMinutes = Math.floor(diffMs / (1000 * 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h ${minutes < 10 ? '0' : ''}${minutes}m`;
+  };
+
+  const handleSelectSiteToAllocate = async (selectedSite: ConstructionSite) => {
+    if (!userTeam) return;
+    setTeamActionLoading(true);
+    try {
+      if (userTeam.current_site_id && userTeam.current_site_id !== selectedSite.id) {
+        // Mudar de Obra: Salva horas na anterior e aloca na nova
+        const { session, updatedTeam } = await changeTeamSiteMobile({
+          team: userTeam,
+          newSiteId: selectedSite.id,
+          newSiteName: selectedSite.name,
+          companyId: employee.company_id || undefined,
+        });
+        setUserTeam(updatedTeam);
+        setSiteSelectModalVisible(false);
+        const hoursTxt = session ? `${session.hours_worked}h` : '';
+        showCustomAlert(
+          'Obra Alterada com Sucesso!',
+          `A equipa ${updatedTeam.name} foi deslocada para ${selectedSite.name}.${
+            hoursTxt ? ` Foram contabilizadas e enviadas ${hoursTxt} trabalhadas na obra anterior para o portal do cliente.` : ''
+          }`,
+          [{ text: 'OK' }],
+          'success'
+        );
+      } else {
+        // Primeira alocação do dia
+        const updated = await allocateTeamToSiteMobile(
+          userTeam.id,
+          selectedSite.id,
+          selectedSite.name,
+          employee.company_id || undefined
+        );
+        setUserTeam(updated);
+        setSiteSelectModalVisible(false);
+        showCustomAlert(
+          'Equipa Alocada!',
+          `A equipa ${updated.name} iniciou os trabalhos na obra ${selectedSite.name}. O tempo de permanência começou a contar agora.`,
+          [{ text: 'OK' }],
+          'success'
+        );
+      }
+    } catch (err: any) {
+      showCustomAlert('Erro', err.message || 'Falha ao alocar obra.', [{ text: 'OK' }], 'danger');
+    } finally {
+      setTeamActionLoading(false);
+    }
+  };
+
+  const handleConfirmFinishShift = () => {
+    if (!userTeam || !userTeam.current_site_id) return;
+    showCustomConfirm(
+      'Finalizar Turno na Obra?',
+      `Deseja concluir o trabalho da equipa ${userTeam.name} na obra "${userTeam.current_site_name}"? As horas de hoje serão gravadas automaticamente para o relatório do cliente.`,
+      async () => {
+        setTeamActionLoading(true);
+        try {
+          const { session, updatedTeam } = await finishTeamShiftMobile({
+            team: userTeam,
+            companyId: employee.company_id || undefined,
+          });
+          setUserTeam(updatedTeam);
+          const hoursTxt = session ? `${session.hours_worked}h` : '';
+          showCustomAlert(
+            'Turno Finalizado!',
+            `Turno encerrado com sucesso.${
+              hoursTxt ? ` Foram registadas ${hoursTxt} de trabalho da equipa para o cliente.` : ''
+            }`,
+            [{ text: 'OK' }],
+            'success'
+          );
+        } catch (err: any) {
+          showCustomAlert('Erro', err.message || 'Erro ao finalizar turno.', [{ text: 'OK' }], 'danger');
+        } finally {
+          setTeamActionLoading(false);
+        }
+      },
+      undefined,
+      'Sim, Finalizar Turno',
+      'Cancelar',
+      'danger'
+    );
   };
 
   const handleSelectOption = async (type: EntryType) => {
@@ -438,6 +581,90 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </View>
       </View>
 
+      {/* BOTÃO DA EQUIPA (EMBAIXO DOS REGISTOS DE HOJE) */}
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => {
+          loadTeamData();
+          setTeamModalVisible(true);
+        }}
+        style={[
+          styles.flatCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingVertical: 14,
+            paddingHorizontal: 16,
+          },
+        ]}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+          <View
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 8,
+              backgroundColor: colors.cardSubtle,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="people" size={22} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textMain }}>
+                {userTeam ? userTeam.name : 'Equipa'}
+              </Text>
+              {isTeamLeader && (
+                <View
+                  style={{
+                    backgroundColor: colors.primary,
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                    borderRadius: 4,
+                  }}
+                >
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFFFFF' }}>
+                    LÍDER
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text
+              style={{
+                fontSize: 12,
+                color: userTeam?.current_site_name ? colors.success : colors.textMuted,
+                marginTop: 2,
+                fontWeight: userTeam?.current_site_name ? '600' : '400',
+              }}
+              numberOfLines={1}
+            >
+              {userTeam
+                ? userTeam.current_site_name
+                  ? `Em Obra: ${userTeam.current_site_name} (${getElapsedWorkTimeString()})`
+                  : 'Nenhuma obra alocada hoje'
+                : 'Toque para consultar a sua equipa'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: 5,
+              backgroundColor: userTeam?.current_site_name ? '#16A34A' : '#94A3B8',
+            }}
+          />
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </View>
+      </TouchableOpacity>
+
       {/* MODAL DIALOG REGISTAR PONTO */}
       <Modal visible={dialogVisible} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
@@ -586,6 +813,414 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 Desligar Alarme
               </Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ================================================================== */}
+      {/* MODAL: INFORMAÇÕES DA EQUIPA & ALOCAÇÃO DE OBRA PELO LÍDER          */}
+      {/* ================================================================== */}
+      <Modal visible={teamModalVisible} transparent animationType="slide">
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalBox,
+              {
+                backgroundColor: colors.card,
+                maxHeight: '85%',
+                width: '92%',
+                padding: 20,
+              },
+            ]}
+          >
+            {/* Cabeçalho do Modal */}
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 8,
+                    backgroundColor: colors.cardSubtle,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="people" size={20} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={[styles.modalTitleText, { color: colors.textMain }]}>
+                    {userTeam ? userTeam.name : 'Equipa'}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                    {isTeamLeader ? 'Você é o líder desta equipa' : 'Membro da equipa'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setTeamModalVisible(false)} style={{ padding: 4 }}>
+                <Ionicons name="close" size={24} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ marginTop: 12 }}>
+              {!userTeam ? (
+                <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                  <Ionicons name="alert-circle-outline" size={40} color={colors.textMuted} />
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: colors.textMain,
+                      fontWeight: '600',
+                      marginTop: 10,
+                      textAlign: 'center',
+                    }}
+                  >
+                    Nenhuma equipa atribuída
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 4, textAlign: 'center' }}>
+                    Ainda não foi adicionado a nenhuma equipa. Contacte o administrador da firma.
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ gap: 16 }}>
+                  {/* CARD DE STATUS DA OBRA HOJE */}
+                  <View
+                    style={{
+                      borderRadius: 10,
+                      padding: 16,
+                      backgroundColor: userTeam.current_site_name ? (isDark ? '#064E3B' : '#ECFDF5') : colors.cardSubtle,
+                      borderWidth: 1,
+                      borderColor: userTeam.current_site_name ? '#10B981' : colors.border,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: '700',
+                          textTransform: 'uppercase',
+                          color: userTeam.current_site_name ? colors.success : colors.textMuted,
+                          letterSpacing: 0.5,
+                        }}
+                      >
+                        {userTeam.current_site_name ? 'Obra Alocada Hoje' : 'Sem Obra Ativa'}
+                      </Text>
+                      <View
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 4,
+                          backgroundColor: userTeam.current_site_name ? '#10B981' : '#64748B',
+                        }}
+                      />
+                    </View>
+
+                    {userTeam.current_site_name ? (
+                      <View style={{ marginTop: 8 }}>
+                        <Text style={{ fontSize: 18, fontWeight: '800', color: colors.textMain }}>
+                          {userTeam.current_site_name}
+                        </Text>
+
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 8 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Ionicons name="time-outline" size={15} color={colors.primary} />
+                            <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                              Início:{' '}
+                              <Text style={{ fontWeight: '700', color: colors.textMain }}>
+                                {userTeam.allocated_at
+                                  ? new Date(userTeam.allocated_at).toLocaleTimeString('pt-PT', {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })
+                                  : '08:00'}
+                              </Text>
+                            </Text>
+                          </View>
+
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Ionicons name="timer-outline" size={15} color={colors.success} />
+                            <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                              Permanência:{' '}
+                              <Text style={{ fontWeight: '800', color: colors.success }}>
+                                {getElapsedWorkTimeString()}
+                              </Text>
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    ) : (
+                      <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 6 }}>
+                        A equipa ainda não iniciou atividade em nenhuma obra hoje.
+                      </Text>
+                    )}
+
+                    {/* Ações do Líder para Alocação / Mudança de Obra */}
+                    {isTeamLeader ? (
+                      <View style={{ marginTop: 14, gap: 8 }}>
+                        {userTeam.current_site_name ? (
+                          <>
+                            <TouchableOpacity
+                              activeOpacity={0.8}
+                              onPress={() => setSiteSelectModalVisible(true)}
+                              disabled={teamActionLoading}
+                              style={{
+                                backgroundColor: colors.primary,
+                                paddingVertical: 10,
+                                borderRadius: 8,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                              }}
+                            >
+                              <Ionicons name="swap-horizontal" size={16} color="#FFFFFF" />
+                              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>
+                                Mudar de Obra
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              activeOpacity={0.8}
+                              onPress={handleConfirmFinishShift}
+                              disabled={teamActionLoading}
+                              style={{
+                                borderWidth: 1,
+                                borderColor: '#EF4444',
+                                paddingVertical: 9,
+                                borderRadius: 8,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                              }}
+                            >
+                              <Ionicons name="stop-circle-outline" size={16} color="#EF4444" />
+                              <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 13 }}>
+                                Finalizar Turno na Obra
+                              </Text>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={() => setSiteSelectModalVisible(true)}
+                            disabled={teamActionLoading}
+                            style={{
+                              backgroundColor: colors.primary,
+                              paddingVertical: 12,
+                              borderRadius: 8,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 8,
+                            }}
+                          >
+                            <Ionicons name="location" size={18} color="#FFFFFF" />
+                            <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
+                              Alocar Obra Agora
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ) : (
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: colors.textMuted,
+                          marginTop: 10,
+                          fontStyle: 'italic',
+                        }}
+                      >
+                        A alocação de obra e registo de horas é gerido pelo líder ({userTeam.leader_name}).
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* INFORMAÇÕES DO LÍDER */}
+                  <View
+                    style={{
+                      borderRadius: 10,
+                      padding: 14,
+                      backgroundColor: colors.card,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase' }}>
+                      Líder Responsável
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                      <View
+                        style={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: 19,
+                          backgroundColor: colors.primary,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Ionicons name="person" size={20} color="#FFFFFF" />
+                      </View>
+                      <View>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textMain }}>
+                          {userTeam.leader_name} {isTeamLeader ? '(Você)' : ''}
+                        </Text>
+                        {userTeam.leader_phone && (
+                          <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                            Tel: {userTeam.leader_phone}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* INTEGRANTES DA EQUIPA */}
+                  <View
+                    style={{
+                      borderRadius: 10,
+                      padding: 14,
+                      backgroundColor: colors.card,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>
+                      Integrantes da Equipa ({userTeam.member_names?.length || 0})
+                    </Text>
+                    {userTeam.member_names && userTeam.member_names.length > 0 ? (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {userTeam.member_names.map((mName, mIdx) => (
+                          <View
+                            key={mIdx}
+                            style={{
+                              paddingHorizontal: 8,
+                              paddingVertical: 5,
+                              borderRadius: 6,
+                              backgroundColor: colors.cardSubtle,
+                              borderWidth: 1,
+                              borderColor: colors.border,
+                            }}
+                          >
+                            <Text style={{ fontSize: 12, color: colors.textMain, fontWeight: '500' }}>
+                              {mName}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text style={{ fontSize: 12, color: colors.textMuted, fontStyle: 'italic' }}>
+                        Nenhum outro membro associado.
+                      </Text>
+                    )}
+                  </View>
+
+                  {userTeam.notes && (
+                    <View
+                      style={{
+                        borderRadius: 10,
+                        padding: 12,
+                        backgroundColor: colors.cardSubtle,
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                        Observações: {userTeam.notes}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ================================================================== */}
+      {/* MODAL: SELECIONAR OBRA PARA ALOCAÇÃO DA EQUIPA                    */}
+      {/* ================================================================== */}
+      <Modal visible={siteSelectModalVisible} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalBox,
+              {
+                backgroundColor: colors.card,
+                maxHeight: '80%',
+                width: '90%',
+                padding: 20,
+              },
+            ]}
+          >
+            <View style={styles.modalHeaderRow}>
+              <View>
+                <Text style={[styles.modalTitleText, { color: colors.textMain }]}>
+                  Alocar Equipa em Obra
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                  Selecione o local de trabalho da equipa
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setSiteSelectModalVisible(false)} style={{ padding: 4 }}>
+                <Ionicons name="close" size={24} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ marginTop: 14 }}>
+              {sitesList.length === 0 ? (
+                <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', paddingVertical: 20 }}>
+                  Nenhuma obra cadastrada na empresa.
+                </Text>
+              ) : (
+                <View style={{ gap: 8 }}>
+                  {sitesList.map((siteItem) => {
+                    const isSelected = userTeam?.current_site_id === siteItem.id;
+                    return (
+                      <TouchableOpacity
+                        key={siteItem.id}
+                        activeOpacity={0.7}
+                        onPress={() => handleSelectSiteToAllocate(siteItem)}
+                        disabled={teamActionLoading}
+                        style={{
+                          padding: 12,
+                          borderRadius: 8,
+                          backgroundColor: isSelected ? colors.cardSubtle : colors.card,
+                          borderWidth: 1,
+                          borderColor: isSelected ? colors.primary : colors.border,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <View style={{ flex: 1, paddingRight: 10 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textMain }}>
+                            {siteItem.name}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }} numberOfLines={1}>
+                            {siteItem.address}
+                          </Text>
+                        </View>
+                        {isSelected ? (
+                          <View
+                            style={{
+                              backgroundColor: colors.primary,
+                              paddingHorizontal: 8,
+                              paddingVertical: 3,
+                              borderRadius: 4,
+                            }}
+                          >
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFFFFF' }}>
+                              ATUAL
+                            </Text>
+                          </View>
+                        ) : (
+                          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>

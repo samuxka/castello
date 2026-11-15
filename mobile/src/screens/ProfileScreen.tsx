@@ -1,3 +1,4 @@
+import { showCustomAlert, showCustomConfirm } from '../context/DialogContext';
 import React, { useState } from 'react';
 import {
   View,
@@ -76,10 +77,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       }
       const secureUrl = await uploadImageToCloudinary(fileInput, 'castello_profiles');
       await onUpdateAvatar(secureUrl);
-      Alert.alert('Sucesso', 'Foto de perfil atualizada no Cloudinary com sucesso!');
+      showCustomAlert('Sucesso', 'Foto de perfil atualizada no Cloudinary com sucesso!');
     } catch (err: any) {
       console.error('Erro no upload de foto:', err);
-      Alert.alert('Erro no Upload', err.message || 'Falha ao enviar a foto para o Cloudinary.');
+      showCustomAlert('Erro no Upload', err.message || 'Falha ao enviar a foto para o Cloudinary.');
     } finally {
       setUploading(false);
     }
@@ -92,7 +93,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
+        showCustomAlert(
           'Permissão Necessária',
           'É necessária permissão de acesso à câmara para tirar uma foto.'
         );
@@ -111,7 +112,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       }
     } catch (err: any) {
       console.error('Erro na câmara:', err);
-      Alert.alert('Erro', err.message || 'Falha ao aceder à câmara.');
+      showCustomAlert('Erro', err.message || 'Falha ao aceder à câmara.');
     }
   };
 
@@ -122,7 +123,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
+        showCustomAlert(
           'Permissão Necessária',
           'É necessária permissão de acesso à galeria para escolher uma foto.'
         );
@@ -142,7 +143,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       }
     } catch (err: any) {
       console.error('Erro na galeria:', err);
-      Alert.alert('Erro', err.message || 'Falha ao aceder à galeria.');
+      showCustomAlert('Erro', err.message || 'Falha ao aceder à galeria.');
     }
   };
 
@@ -150,7 +151,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
    * Abre opções de carregamento de foto
    */
   const handleOpenPhotoOptions = () => {
-    Alert.alert(
+    showCustomAlert(
       'Foto de Perfil',
       'Como deseja carregar a sua foto?',
       [
@@ -181,15 +182,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     try {
       const secureUrl = await uploadImageToCloudinary(customUrlInput.trim(), 'castello_profiles');
       await onUpdateAvatar(secureUrl);
-      Alert.alert('Sucesso', 'Foto atualizada com sucesso!');
+      showCustomAlert('Sucesso', 'Foto atualizada com sucesso!');
       setCustomUrlInput('');
     } catch (e: any) {
       try {
         await onUpdateAvatar(customUrlInput.trim());
-        Alert.alert('Sucesso', 'Foto associada ao perfil!');
+        showCustomAlert('Sucesso', 'Foto associada ao perfil!');
         setCustomUrlInput('');
       } catch {
-        Alert.alert('Erro', 'Não foi possível carregar a imagem informada.');
+        showCustomAlert('Erro', 'Não foi possível carregar a imagem informada.');
       }
     } finally {
       setUploading(false);

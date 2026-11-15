@@ -7,10 +7,10 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { EmployeeProfile } from '../types';
+import { showCustomAlert } from '../context/DialogContext';
 
 interface LoginScreenProps {
   onLogin: (email: string, code: string) => Promise<boolean>;
@@ -49,9 +49,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   const handleBiometricPress = async () => {
     if (!hasBiometricsSaved) {
-      Alert.alert(
+      showCustomAlert(
         'Ativação de Biometria',
-        'Para ativar a biometria ou Face ID, faça o primeiro acesso digitando o seu e-mail e código PIN. O aplicativo salvará as suas credenciais com segurança para os próximos acessos com apenas um toque.'
+        'Para ativar a biometria ou Face ID, faça o primeiro acesso digitando o seu e-mail e código PIN. O aplicativo salvará as suas credenciais com segurança para os próximos acessos com apenas um toque.',
+        [{ text: 'Entendido' }],
+        'info'
       );
       return;
     }

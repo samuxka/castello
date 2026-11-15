@@ -1,3 +1,4 @@
+import { showCustomAlert, showCustomConfirm } from '../context/DialogContext';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -9,11 +10,18 @@ import {
   Modal,
   Image,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { ConstructionSite, EmployeeProfile, SiteTask } from '../types';
-import { completeTaskByWorker, fetchSiteTasks } from '../lib/supabase';
+import { ConstructionSite, EmployeeProfile, InventoryItem, SiteTask, SiteWorkSession } from '../types';
+import {
+  completeTaskByWorker,
+  fetchSiteInventoryMobile,
+  fetchSiteTasks,
+  fetchSiteWorkSessionsMobile,
+  saveSiteWorkSessionMobile,
+} from '../lib/supabase';
 import { uploadImageToCloudinary } from '../services/cloudinary';
 
 interface SiteDetailScreenProps {
@@ -50,13 +58,69 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
   const [completionPhotos, setCompletionPhotos] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
 
+  // Registro de Horas de Equipa (Líder / Encarregado da Obra)
+  const [teamSessions, setTeamSessions] = useState<SiteWorkSession[]>([]);
+  const [teamModalOpen, setTeamModalOpen] = useState(false);
+  const [teamName, setTeamName] = useState('Equipa 1');
+  const [hoursWorked, setHoursWorked] = useState('4');
+  const [workersCount, setWorkersCount] = useState('3');
+  const [sessionDesc, setSessionDesc] = useState('');
+  const [savingSession, setSavingSession] = useState(false);
+
+  // Materiais Alocados na Obra
+  const [siteMaterials, setSiteMaterials] = useState<InventoryItem[]>([]);
+  const [loadingMaterials, setLoadingMaterials] = useState(false);
+
   const loadTasks = async () => {
     setLoadingTasks(true);
     try {
-      const data = await fetchSiteTasks(site.id);
-      setTasks(data);
+      const [tasksData, sessionsData, materialsData] = await Promise.all([
+        fetchSiteTasks(site.id),
+        fetchSiteWorkSessionsMobile(site.id),
+        fetchSiteInventoryMobile(site.id, site.company_id || employee.company_id || undefined),
+      ]);
+      setTasks(tasksData);
+      setTeamSessions(sessionsData);
+      setSiteMaterials(materialsData || []);
     } finally {
       setLoadingTasks(false);
+    }
+  };
+
+  const handleSaveTeamSession = async () => {
+    const hoursNum = parseFloat(hoursWorked.replace(',', '.'));
+    const workersNum = parseInt(workersCount, 10);
+    if (isNaN(hoursNum) || hoursNum <= 0) {
+      showCustomAlert('Atenção', 'Informe a quantidade válida de horas trabalhadas.');
+      return;
+    }
+
+    setSavingSession(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const newSession = await saveSiteWorkSessionMobile({
+        site_id: site.id,
+        company_id: site.company_id || employee.company_id || null,
+        team_name: teamName.trim() || 'Equipa 1',
+        leader_id: employee.id,
+        leader_name: employee.full_name,
+        workers_count: isNaN(workersNum) || workersNum < 1 ? 1 : workersNum,
+        work_date: today,
+        hours_worked: hoursNum,
+        description: sessionDesc.trim() || undefined,
+      });
+
+      setTeamSessions((prev) => [newSession, ...prev]);
+      setTeamModalOpen(false);
+      setSessionDesc('');
+      showCustomAlert(
+        'Sucesso',
+        `Foram registadas ${hoursNum}h da ${teamName} nesta obra! As horas já estão visíveis no portal do cliente.`
+      );
+    } catch {
+      showCustomAlert('Erro', 'Não foi possível gravar o registo de horas da equipa.');
+    } finally {
+      setSavingSession(false);
     }
   };
 
@@ -99,7 +163,7 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
+        showCustomAlert(
           'Permissão Necessária',
           'É necessária a permissão da câmara para fotografar o serviço concluído.'
         );
@@ -119,7 +183,7 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
         setCompletionPhotos((prev) => [...prev, photoStr]);
       }
     } catch (e: any) {
-      Alert.alert('Erro', e.message || 'Falha ao aceder à câmara.');
+      showCustomAlert('Erro', e.message || 'Falha ao aceder à câmara.');
     }
   };
 
@@ -127,7 +191,7 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(
+        showCustomAlert(
           'Permissão Necessária',
           'É necessária a permissão da galeria para selecionar fotos do serviço.'
         );
@@ -148,7 +212,7 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
         setCompletionPhotos((prev) => [...prev, ...newPhotos]);
       }
     } catch (e: any) {
-      Alert.alert('Erro', e.message || 'Falha ao aceder à galeria.');
+      showCustomAlert('Erro', e.message || 'Falha ao aceder à galeria.');
     }
   };
 
@@ -161,7 +225,7 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
 
     // REGRA OBRIGATÓRIA: Enviar foto (ou mais) do serviço
     if (completionPhotos.length === 0) {
-      Alert.alert(
+      showCustomAlert(
         'Foto Obrigatória',
         'É obrigatório anexar pelo menos 1 foto do serviço concluído para finalizar esta tarefa.'
       );
@@ -189,12 +253,12 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
       setCompletingTask(null);
       setCompletionPhotos([]);
 
-      Alert.alert(
+      showCustomAlert(
         'Tarefa Concluída!',
         'Fotos enviadas com sucesso! A tarefa agora aguarda validação do encarregado. Após aprovada, as fotos aparecerão no acompanhamento do cliente.'
       );
     } catch (err: any) {
-      Alert.alert('Erro', err.message || 'Falha ao registrar conclusão da tarefa.');
+      showCustomAlert('Erro', err.message || 'Falha ao registrar conclusão da tarefa.');
     } finally {
       setUploading(false);
     }
@@ -356,6 +420,94 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
         </View>
       </View>
 
+      {/* Seção Exclusiva Encarregado / Líder: Registar Horas da Equipa na Obra (Portal do Cliente) */}
+      {isSiteEncarregado && (
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.sectionHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="people" size={17} color={colors.primary} />
+                <Text style={[styles.sectionTitle, { color: colors.textMain }]}>
+                  Horas da Equipa na Obra
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+                Visível no portal do cliente e no mapa de calor
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={{
+                backgroundColor: colors.primary,
+                paddingHorizontal: 12,
+                paddingVertical: 7,
+                borderRadius: 6,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+              }}
+              onPress={() => setTeamModalOpen(true)}
+            >
+              <Ionicons name="time" size={14} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>
+                + Registar Horas
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {teamSessions.length === 0 ? (
+            <Text style={{ fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 6 }}>
+              Nenhuma sessão de trabalho de equipa registada ainda nesta obra.
+            </Text>
+          ) : (
+            <View style={{ marginTop: 8, gap: 6 }}>
+              {teamSessions.slice(0, 3).map((sess) => (
+                <View
+                  key={sess.id}
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: 8,
+                    borderRadius: 6,
+                    backgroundColor: colors.cardSubtle,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <View>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain }}>
+                      {sess.team_name} ({sess.workers_count} trab.)
+                    </Text>
+                    <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                      {sess.work_date.split('-').reverse().join('/')} • Por {sess.leader_name}
+                      {sess.description ? ` • ${sess.description}` : ''}
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 4,
+                      backgroundColor: colors.primary,
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#FFFFFF' }}>
+                      {sess.hours_worked}h
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+
       {/* Seção de Tarefas da Obra */}
       <View
         style={[
@@ -459,6 +611,73 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
               )}
             </View>
           ))
+        )}
+      </View>
+
+      {/* SEÇÃO: MATERIAIS E FERRAMENTAS NA OBRA */}
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <View style={styles.sectionHeaderRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="cube-outline" size={18} color={colors.primary} />
+            <Text style={[styles.sectionTitle, { color: colors.textMain }]}>
+              Materiais & Equipamentos ({siteMaterials.length})
+            </Text>
+          </View>
+          <TouchableOpacity onPress={loadTasks}>
+            <Ionicons name="refresh-outline" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        {siteMaterials.length === 0 ? (
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+            Nenhum material alocado a esta obra no momento.
+          </Text>
+        ) : (
+          <View style={{ gap: 8, marginTop: 4 }}>
+            {siteMaterials.map((mat) => (
+              <View
+                key={mat.id}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: 10,
+                  borderRadius: 8,
+                  backgroundColor: colors.cardSubtle,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textMain }}>
+                    {mat.name}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+                    {mat.category} {mat.condition ? `• Estado: ${mat.condition}` : ''}
+                    {mat.serial_number ? ` • S/N: ${mat.serial_number}` : ''}
+                  </Text>
+                </View>
+
+                <View
+                  style={{
+                    backgroundColor: colors.primary,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 6,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#FFFFFF' }}>
+                    {mat.allocated_quantity} un.
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
         )}
       </View>
 
@@ -630,6 +849,152 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
                       ? 'Anexe pelo menos 1 foto para concluir'
                       : `Confirmar Conclusão (${completionPhotos.length} foto${completionPhotos.length > 1 ? 's' : ''})`}
                   </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal: Registar Horas da Equipa nesta Obra (Líder / Encarregado) */}
+      <Modal
+        visible={teamModalOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTeamModalOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="time" size={18} color={colors.primary} />
+                <Text style={[styles.modalTitle, { color: colors.textMain }]}>
+                  Registar Horas da Equipa
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setTeamModalOpen(false)}>
+                <Ionicons name="close" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 14 }}>
+              Registe as horas trabalhadas pela sua equipa nesta obra ({site.name}) antes de se deslocarem para outro local.
+            </Text>
+
+            <View style={{ gap: 12, marginBottom: 18 }}>
+              <View>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain, marginBottom: 4 }}>
+                  Nome da Equipa
+                </Text>
+                <TextInput
+                  value={teamName}
+                  onChangeText={setTeamName}
+                  placeholder="Ex: Equipa 1, Equipa Alvenaria..."
+                  placeholderTextColor={colors.textMuted}
+                  style={{
+                    backgroundColor: colors.cardSubtle,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    fontSize: 13,
+                    color: colors.textMain,
+                  }}
+                />
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain, marginBottom: 4 }}>
+                    Horas Trabalhadas
+                  </Text>
+                  <TextInput
+                    value={hoursWorked}
+                    onChangeText={setHoursWorked}
+                    placeholder="Ex: 4"
+                    keyboardType="numeric"
+                    placeholderTextColor={colors.textMuted}
+                    style={{
+                      backgroundColor: colors.cardSubtle,
+                      borderColor: colors.border,
+                      borderWidth: 1,
+                      borderRadius: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      fontSize: 13,
+                      color: colors.textMain,
+                    }}
+                  />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain, marginBottom: 4 }}>
+                    Nº Trabalhadores
+                  </Text>
+                  <TextInput
+                    value={workersCount}
+                    onChangeText={setWorkersCount}
+                    placeholder="Ex: 3"
+                    keyboardType="numeric"
+                    placeholderTextColor={colors.textMuted}
+                    style={{
+                      backgroundColor: colors.cardSubtle,
+                      borderColor: colors.border,
+                      borderWidth: 1,
+                      borderRadius: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      fontSize: 13,
+                      color: colors.textMain,
+                    }}
+                  />
+                </View>
+              </View>
+
+              <View>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain, marginBottom: 4 }}>
+                  Descrição dos Trabalhos Realizados (Opcional)
+                </Text>
+                <TextInput
+                  value={sessionDesc}
+                  onChangeText={setSessionDesc}
+                  placeholder="Ex: Cofragem e betonagem da laje piso 1..."
+                  placeholderTextColor={colors.textMuted}
+                  multiline
+                  numberOfLines={2}
+                  style={{
+                    backgroundColor: colors.cardSubtle,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    fontSize: 13,
+                    color: colors.textMain,
+                    minHeight: 50,
+                  }}
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.btnConfirmModal,
+                { backgroundColor: savingSession ? colors.border : colors.primary },
+              ]}
+              disabled={savingSession}
+              onPress={handleSaveTeamSession}
+            >
+              {savingSession ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={styles.btnConfirmModalText}>A gravar horas...</Text>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="save" size={16} color="#FFFFFF" />
+                  <Text style={styles.btnConfirmModalText}>Gravar Horas da Equipa</Text>
                 </View>
               )}
             </TouchableOpacity>

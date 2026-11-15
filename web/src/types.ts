@@ -24,16 +24,50 @@ export interface Company {
 export type FinancialType = 'receita' | 'despesa';
 
 export type FinancialCategory =
+  // Categorias de Receitas
   | 'adiantamento_cliente'
   | 'receita_medicao'
-  | 'pagamento_fornecedor'
+  | 'trabalhos_adicionais'
+  | 'outros_recebimentos'
+  // Categorias de Despesas (Natureza do Custo)
   | 'custo_materiais'
   | 'custo_mao_de_obra'
   | 'custo_equipamentos'
   | 'custo_subempreitadas'
+  | 'transporte_logistica'
+  | 'seguranca_epis'
+  | 'gestao_residuos'
+  | 'custos_administrativos'
+  | 'impostos_taxas'
+  | 'seguros'
+  | 'outros_custos'
+  // Mantidos por compatibilidade com registos anteriores
+  | 'pagamento_fornecedor'
   | 'outros';
 
-export type FinancialStatus = 'pendente' | 'pago' | 'cancelado';
+export type FinancialStatus = 'pendente' | 'parcial' | 'pago' | 'cancelado';
+
+export type PaymentMethod =
+  | 'transferencia'
+  | 'multibanco'
+  | 'cheque'
+  | 'cartao'
+  | 'numerario'
+  | 'mbway'
+  | 'outro';
+
+export type FinancialEntityType = 'cliente' | 'fornecedor' | 'funcionario' | 'subempreiteiro' | 'estado' | 'outro';
+
+export interface FinancialPaymentInstallment {
+  id: string;
+  amount: number; // Em Euro (€)
+  payment_date: string; // YYYY-MM-DD
+  payment_method?: PaymentMethod | string | null;
+  reference?: string | null;
+  receipt_url?: string | null;
+  notes?: string | null;
+  created_at?: string;
+}
 
 export interface FinancialRecord {
   id: string;
@@ -42,15 +76,73 @@ export interface FinancialRecord {
   site_name?: string | null;
   type: FinancialType;
   category: FinancialCategory;
+  subcategory?: string | null;
   title: string;
   description?: string | null;
-  entity_name?: string | null; // Fornecedor / Cliente
-  invoice_number?: string | null;
-  amount: number; // Em Euro (€)
+  entity_name?: string | null; // Fornecedor / Cliente / Funcionário
+  entity_type?: FinancialEntityType | null;
+  entity_id?: string | null;
+  invoice_number?: string | null; // Referência ou número do documento
+  payment_method?: PaymentMethod | string | null;
+  amount: number; // Valor total original em Euro (€)
+  paid_amount?: number; // Valor já liquidado (para pagamentos parciais)
   due_date: string; // YYYY-MM-DD
-  payment_date?: string | null; // YYYY-MM-DD
+  payment_date?: string | null; // YYYY-MM-DD (Data efetiva do último pagamento/liquidação)
   status: FinancialStatus;
+  receipt_url?: string | null; // Comprovante / anexo
+  measurement_id?: string | null; // ID da medição associada (quando aplicável)
+  source_module?: 'manual' | 'medicao' | 'mao_de_obra' | 'compra_material' | 'equipamento_manutencao' | null;
+  source_id?: string | null;
+  is_committed?: boolean; // Indica se é um custo comprometido (contrato/encomenda) ainda não liquidado
+  installments?: FinancialPaymentInstallment[]; // Histórico de pagamentos parciais
   created_at?: string;
+}
+
+export type MeasurementStatus =
+  | 'rascunho'
+  | 'submetida'
+  | 'aprovada'
+  | 'parcialmente_aprovada'
+  | 'faturada'
+  | 'parcialmente_recebida'
+  | 'recebida';
+
+export type MeasurementKind = 'normal' | 'adiantamento' | 'trabalho_adicional';
+
+export interface SiteMeasurement {
+  id: string;
+  company_id?: string | null;
+  site_id: string;
+  site_name?: string | null;
+  client_name?: string | null;
+  measurement_number: number; // Ex: 1, 2, 3...
+  kind?: MeasurementKind;
+  description: string; // Descrição dos trabalhos medidos
+  period_start: string; // YYYY-MM-DD
+  period_end: string; // YYYY-MM-DD
+  measured_value: number; // Valor medido (€)
+  approved_value: number; // Valor aprovado (€)
+  approval_date?: string | null; // YYYY-MM-DD
+  invoiced_value: number; // Valor faturado (€)
+  received_value: number; // Valor efetivamente recebido (€)
+  retention_pct?: number; // % de retenção de garantia aplicável (ex: 5% ou 10%)
+  retention_value: number; // Valor retido (€)
+  status: MeasurementStatus;
+  notes?: string | null;
+  attachments?: string[]; // URLs de autos de medição / anexos
+  linked_record_ids?: string[]; // IDs de lançamentos financeiros associados
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SiteFinancialConfig {
+  site_id: string;
+  company_id?: string | null;
+  contracted_value: number; // Valor contratado com o cliente (€)
+  cost_budget: number; // Orçamento interno de custos (€)
+  additional_forecast_cost?: number; // Custos futuros ainda previstos manualmente (€)
+  social_charges_pct?: number; // Encargos sociais sobre mão de obra (%)
+  updated_at?: string;
 }
 
 export interface ConstructionSite {
@@ -62,7 +154,9 @@ export interface ConstructionSite {
   manager_name: string | null;
   manager_id?: string | null;
   status: SiteStatus;
-  budget: number; // Euro €
+  budget: number; // Euro € (Orçamento de custos / valor base)
+  contracted_value?: number | null; // Valor contratado com o cliente (€)
+  cost_budget?: number | null; // Orçamento interno de custos (€)
   description: string | null;
   client_name?: string | null;
   client_phone?: string | null;
@@ -86,6 +180,47 @@ export interface EmployeeProfile {
   admission_date?: string | null;
   is_active: boolean;
   created_at?: string;
+}
+
+export interface SiteWorkSession {
+  id: string;
+  company_id?: string | null;
+  site_id: string;
+  team_name: string; // Ex: 'Equipa 1', 'Equipa de Estrutura'
+  leader_id?: string | null;
+  leader_name: string;
+  workers_count: number;
+  work_date: string; // YYYY-MM-DD
+  hours_worked: number; // Ex: 4.0
+  description?: string | null;
+  created_at?: string;
+}
+
+export interface Team {
+  id: string;
+  company_id?: string | null;
+  name: string;
+  leader_id?: string | null;
+  leader_name: string;
+  leader_phone?: string | null;
+  member_ids: string[];
+  member_names: string[];
+  current_site_id?: string | null;
+  current_site_name?: string | null;
+  allocated_at?: string | null; // Data/Hora ISO do início da alocação na obra hoje
+  notes?: string | null;
+  created_at?: string;
+}
+
+export interface SiteDocument {
+  id: string;
+  site_id: string;
+  name: string;
+  doc_type: string;
+  file_url?: string | null;
+  file_size?: string | null;
+  uploaded_at: string;
+  status: 'disponivel' | 'em_revisao' | 'arquivado';
 }
 
 export interface SiteTask {
@@ -281,29 +416,58 @@ export interface VehicleMaintenanceRecord {
 }
 
 // ============================================================================
-// AGENDA E CALENDÁRIO DE COMPROMISSOS
+// AGENDA E CALENDÁRIO DE COMPROMISSOS (CENTRAL DE PLANEAMENTO)
 // ============================================================================
 export type EventCategory =
+  | 'etapa_obra'
+  | 'tarefa'
+  | 'material'
+  | 'equipa'
+  | 'compromisso'
+  | 'personalizado'
+  // Categorias anteriores mantidas por compatibilidade:
   | 'obra'
   | 'reuniao'
   | 'inspecao'
   | 'pagamento'
   | 'outro';
 
+export type EventPriority = 'baixa' | 'media' | 'alta' | 'urgente';
+export type EventStatus = 'planeado' | 'em_andamento' | 'concluido' | 'cancelado' | 'atrasado';
+export type EventRecurrence = 'nenhuma' | 'diaria' | 'semanal' | 'mensal';
+export type EventSourceModule = 'manual' | 'obra' | 'tarefa' | 'ausencia' | 'material';
+
 export interface CalendarEvent {
   id: string;
   company_id?: string | null;
   title: string;
   description?: string | null;
-  event_date: string; // YYYY-MM-DD
+  event_date: string; // YYYY-MM-DD (Data de início)
+  end_date?: string | null; // YYYY-MM-DD (Data de conclusão prevista)
   start_time?: string | null; // HH:MM
   end_time?: string | null; // HH:MM
+  all_day?: boolean;
   category: EventCategory;
+  event_subtype?: string | null; // Ex: fundacao, alvenaria, instalacoes, reboco, pintura, acabamentos, ferias, folga, reuniao_cliente, vistoria...
   site_id?: string | null;
   site_name?: string | null;
   assigned_employee_id?: string | null;
   assigned_employee_name?: string | null;
+  assigned_team_id?: string | null;
+  assigned_team_name?: string | null;
+  supplier_name?: string | null; // Para entregas de materiais / receção de equipamentos
   location?: string | null;
+  priority?: EventPriority;
+  status?: EventStatus;
+  progress?: number; // 0 a 100 (%)
+  dependencies?: string[]; // IDs de atividades predecessoras no Gantt
+  recurrence?: EventRecurrence;
+  reminder_minutes?: number | null; // Ex: 60 (1h), 1440 (1 dia), 4320 (3 dias)
+  visible_to_client?: boolean; // Visível no portal do cliente da obra
+  source_module?: EventSourceModule; // Origem da sincronização
+  source_id?: string | null; // ID do registo original (site_id, task_id, justification_id...)
+  google_calendar_synced?: boolean;
+  google_event_url?: string | null;
   is_completed: boolean;
   created_at?: string;
 }

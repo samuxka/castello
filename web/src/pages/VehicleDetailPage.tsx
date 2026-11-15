@@ -25,7 +25,9 @@ import {
   Trash2,
   Fuel,
   Info,
+  Upload,
 } from 'lucide-react';
+import { uploadImageToCloudinary } from '../lib/cloudinary';
 import {
   ConstructionSite,
   EmployeeProfile,
@@ -53,6 +55,7 @@ import {
   saveVehicleWeeklyAssignment,
   deleteVehicleWeeklyAssignment,
 } from '../lib/supabase';
+import { customConfirm, customAlert } from '../context/DialogContext';
 
 interface VehicleDetailPageProps {
   vehicle: Vehicle;
@@ -113,6 +116,42 @@ export function VehicleDetailPage({
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [newPhotoUrl, setNewPhotoUrl] = useState(vehicle.photo_url || '');
   const [savingPhoto, setSavingPhoto] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result as string;
+          const url = await uploadImageToCloudinary(base64, 'castello_vehicles');
+          setNewPhotoUrl(url);
+          const updated = await saveVehicle(
+            {
+              ...vehicle,
+              photo_url: url,
+            },
+            companyId
+          );
+          setVehicle(updated);
+          onVehicleUpdated(updated);
+          setPhotoModalOpen(false);
+          showNotice('Foto de perfil da carrinha carregada com sucesso!');
+        } catch (err: any) {
+          alert('Erro ao carregar imagem: ' + (err.message || 'Tente novamente.'));
+        } finally {
+          setUploadingPhoto(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setUploadingPhoto(false);
+      alert('Erro ao ler ficheiro de imagem.');
+    }
+  };
 
   const [changeDriverModalOpen, setChangeDriverModalOpen] = useState(false);
   const [newDriverId, setNewDriverId] = useState(vehicle.assigned_driver_id || '');
@@ -171,13 +210,24 @@ export function VehicleDetailPage({
   };
 
   const handleDeleteAssignment = async (assignId: string) => {
-    if (!confirm('Deseja remover este registo de utilização?')) return;
+    const confirmed = await customConfirm({
+      title: 'Remover Registo',
+      message: 'Deseja remover este registo de utilização?',
+      type: 'danger',
+      confirmText: 'Remover',
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) return;
     try {
       await deleteVehicleWeeklyAssignment(vehicle.id, assignId);
       setAssignments((prev) => prev.filter((a) => a.id !== assignId));
       showNotice('Registo de utilização removido com sucesso!');
     } catch (err: any) {
-      alert(err.message || 'Falha ao remover registo.');
+      customAlert({
+        title: 'Erro ao Remover',
+        message: err.message || 'Falha ao remover registo.',
+        type: 'error',
+      });
     }
   };
 
@@ -398,7 +448,7 @@ export function VehicleDetailPage({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-            <div
+            <label
               style={{
                 position: 'relative',
                 width: 76,
@@ -407,21 +457,60 @@ export function VehicleDetailPage({
                 overflow: 'hidden',
                 border: '2px solid var(--border-color)',
                 flexShrink: 0,
-                cursor: 'pointer',
+                cursor: uploadingPhoto ? 'not-allowed' : 'pointer',
                 backgroundColor: 'var(--bg-card-subtle)',
+                display: 'block',
               }}
-              onClick={() => {
-                setNewPhotoUrl(vehicle.photo_url || '');
-                setPhotoModalOpen(true);
-              }}
-              title="Clique para adicionar ou alterar a foto da carrinha"
+              title={uploadingPhoto ? 'A carregar foto...' : 'Clique para carregar foto da carrinha do computador/telemóvel'}
             >
-              {vehicle.photo_url ? (
-                <img
-                  src={vehicle.photo_url}
-                  alt={vehicle.license_plate}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                disabled={uploadingPhoto}
+                onChange={handlePhotoUpload}
+              />
+              {uploadingPhoto ? (
+                <div
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    backgroundColor: 'var(--primary-subtle)',
+                    color: 'var(--primary)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <div style={{ width: 20, height: 20, border: '2px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  <span style={{ fontSize: 9, fontWeight: 700 }}>A ENVIAR</span>
+                </div>
+              ) : vehicle.photo_url ? (
+                <>
+                  <img
+                    src={vehicle.photo_url}
+                    alt={vehicle.license_plate}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      backgroundColor: 'rgba(0,0,0,0.65)',
+                      color: '#ffffff',
+                      fontSize: 9,
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      padding: '2px 0',
+                    }}
+                  >
+                    Alterar
+                  </div>
+                </>
               ) : (
                 <div
                   style={{
@@ -436,29 +525,11 @@ export function VehicleDetailPage({
                     gap: 3,
                   }}
                 >
-                  <Truck size={30} />
+                  <Upload size={22} />
                   <span style={{ fontSize: 9, fontWeight: 700 }}>+ FOTO</span>
                 </div>
               )}
-              {vehicle.photo_url && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    backgroundColor: 'rgba(0,0,0,0.65)',
-                    color: '#ffffff',
-                    fontSize: 9,
-                    fontWeight: 700,
-                    textAlign: 'center',
-                    padding: '2px 0',
-                  }}
-                >
-                  Alterar
-                </div>
-              )}
-            </div>
+            </label>
 
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -511,19 +582,28 @@ export function VehicleDetailPage({
                     : 'Parada / Reserva'}
                 </span>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewPhotoUrl(vehicle.photo_url || '');
-                    setPhotoModalOpen(true);
-                  }}
+                <label
                   className="btn-flat-secondary"
-                  style={{ padding: '4px 10px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}
-                  title="Alterar ou adicionar foto desta viatura"
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: 11,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    cursor: uploadingPhoto ? 'not-allowed' : 'pointer',
+                  }}
+                  title="Carregar foto desta viatura diretamente do computador/telemóvel"
                 >
                   <Camera size={13} />
-                  {vehicle.photo_url ? 'Alterar Foto' : 'Adicionar Foto'}
-                </button>
+                  {uploadingPhoto ? 'A carregar...' : (vehicle.photo_url ? 'Alterar Foto' : 'Adicionar Foto')}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    disabled={uploadingPhoto}
+                    onChange={handlePhotoUpload}
+                  />
+                </label>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, color: 'var(--text-muted)', fontSize: 13, flexWrap: 'wrap' }}>
@@ -750,7 +830,7 @@ export function VehicleDetailPage({
                   className="btn-flat-primary"
                   style={{ padding: '7px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
                 >
-                  <Plus size={14} /> + Registar Condução / Saída
+                  <Plus size={14} /> Registar Condução / Saída
                 </button>
               </div>
             </div>
@@ -1884,31 +1964,47 @@ export function VehicleDetailPage({
             <form onSubmit={handleSavePhoto} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ textAlign: 'center' }}>
                 {newPhotoUrl ? (
-                  <img
-                    src={newPhotoUrl}
-                    alt="Prévia Carrinha"
-                    style={{
-                      width: '100%',
-                      height: 180,
-                      borderRadius: 8,
-                      objectFit: 'cover',
-                      border: '2px solid var(--border-color)',
-                      marginBottom: 8,
-                    }}
-                  />
+                  <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+                    <img
+                      src={newPhotoUrl}
+                      alt="Prévia Carrinha"
+                      style={{
+                        width: '100%',
+                        height: 190,
+                        borderRadius: 10,
+                        objectFit: 'cover',
+                        border: '2px solid var(--border-color)',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewPhotoUrl('')}
+                      className="btn-flat-secondary"
+                      style={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        padding: '4px 8px',
+                        fontSize: 11,
+                        backgroundColor: 'rgba(0,0,0,0.7)',
+                        color: '#ffffff',
+                      }}
+                    >
+                      <X size={12} /> Limpar
+                    </button>
+                  </div>
                 ) : (
                   <div
                     style={{
                       width: '100%',
                       height: 140,
-                      borderRadius: 8,
+                      borderRadius: 10,
                       backgroundColor: 'var(--primary-subtle)',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
                       justifyContent: 'center',
                       color: 'var(--primary)',
-                      marginBottom: 8,
                       border: '1px dashed var(--border-color)',
                     }}
                   >
@@ -1918,19 +2014,36 @@ export function VehicleDetailPage({
                 )}
               </div>
 
-              <div className="flat-form-group">
-                <label style={{ fontSize: 12, fontWeight: 700 }}>URL da Foto da Carrinha</label>
-                <input
-                  type="url"
-                  required
-                  placeholder="https://... (URL da imagem da viatura)"
-                  value={newPhotoUrl}
-                  onChange={(e) => setNewPhotoUrl(e.target.value)}
-                  style={{ padding: '9px 12px' }}
-                />
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
-                  Cole o link direto da imagem hospedada (ex: Cloudinary, Imgur, ou outro servidor).
-                </span>
+              {/* Botão de Upload Direto do Dispositivo */}
+              <div style={{ textAlign: 'center' }}>
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '10px 20px',
+                    borderRadius: 8,
+                    backgroundColor: 'var(--primary)',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: uploadingPhoto ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                  }}
+                >
+                  <Upload size={16} />
+                  {uploadingPhoto ? 'A enviar imagem para a nuvem...' : (newPhotoUrl ? 'Carregar Outra Imagem' : 'Escolher Imagem do Dispositivo')}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    disabled={uploadingPhoto}
+                    onChange={handlePhotoUpload}
+                  />
+                </label>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                  Envio automático de imagem para o servidor (PNG, JPG, WEBP)
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -1939,7 +2052,14 @@ export function VehicleDetailPage({
                     type="button"
                     className="btn-flat-danger"
                     onClick={async () => {
-                      if (!confirm('Deseja remover a foto da viatura?')) return;
+                      const confirmed = await customConfirm({
+                        title: 'Remover Foto',
+                        message: 'Deseja remover a foto da viatura?',
+                        type: 'danger',
+                        confirmText: 'Remover Foto',
+                        cancelText: 'Cancelar',
+                      });
+                      if (!confirmed) return;
                       setSavingPhoto(true);
                       try {
                         const updated = await saveVehicle({ ...vehicle, photo_url: null }, companyId);

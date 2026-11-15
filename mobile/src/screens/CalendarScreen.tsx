@@ -31,6 +31,7 @@ import {
   submitAbsenceJustification,
 } from '../lib/supabase';
 import { uploadImageToCloudinary } from '../services/cloudinary';
+import { showCustomAlert } from '../context/DialogContext';
 
 interface CalendarScreenProps {
   entries: TimeEntry[];
@@ -152,7 +153,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   const handleSubmitRetroactivePunch = async () => {
     if (!employee) return;
     if (!punchHour.trim() || !/^\d{1,2}:\d{2}$/.test(punchHour.trim())) {
-      Alert.alert('Horário Inválido', 'Insira o horário no formato HH:MM (ex: 08:00 ou 17:30).');
+      showCustomAlert('Horário Inválido', 'Insira o horário no formato HH:MM (ex: 08:00 ou 17:30).');
       return;
     }
 
@@ -178,12 +179,12 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
       }
 
       setPunchModalVisible(false);
-      Alert.alert(
+      showCustomAlert(
         'Picagem Registada!',
         'A sua picagem foi enviada e está com estado PENDENTE. O patrão ou encarregado poderá aprová-la no painel.'
       );
     } catch (err: any) {
-      Alert.alert('Erro ao Registar', err.message || 'Falha ao registar picagem retroativa.');
+      showCustomAlert('Erro ao Registar', err.message || 'Falha ao registar picagem retroativa.');
     } finally {
       setSubmittingPunch(false);
     }
@@ -231,7 +232,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permissão', 'Permissão de acesso à câmara necessária.');
+        showCustomAlert('Permissão', 'Permissão de acesso à câmara necessária.');
         return;
       }
       const res = await ImagePicker.launchCameraAsync({
@@ -246,7 +247,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
         setJustifPhotos((prev) => [...prev, photoStr]);
       }
     } catch (e: any) {
-      Alert.alert('Erro', e.message || 'Falha ao aceder à câmara.');
+      showCustomAlert('Erro', e.message || 'Falha ao aceder à câmara.');
     }
   };
 
@@ -254,7 +255,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permissão', 'Permissão de galeria necessária.');
+        showCustomAlert('Permissão', 'Permissão de galeria necessária.');
         return;
       }
       const res = await ImagePicker.launchImageLibraryAsync({
@@ -270,7 +271,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
         setJustifPhotos((prev) => [...prev, ...newPhotos]);
       }
     } catch (e: any) {
-      Alert.alert('Erro', e.message || 'Falha ao aceder à galeria.');
+      showCustomAlert('Erro', e.message || 'Falha ao aceder à galeria.');
     }
   };
 
@@ -281,7 +282,7 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
   const handleSubmitJustification = async () => {
     if (!employee) return;
     if (!justifReasonInput.trim()) {
-      Alert.alert(
+      showCustomAlert(
         'Justificativa Obrigatória',
         'Por favor, escreva a justificativa da sua ausência.'
       );
@@ -316,12 +317,12 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
 
       await loadJustifs();
       setJustifModalVisible(false);
-      Alert.alert(
+      showCustomAlert(
         'Justificativa Enviada',
         'A sua justificativa e comprovativos foram submetidos à administração com sucesso.'
       );
     } catch (e: any) {
-      Alert.alert('Erro', e.message || 'Falha ao submeter justificativa.');
+      showCustomAlert('Erro', e.message || 'Falha ao submeter justificativa.');
     } finally {
       setSubmittingJustif(false);
     }

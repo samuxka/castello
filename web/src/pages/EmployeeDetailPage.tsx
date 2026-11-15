@@ -23,7 +23,10 @@ import {
   Eye,
   Plus,
   AlertCircle,
+  Camera,
+  Upload,
 } from 'lucide-react';
+import { uploadImageToCloudinary } from '../lib/cloudinary';
 import {
   EmployeeProfile,
   TimeEntry,
@@ -76,6 +79,34 @@ export function EmployeeDetailPage({
   const [isActive, setIsActive] = useState(employee.is_active);
   const [avatarUrl, setAvatarUrl] = useState(employee.avatar_url || '');
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result as string;
+          const url = await uploadImageToCloudinary(base64, 'castello_profiles');
+          setAvatarUrl(url);
+          const updated = await saveEmployee({ ...employee, avatar_url: url });
+          onEmployeeUpdated(updated);
+          showNotice(`Foto de perfil de ${employee.full_name} atualizada com sucesso!`);
+        } catch (err: any) {
+          alert('Erro ao enviar imagem: ' + (err.message || 'Tente novamente.'));
+        } finally {
+          setUploadingAvatar(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setUploadingAvatar(false);
+      alert('Erro ao ler ficheiro de imagem.');
+    }
+  };
 
   // Registos de ponto locais e sincronizados
   const [localEntries, setLocalEntries] = useState<TimeEntry[]>(entries);
@@ -219,39 +250,71 @@ export function EmployeeDetailPage({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-            {avatarUrl || employee.avatar_url ? (
-              <img
-                src={avatarUrl || employee.avatar_url || ''}
-                alt={employee.full_name}
+            <div style={{ position: 'relative', width: 72, height: 72, flexShrink: 0 }}>
+              {avatarUrl || employee.avatar_url ? (
+                <img
+                  src={avatarUrl || employee.avatar_url || ''}
+                  alt={employee.full_name}
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    border: '3px solid var(--primary)',
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: '50%',
+                    backgroundColor: 'var(--primary)',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 28,
+                    fontWeight: 800,
+                    border: '3px solid var(--border-color)',
+                  }}
+                >
+                  {employee.full_name.charAt(0)}
+                </div>
+              )}
+              <label
                 style={{
-                  width: 72,
-                  height: 72,
-                  borderRadius: '50%',
-                  objectFit: 'cover',
-                  border: '3px solid var(--border-color)',
-                  flexShrink: 0,
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: 72,
-                  height: 72,
-                  borderRadius: '50%',
+                  position: 'absolute',
+                  bottom: -2,
+                  right: -2,
                   backgroundColor: 'var(--primary)',
                   color: '#ffffff',
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: 28,
-                  fontWeight: 800,
-                  border: '3px solid var(--border-color)',
-                  flexShrink: 0,
+                  cursor: uploadingAvatar ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                  border: '2px solid var(--bg-card)',
                 }}
+                title={uploadingAvatar ? 'A carregar...' : 'Carregar nova foto'}
               >
-                {employee.full_name.charAt(0)}
-              </div>
-            )}
+                {uploadingAvatar ? (
+                  <div style={{ width: 12, height: 12, border: '2px solid #ffffff', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                ) : (
+                  <Camera size={13} />
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  disabled={uploadingAvatar}
+                  onChange={handleAvatarUpload}
+                />
+              </label>
+            </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>

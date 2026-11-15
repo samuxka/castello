@@ -170,6 +170,20 @@ html, body {
   transition: background-color 0.2s, color 0.2s;
 }
 
+/* Portal do Cliente: Scroll garantido e independente */
+.client-portal-wrap {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Container de toda a aplicação: Altura padronizada a 100vh em qualquer dispositivo */
 .app-container {
   display: flex;
@@ -195,7 +209,7 @@ html, body {
   display: none;
 }
 
-/* Sidebar Flat com Altura Padronizada e Scroll Próprio */
+/* Sidebar Flat com Altura Padronizada, Scroll Próprio e Modo Retrátil */
 .sidebar {
   width: 260px;
   min-width: 260px;
@@ -203,13 +217,63 @@ html, body {
   max-height: 100vh;
   background-color: var(--bg-card);
   border-right: 1px solid var(--border-color);
-  padding: 24px 16px;
+  padding: 20px 16px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   overflow-y: auto;
   overflow-x: hidden;
   flex-shrink: 0;
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.2s cubic-bezier(0.4, 0, 0.2, 1), padding 0.2s ease;
+}
+
+.sidebar.collapsed {
+  width: 72px;
+  min-width: 72px;
+  padding: 20px 10px;
+}
+
+.sidebar.collapsed .brand-section {
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 10px;
+}
+
+.sidebar.collapsed .nav-label {
+  display: none;
+}
+
+.sidebar.collapsed .theme-toggle-btn {
+  justify-content: center;
+  padding: 8px;
+}
+
+.sidebar-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-card-subtle);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.sidebar-collapse-btn:hover {
+  color: var(--text-main);
+  border-color: var(--primary);
+  background-color: var(--primary-subtle);
 }
 
 .brand-section {
@@ -224,7 +288,6 @@ html, body {
 .brand-logo-flat {
   width: 36px;
   height: 36px;
-  background-color: var(--primary);
   color: var(--text-on-primary);
   border-radius: 6px;
   display: flex;

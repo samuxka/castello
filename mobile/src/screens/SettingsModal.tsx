@@ -1,3 +1,4 @@
+import { showCustomAlert, showCustomConfirm } from '../context/DialogContext';
 import React, { useState } from 'react';
 import {
   View,
@@ -69,9 +70,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
       const secureUrl = await uploadImageToCloudinary(fileInput, 'castello_profiles');
       await onUpdateAvatar(secureUrl);
-      Alert.alert('Sucesso', 'Foto de perfil atualizada no Cloudinary com sucesso!');
+      showCustomAlert('Sucesso', 'Foto de perfil atualizada no Cloudinary com sucesso!');
     } catch (e: any) {
-      Alert.alert('Erro no Upload', e.message || 'Falha ao atualizar a foto de perfil.');
+      showCustomAlert('Erro no Upload', e.message || 'Falha ao atualizar a foto de perfil.');
     } finally {
       setUploadingAvatar(false);
     }
@@ -79,13 +80,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleChangeAvatar = () => {
     if (!onUpdateAvatar) return;
-    Alert.alert('Foto de Perfil', 'Escolha como pretende alterar a sua foto:', [
+    showCustomAlert('Foto de Perfil', 'Escolha como pretende alterar a sua foto:', [
       {
         text: 'Tirar Foto (Câmara)',
         onPress: async () => {
           const { status } = await ImagePicker.requestCameraPermissionsAsync();
           if (status !== 'granted') {
-            Alert.alert('Permissão', 'Permissão de câmara necessária.');
+            showCustomAlert('Permissão', 'Permissão de câmara necessária.');
             return;
           }
           const res = await ImagePicker.launchCameraAsync({
@@ -104,7 +105,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         onPress: async () => {
           const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
           if (status !== 'granted') {
-            Alert.alert('Permissão', 'Permissão de galeria necessária.');
+            showCustomAlert('Permissão', 'Permissão de galeria necessária.');
             return;
           }
           const res = await ImagePicker.launchImageLibraryAsync({
@@ -127,16 +128,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setRefreshing(true);
     try {
       await onRefreshData();
-      Alert.alert('Sucesso', 'Dados sincronizados com o servidor.');
+      showCustomAlert('Sucesso', 'Dados sincronizados com o servidor.');
     } catch {
-      Alert.alert('Aviso', 'Não foi possível sincronizar os dados neste momento.');
+      showCustomAlert('Aviso', 'Não foi possível sincronizar os dados neste momento.');
     } finally {
       setRefreshing(false);
     }
   };
 
   const handleConfirmLogout = () => {
-    Alert.alert(
+    showCustomAlert(
       'Terminar Sessão',
       'Deseja realmente sair da sua conta castello?',
       [

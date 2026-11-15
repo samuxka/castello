@@ -48,13 +48,16 @@ import { SettingsModal } from './src/screens/SettingsModal';
 import { NotificationsScreen } from './src/screens/NotificationsScreen';
 import { VehicleScreen } from './src/screens/VehicleScreen';
 import { setupAlarmNotifications } from './src/utils/alarmService';
+import { DialogProvider } from './src/context/DialogContext';
 
 type TabKey = 'inicio' | 'obras' | 'carrinha' | 'calendario' | 'perfil';
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <MainApp />
+      <DialogProvider>
+        <MainApp />
+      </DialogProvider>
     </SafeAreaProvider>
   );
 }

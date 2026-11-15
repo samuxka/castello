@@ -48,6 +48,36 @@ export interface EmployeeProfile {
   created_at?: string;
 }
 
+export interface SiteWorkSession {
+  id: string;
+  company_id?: string | null;
+  site_id: string;
+  team_name: string; // Ex: 'Equipa 1'
+  leader_id?: string | null;
+  leader_name: string;
+  workers_count: number;
+  work_date: string; // YYYY-MM-DD
+  hours_worked: number;
+  description?: string | null;
+  created_at?: string;
+}
+
+export interface Team {
+  id: string;
+  company_id?: string | null;
+  name: string;
+  leader_id?: string | null;
+  leader_name: string;
+  leader_phone?: string | null;
+  member_ids: string[];
+  member_names: string[];
+  current_site_id?: string | null;
+  current_site_name?: string | null;
+  allocated_at?: string | null;
+  notes?: string | null;
+  created_at?: string;
+}
+
 export interface SiteTask {
   id: string;
   site_id: string;

@@ -20,9 +20,13 @@ import {
   LayoutGrid,
   ArrowUpDown,
   Filter,
+  Camera,
+  Upload,
 } from 'lucide-react';
 import { ConstructionSite, EmployeeProfile, Vehicle, VehicleStatus, VehicleType } from '../types';
 import { deleteVehicle, getVehicles, saveVehicle } from '../lib/supabase';
+import { uploadImageToCloudinary } from '../lib/cloudinary';
+import { customConfirm, customAlert } from '../context/DialogContext';
 
 interface VehiclesPageProps {
   companyId?: string;
@@ -64,6 +68,32 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
   const [photoUrl, setPhotoUrl] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result as string;
+          const url = await uploadImageToCloudinary(base64, 'castello_vehicles');
+          setPhotoUrl(url);
+          showNotice('Foto da carrinha carregada com sucesso!');
+        } catch (err: any) {
+          alert('Erro ao enviar imagem: ' + (err.message || 'Tente novamente.'));
+        } finally {
+          setUploadingPhoto(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setUploadingPhoto(false);
+      alert('Erro ao ler ficheiro de imagem.');
+    }
+  };
 
   const loadVehicles = async () => {
     setLoading(true);
@@ -166,7 +196,14 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
   };
 
   const handleDelete = async (v: Vehicle) => {
-    if (window.confirm(`Tem certeza que deseja remover a carrinha ${v.brand} ${v.model} (${v.license_plate}) da frota?`)) {
+    const confirmed = await customConfirm({
+      title: 'Remover Viatura',
+      message: `Tem certeza que deseja remover a carrinha ${v.brand} ${v.model} (${v.license_plate}) da frota?`,
+      type: 'danger',
+      confirmText: 'Remover Viatura',
+      cancelText: 'Cancelar',
+    });
+    if (confirmed) {
       await deleteVehicle(v.id, companyId);
       await loadVehicles();
       showNotice('Carrinha removida da frota.');
@@ -504,7 +541,7 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
                   <th>Obra Alocada</th>
                   <th>KM Atual</th>
                   <th>Prazos & Inspeção</th>
-                  <th>Status</th>
+                  <th style={{ textAlign: 'center', width: 70 }}>Status</th>
                   <th style={{ textAlign: 'right' }}>Ações</th>
                 </tr>
               </thead>
@@ -652,34 +689,29 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
                           </div>
                         </td>
 
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span
-                              style={{
-                                width: 10,
-                                height: 10,
-                                borderRadius: '50%',
-                                backgroundColor:
-                                  v.status === 'em_servico'
-                                    ? '#10B981'
-                                    : v.status === 'em_manutencao'
-                                    ? '#F59E0B'
-                                    : '#64748B',
-                                boxShadow:
-                                  v.status === 'em_servico'
-                                    ? '0 0 6px rgba(16, 185, 129, 0.55)'
-                                    : v.status === 'em_manutencao'
-                                    ? '0 0 6px rgba(245, 158, 11, 0.55)'
-                                    : 'none',
-                                display: 'inline-block',
-                                flexShrink: 0,
-                              }}
-                              title={badge.label}
-                            />
-                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-main)' }}>
-                              {badge.label}
-                            </span>
-                          </div>
+                        <td style={{ textAlign: 'center' }}>
+                          <span
+                            title={badge.label}
+                            style={{
+                              width: 14,
+                              height: 14,
+                              borderRadius: '50%',
+                              backgroundColor:
+                                v.status === 'em_servico'
+                                  ? '#10B981'
+                                  : v.status === 'em_manutencao'
+                                  ? '#F59E0B'
+                                  : '#64748B',
+                              boxShadow:
+                                v.status === 'em_servico'
+                                  ? '0 0 8px rgba(16, 185, 129, 0.65)'
+                                  : v.status === 'em_manutencao'
+                                  ? '0 0 8px rgba(245, 158, 11, 0.65)'
+                                  : 'none',
+                              display: 'inline-block',
+                              cursor: 'help',
+                            }}
+                          />
                         </td>
 
                         <td style={{ textAlign: 'right' }}>
@@ -1144,30 +1176,130 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
               </div>
 
               <div className="flat-form-group">
-                <label style={{ fontSize: 12, fontWeight: 700 }}>Foto de Perfil da Carrinha (URL da Imagem)</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {photoUrl ? (
+                <label style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, display: 'block' }}>
+                  Foto da Carrinha (Upload)
+                </label>
+
+                {photoUrl ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 14,
+                      padding: '10px 14px',
+                      borderRadius: 8,
+                      backgroundColor: 'var(--bg-card-subtle)',
+                      border: '1px solid var(--border-color)',
+                    }}
+                  >
                     <img
                       src={photoUrl}
                       alt="Prévia Carrinha"
                       style={{
-                        width: 44,
-                        height: 44,
+                        width: 58,
+                        height: 58,
                         borderRadius: 8,
                         objectFit: 'cover',
-                        border: '1px solid var(--border-color)',
+                        border: '2px solid var(--primary)',
                         flexShrink: 0,
                       }}
                     />
-                  ) : null}
-                  <input
-                    type="url"
-                    placeholder="https://... (URL da foto da carrinha)"
-                    value={photoUrl}
-                    onChange={(e) => setPhotoUrl(e.target.value)}
-                    style={{ flex: 1, padding: '10px 12px' }}
-                  />
-                </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-main)' }}>
+                        Foto carregada com sucesso
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        A foto está pronta e será gravada com a carrinha.
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                        <label
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: 'var(--primary)',
+                            cursor: uploadingPhoto ? 'not-allowed' : 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '3px 8px',
+                            borderRadius: 4,
+                            backgroundColor: 'var(--primary-subtle)',
+                            border: '1px solid var(--border-color)',
+                          }}
+                        >
+                          <Upload size={12} />
+                          {uploadingPhoto ? 'A enviar...' : 'Substituir Foto'}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            style={{ display: 'none' }}
+                            disabled={uploadingPhoto}
+                            onChange={handleFileUpload}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setPhotoUrl('')}
+                          className="btn-flat-secondary"
+                          style={{ padding: '3px 8px', fontSize: 11, color: 'var(--danger)' }}
+                        >
+                          <Trash2 size={12} /> Remover
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <label
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      padding: '20px 16px',
+                      borderRadius: 8,
+                      border: '2px dashed var(--border-color)',
+                      backgroundColor: 'var(--bg-card-subtle)',
+                      cursor: uploadingPhoto ? 'not-allowed' : 'pointer',
+                      textAlign: 'center',
+                      transition: 'border-color 0.2s',
+                    }}
+                  >
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      disabled={uploadingPhoto}
+                      onChange={handleFileUpload}
+                    />
+                    <div
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--primary-subtle)',
+                        color: 'var(--primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {uploadingPhoto ? (
+                        <div style={{ width: 18, height: 18, border: '2px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                      ) : (
+                        <Upload size={18} />
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)' }}>
+                        {uploadingPhoto ? 'A enviar imagem para a nuvem...' : 'Clique para carregar a foto da carrinha'}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        PNG, JPG ou WEBP (Upload direto do computador/telemóvel)
+                      </div>
+                    </div>
+                  </label>
+                )}
               </div>
 
               <div className="flat-form-group">

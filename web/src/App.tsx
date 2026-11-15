@@ -1,16 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   ArrowUpDown,
   Boxes,
   Building2,
   Calendar,
   Check,
+  CheckCheck,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Database,
   DollarSign,
   Edit2,
   ExternalLink,
+  Eye,
+  EyeOff,
   Filter,
   LayoutDashboard,
   LayoutGrid,
@@ -19,6 +24,8 @@ import {
   Mail,
   Menu,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Phone,
   Plus,
   Search,
@@ -26,11 +33,13 @@ import {
   Sun,
   Trash2,
   Truck,
+  Upload,
   User,
   Users,
   X,
   XCircle,
 } from 'lucide-react';
+import { uploadImageToCloudinary } from './lib/cloudinary';
 import {
   applyTheme,
   deleteEmployee,
@@ -42,6 +51,8 @@ import {
   getFinancialRecords,
   getSavedTheme,
   getSites,
+  getSiteTasks,
+  getTeams,
   isSupabaseConfigured,
   saveEmployee,
   saveSite,
@@ -58,6 +69,8 @@ import {
   EntryStatus,
   FinancialRecord,
   SiteStatus,
+  SiteTask,
+  Team,
   ThemeColor,
   ThemeMode,
   TimeEntry,
@@ -65,6 +78,7 @@ import {
 } from './types';
 import { AuthModal } from './components/AuthModal';
 import { SiteDetailPage } from './pages/SiteDetailPage';
+import { TeamsPage } from './pages/TeamsPage';
 import { ClientPortalPage } from './pages/ClientPortalPage';
 import { FinancialPage } from './pages/FinancialPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -73,15 +87,20 @@ import { VehiclesPage } from './pages/VehiclesPage';
 import { VehicleDetailPage } from './pages/VehicleDetailPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { EmployeeDetailPage } from './pages/EmployeeDetailPage';
-import { CashFlowChart } from './components/CashFlowChart';
 import { AttendanceChart } from './components/AttendanceChart';
 import { DashboardCalendarCard } from './components/DashboardCalendarCard';
 import { EmployeeAutocompleteSelect } from './components/EmployeeAutocompleteSelect';
 import { JobTitleAutocompleteSelect } from './components/JobTitleAutocompleteSelect';
+import { SiteProgressLineChart } from './components/SiteProgressLineChart';
+import { SiteStatusDonutChart } from './components/SiteStatusDonutChart';
+import { TeamProductivityBarChart } from './components/TeamProductivityBarChart';
+import { customConfirm, customAlert } from './context/DialogContext';
+import { getEffectivePaidAmount, roundCents } from './lib/financialCalculations';
 
 type Page =
   | 'dashboard'
   | 'funcionarios'
+  | 'equipas'
   | 'obras'
   | 'financeiro'
   | 'inventario'
@@ -120,6 +139,23 @@ export default function App() {
   };
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('castello_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('castello_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   const [sites, setSites] = useState<ConstructionSite[]>([]);
   const [employees, setEmployees] = useState<EmployeeProfile[]>([]);
@@ -128,6 +164,26 @@ export default function App() {
   const [validationTab, setValidationTab] = useState<'pontos' | 'faltas'>('pontos');
   const [justifPreviewPhoto, setJustifPreviewPhoto] = useState<string | null>(null);
   const [financialRecords, setFinancialRecords] = useState<FinancialRecord[]>([]);
+  const [dashboardTasks, setDashboardTasks] = useState<SiteTask[]>([]);
+  const [dashboardTeams, setDashboardTeams] = useState<Team[]>([]);
+  const [hideCashBalance, setHideCashBalance] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('castello_hide_cash_balance') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const cashBalance = useMemo(() => {
+    const totalPaidIncome = financialRecords
+      .filter((r) => ((r.type as string) === 'income' || r.type === 'receita') && r.status !== 'cancelado')
+      .reduce((acc, r) => acc + getEffectivePaidAmount(r), 0);
+    const totalPaidExpense = financialRecords
+      .filter((r) => ((r.type as string) === 'expense' || r.type === 'despesa') && r.status !== 'cancelado')
+      .reduce((acc, r) => acc + getEffectivePaidAmount(r), 0);
+    return roundCents(totalPaidIncome - totalPaidExpense);
+  }, [financialRecords]);
+
   const [notification, setNotification] = useState<string | null>(null);
 
   // Estados de Busca, Filtro, Ordenação e Layout para Funcionários
@@ -157,6 +213,32 @@ export default function App() {
     is_active: true,
     avatar_url: '',
   });
+  const [uploadingEmpAvatar, setUploadingEmpAvatar] = useState(false);
+
+  const handleEmpAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingEmpAvatar(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result as string;
+          const url = await uploadImageToCloudinary(base64, 'castello_profiles');
+          setEmpForm((prev) => ({ ...prev, avatar_url: url }));
+          showNotice('Foto de perfil carregada com sucesso!');
+        } catch (err: any) {
+          alert('Erro ao enviar imagem: ' + (err.message || 'Tente novamente.'));
+        } finally {
+          setUploadingEmpAvatar(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setUploadingEmpAvatar(false);
+      alert('Erro ao processar ficheiro de imagem.');
+    }
+  };
 
   // Modal Obra (CRUD com autocomplete de encarregado)
   const [siteModalOpen, setSiteModalOpen] = useState(false);
@@ -172,23 +254,32 @@ export default function App() {
     client_name: '',
     client_phone: '',
     start_date: new Date().toISOString().slice(0, 10),
+    expected_end_date: '',
   });
 
   const loadData = async (compId?: string) => {
     const targetCompId = compId || activeCompany?.id;
-    const [s, e, t, f, j] = await Promise.all([
+    const [s, e, t, f, j, tm] = await Promise.all([
       getSites(targetCompId),
       getEmployees(targetCompId),
       getAllTimeEntries(targetCompId),
       getFinancialRecords(targetCompId),
       getAbsenceJustifications(undefined, targetCompId),
+      getTeams(targetCompId),
     ]);
     setSites(s);
     setEmployees(e);
     setEntries(t);
     setFinancialRecords(f);
     setJustifications(j);
-    setFinancialRecords(f);
+    setDashboardTeams(tm || []);
+
+    try {
+      const taskLists = await Promise.all(s.map((site) => getSiteTasks(site.id)));
+      setDashboardTasks(taskLists.flat());
+    } catch (err) {
+      console.warn('Erro ao carregar tarefas para gráficos do dashboard:', err);
+    }
 
     if (selectedSiteForDetail) {
       const refreshed = s.find((x) => x.id === selectedSiteForDetail.id);
@@ -230,6 +321,30 @@ export default function App() {
         ? `Registo #${entryId} validado com sucesso.`
         : `Registo #${entryId} rejeitado.`
     );
+  };
+
+  const handleValidateAllEntries = async () => {
+    if (pendingEntries.length === 0) return;
+    const confirmed = await customConfirm({
+      title: 'Validar Todos os Pontos',
+      message: `Tem a certeza que deseja validar e aprovar todos os ${pendingEntries.length} registo(s) de ponto pendentes de uma só vez?`,
+      type: 'confirm',
+      confirmText: `Aprovar Todos (${pendingEntries.length})`,
+      cancelText: 'Cancelar',
+    });
+    if (!confirmed) return;
+
+    try {
+      await Promise.all(pendingEntries.map((e) => updateEntryStatus(e.id, 'aprovado')));
+      await loadData(activeCompany?.id);
+      showNotice(`${pendingEntries.length} registos de ponto aprovados com sucesso.`);
+    } catch (err: any) {
+      customAlert({
+        title: 'Erro na Validação',
+        message: 'Ocorreu um erro ao validar os pontos: ' + (err.message || 'Tente novamente.'),
+        type: 'error',
+      });
+    }
   };
 
   const handleValidateJustification = async (justifId: string, status: 'aprovada' | 'rejeitada') => {
@@ -309,7 +424,14 @@ export default function App() {
   };
 
   const handleDeleteEmployee = async (id: string) => {
-    if (confirm('Tem a certeza de que deseja remover este colaborador?')) {
+    const confirmed = await customConfirm({
+      title: 'Remover Colaborador',
+      message: 'Tem a certeza de que deseja remover este colaborador? O histórico de registos permanecerá preservado.',
+      type: 'danger',
+      confirmText: 'Remover Colaborador',
+      cancelText: 'Cancelar',
+    });
+    if (confirmed) {
       await deleteEmployee(id);
       await loadData(activeCompany?.id);
       showNotice('Colaborador removido.');
@@ -319,6 +441,8 @@ export default function App() {
   // CRUD Obras com Select Autocomplete de Funcionários
   const handleOpenNewSite = () => {
     setEditingSiteId(undefined);
+    const today = new Date().toISOString().slice(0, 10);
+    const in90Days = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     setSiteForm({
       name: '',
       address: '',
@@ -329,7 +453,8 @@ export default function App() {
       description: '',
       client_name: '',
       client_phone: '',
-      start_date: new Date().toISOString().slice(0, 10),
+      start_date: today,
+      expected_end_date: in90Days,
     });
     setSiteModalOpen(true);
   };
@@ -347,12 +472,21 @@ export default function App() {
       client_name: site.client_name || '',
       client_phone: site.client_phone || '',
       start_date: site.start_date || new Date().toISOString().slice(0, 10),
+      expected_end_date: site.expected_end_date || '',
     });
     setSiteModalOpen(true);
   };
 
   const handleSaveSite = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (siteForm.start_date && siteForm.expected_end_date && siteForm.expected_end_date < siteForm.start_date) {
+      customAlert({
+        title: 'Datas Inconsistentes',
+        message: 'A data de conclusão prevista não pode ser anterior à data de início da obra.',
+        type: 'warning',
+      });
+      return;
+    }
     await saveSite(
       {
         id: editingSiteId,
@@ -366,17 +500,25 @@ export default function App() {
         client_name: siteForm.client_name.trim() || null,
         client_phone: siteForm.client_phone.trim() || null,
         start_date: siteForm.start_date || null,
+        expected_end_date: siteForm.expected_end_date || null,
       },
       activeCompany?.id
     );
     setSiteModalOpen(false);
     await loadData(activeCompany?.id);
-    showNotice(editingSiteId ? 'Obra atualizada.' : 'Obra cadastrada.');
+    showNotice(editingSiteId ? 'Obra e marcos do calendário atualizados.' : 'Obra cadastrada e marcos adicionados ao calendário.');
   };
 
   const handleDeleteSite = async (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (confirm('Deseja realmente remover esta obra?')) {
+    const confirmed = await customConfirm({
+      title: 'Remover Obra',
+      message: 'Deseja realmente remover esta obra? Todas as tarefas e dados associados deixarão de ser visíveis.',
+      type: 'danger',
+      confirmText: 'Remover Obra',
+      cancelText: 'Cancelar',
+    });
+    if (confirmed) {
       await deleteSite(id);
       if (selectedSiteForDetail?.id === id) {
         setSelectedSiteForDetail(null);
@@ -481,7 +623,6 @@ export default function App() {
               fontSize: 16,
               overflow: 'hidden',
               padding: 0,
-              backgroundColor: activeCompany.logo_url ? 'var(--primary)' : 'transparent',
             }}
           >
             {activeCompany.logo_url ? (
@@ -554,11 +695,11 @@ export default function App() {
         onClick={() => setMobileMenuOpen(false)}
       />
 
-      {/* Barra Lateral Flat */}
-      <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
+      {/* Barra Lateral Flat Retrátil */}
+      <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''} ${sidebarCollapsed && !mobileMenuOpen ? 'collapsed' : ''}`}>
         <div>
           <div className="brand-section">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: sidebarCollapsed && !mobileMenuOpen ? 'none' : 1, minWidth: 0, justifyContent: sidebarCollapsed && !mobileMenuOpen ? 'center' : 'flex-start' }}>
               <div
                 className="brand-logo-flat"
                 style={{
@@ -566,8 +707,9 @@ export default function App() {
                   height: 38,
                   overflow: 'hidden',
                   padding: 0,
-                  backgroundColor: activeCompany.logo_url ? 'var(--primary)' : 'transparent',
+                  flexShrink: 0,
                 }}
+                title={activeCompany.name}
               >
                 {activeCompany.logo_url ? (
                   <img
@@ -583,35 +725,47 @@ export default function App() {
                   />
                 )}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  className="brand-text-name"
-                  style={{
-                    fontSize: 16,
-                    fontWeight: 800,
-                    letterSpacing: -0.3,
-                    color: 'var(--text-main)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {activeCompany.name}
+              {(!sidebarCollapsed || mobileMenuOpen) && (
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    className="brand-text-name"
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 800,
+                      letterSpacing: -0.3,
+                      color: 'var(--text-main)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {activeCompany.name}
+                  </div>
+                  <div
+                    className="brand-text-sub"
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--primary)',
+                      fontWeight: 700,
+                      letterSpacing: 0.5,
+                      marginTop: 1,
+                    }}
+                  >
+                    castello
+                  </div>
                 </div>
-                <div
-                  className="brand-text-sub"
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--primary)',
-                    fontWeight: 700,
-                    letterSpacing: 0.5,
-                    marginTop: 1,
-                  }}
-                >
-                  castello
-                </div>
-              </div>
+              )}
             </div>
+
+            <button
+              type="button"
+              className="sidebar-collapse-btn"
+              onClick={toggleSidebarCollapse}
+              title={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+              aria-label={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+            </button>
 
             <button
               className="sidebar-close-btn"
@@ -625,6 +779,7 @@ export default function App() {
           <nav className="nav-list">
             <button
               className={`nav-item ${currentPage === 'dashboard' && !selectedSiteForDetail && !selectedEmployeeForDetail && !selectedVehicleForDetail ? 'active' : ''}`}
+              title="Dashboard"
               onClick={() => {
                 setCurrentPage('dashboard');
                 setSelectedSiteForDetail(null);
@@ -633,12 +788,13 @@ export default function App() {
                 setMobileMenuOpen(false);
               }}
             >
-              <LayoutDashboard size={18} />
-              Dashboard
+              <LayoutDashboard size={18} style={{ flexShrink: 0 }} />
+              <span className="nav-label">Dashboard</span>
             </button>
 
             <button
-              className={`nav-item ${currentPage === 'funcionarios' && !selectedSiteForDetail && !selectedVehicleForDetail ? 'active' : ''}`}
+              className={`nav-item ${currentPage === 'funcionarios' && !selectedSiteForDetail && !selectedVehicleForDetail && !selectedEmployeeForDetail ? 'active' : ''}`}
+              title="Funcionários"
               onClick={() => {
                 setCurrentPage('funcionarios');
                 setSelectedSiteForDetail(null);
@@ -647,12 +803,28 @@ export default function App() {
                 setMobileMenuOpen(false);
               }}
             >
-              <Users size={18} />
-              Funcionários
+              <User size={18} style={{ flexShrink: 0 }} />
+              <span className="nav-label">Funcionários</span>
+            </button>
+
+            <button
+              className={`nav-item ${currentPage === 'equipas' && !selectedSiteForDetail && !selectedVehicleForDetail && !selectedEmployeeForDetail ? 'active' : ''}`}
+              title="Equipas"
+              onClick={() => {
+                setCurrentPage('equipas');
+                setSelectedSiteForDetail(null);
+                setSelectedEmployeeForDetail(null);
+                setSelectedVehicleForDetail(null);
+                setMobileMenuOpen(false);
+              }}
+            >
+              <Users size={18} style={{ flexShrink: 0 }} />
+              <span className="nav-label">Equipas</span>
             </button>
 
             <button
               className={`nav-item ${currentPage === 'obras' || selectedSiteForDetail ? 'active' : ''}`}
+              title="Obras"
               onClick={() => {
                 setCurrentPage('obras');
                 setSelectedSiteForDetail(null);
@@ -661,12 +833,13 @@ export default function App() {
                 setMobileMenuOpen(false);
               }}
             >
-              <Building2 size={18} />
-              Obras
+              <Building2 size={18} style={{ flexShrink: 0 }} />
+              <span className="nav-label">Obras</span>
             </button>
 
             <button
               className={`nav-item ${currentPage === 'financeiro' && !selectedSiteForDetail && !selectedEmployeeForDetail && !selectedVehicleForDetail ? 'active' : ''}`}
+              title="Gestão Financeira"
               onClick={() => {
                 setCurrentPage('financeiro');
                 setSelectedSiteForDetail(null);
@@ -675,12 +848,13 @@ export default function App() {
                 setMobileMenuOpen(false);
               }}
             >
-              <DollarSign size={18} />
-              Gestão Financeira
+              <DollarSign size={18} style={{ flexShrink: 0 }} />
+              <span className="nav-label">Financeiro</span>
             </button>
 
             <button
               className={`nav-item ${currentPage === 'inventario' && !selectedSiteForDetail && !selectedEmployeeForDetail && !selectedVehicleForDetail ? 'active' : ''}`}
+              title="Inventário"
               onClick={() => {
                 setCurrentPage('inventario');
                 setSelectedSiteForDetail(null);
@@ -689,12 +863,13 @@ export default function App() {
                 setMobileMenuOpen(false);
               }}
             >
-              <Boxes size={18} />
-              Inventário
+              <Boxes size={18} style={{ flexShrink: 0 }} />
+              <span className="nav-label">Armazém</span>
             </button>
 
             <button
               className={`nav-item ${currentPage === 'carrinhas' && !selectedSiteForDetail && !selectedEmployeeForDetail ? 'active' : ''}`}
+              title="Carrinhas"
               onClick={() => {
                 setCurrentPage('carrinhas');
                 setSelectedSiteForDetail(null);
@@ -703,12 +878,13 @@ export default function App() {
                 setMobileMenuOpen(false);
               }}
             >
-              <Truck size={18} />
-              Carrinhas
+              <Truck size={18} style={{ flexShrink: 0 }} />
+              <span className="nav-label">Carrinhas</span>
             </button>
 
             <button
               className={`nav-item ${currentPage === 'calendario' && !selectedSiteForDetail && !selectedEmployeeForDetail && !selectedVehicleForDetail ? 'active' : ''}`}
+              title="Calendário"
               onClick={() => {
                 setCurrentPage('calendario');
                 setSelectedSiteForDetail(null);
@@ -717,12 +893,13 @@ export default function App() {
                 setMobileMenuOpen(false);
               }}
             >
-              <Calendar size={18} />
-              Calendário
+              <Calendar size={18} style={{ flexShrink: 0 }} />
+              <span className="nav-label">Calendário</span>
             </button>
 
             <button
               className={`nav-item ${currentPage === 'configuracoes' && !selectedSiteForDetail && !selectedEmployeeForDetail && !selectedVehicleForDetail ? 'active' : ''}`}
+              title="Configurações"
               onClick={() => {
                 setCurrentPage('configuracoes');
                 setSelectedSiteForDetail(null);
@@ -731,8 +908,8 @@ export default function App() {
                 setMobileMenuOpen(false);
               }}
             >
-              <Settings size={18} />
-              Configurações
+              <Settings size={18} style={{ flexShrink: 0 }} />
+              <span className="nav-label">Configurações</span>
             </button>
           </nav>
         </div>
@@ -741,32 +918,23 @@ export default function App() {
           <button
             className="theme-toggle-btn"
             onClick={toggleThemeMode}
+            title={`Alternar Tema (${theme === 'dark' ? 'Escuro' : 'Claro'})`}
           >
-            <span>Tema {theme === 'dark' ? 'Escuro' : 'Claro'}</span>
+            {(!sidebarCollapsed || mobileMenuOpen) && (
+              <span>Tema {theme === 'dark' ? 'Escuro' : 'Claro'}</span>
+            )}
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
 
           <button
             className="btn-flat-secondary"
-            style={{ width: '100%', justifyContent: 'center', gap: 6, fontSize: 12 }}
+            style={{ width: '100%', justifyContent: 'center', gap: 6, fontSize: 12, padding: sidebarCollapsed && !mobileMenuOpen ? '8px' : undefined }}
             onClick={handleLogout}
+            title="Sair da Firma"
           >
             <LogOut size={14} />
-            Sair da Firma
+            {(!sidebarCollapsed || mobileMenuOpen) && <span>Sair da Firma</span>}
           </button>
-
-          <div
-            style={{
-              fontSize: 11,
-              color: 'var(--text-muted)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            <Database size={13} color="var(--primary)" />
-            {isSupabaseConfigured ? 'Supabase Conectado' : 'Modo Local'}
-          </div>
         </div>
       </aside>
 
@@ -799,7 +967,13 @@ export default function App() {
             <SiteDetailPage
               site={selectedSiteForDetail}
               employees={employees}
+              financialRecords={financialRecords}
               onBack={() => setSelectedSiteForDetail(null)}
+              onOpenFinancialModule={() => {
+                setSelectedSiteForDetail(null);
+                setCurrentPage('financeiro');
+              }}
+              showNotice={showNotice}
             />
           ) : selectedEmployeeForDetail && currentPage === 'funcionarios' ? (
             <EmployeeDetailPage
@@ -841,6 +1015,42 @@ export default function App() {
                 </div>
 
                 <div className="kpi-row">
+                  {/* CARD DE VALOR EM CAIXA DA EMPRESA COM BOTÃO DE OCULTAR */}
+                  <div className="kpi-box" style={{ position: 'relative' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div className="kpi-label">Valor em Caixa (Tesouraria)</div>
+                      <button
+                        type="button"
+                        onClick={() => setHideCashBalance((prev) => !prev)}
+                        className="btn-icon"
+                        style={{
+                          padding: 2,
+                          color: 'var(--text-muted)',
+                          border: 'none',
+                          background: 'none',
+                          cursor: 'pointer',
+                        }}
+                        title={hideCashBalance ? 'Mostrar valor em caixa' : 'Ocultar valor em caixa'}
+                      >
+                        {hideCashBalance ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    <div
+                      className="kpi-value"
+                      style={{
+                        color: cashBalance >= 0 ? '#10B981' : '#EF4444',
+                        letterSpacing: hideCashBalance ? 3 : 'normal',
+                      }}
+                    >
+                      {hideCashBalance
+                        ? '•••••••• €'
+                        : cashBalance.toLocaleString('pt-PT', { style: 'currency', currency: 'EUR' })}
+                    </div>
+                    <div className="kpi-detail">
+                      {hideCashBalance ? 'Saldo protegido' : 'Receitas pagas menos despesas quitadas'}
+                    </div>
+                  </div>
+
                   <div className="kpi-box">
                     <div className="kpi-label">Pendências por Validar</div>
                     <div
@@ -872,29 +1082,61 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* GRID DO DASHBOARD: GRÁFICOS (ESQUERDA) + VALIDAÇÃO DE PONTOS (DIREITA) */}
-                <div className="dashboard-main-grid">
-                  {/* COLUNA ESQUERDA: Fluxo de Caixa e Assiduidade (tamanho original) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
-                    <CashFlowChart records={financialRecords} />
-                    <AttendanceChart employees={employees} entries={entries} />
-                  </div>
+                {/* ================================================================== */}
+                {/* 3 NOVOS GRÁFICOS DO DASHBOARD CONFORME HIERARQUIA SOLICITADA       */}
+                {/* ================================================================== */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 24 }}>
+                  {/* 1. GRÁFICO PRINCIPAL EM DESTAQUE: EVOLUÇÃO DAS OBRAS (LINE CHART) */}
+                  <SiteProgressLineChart sites={sites} tasks={dashboardTasks} />
 
-                  {/* COLUNA DIREITA: Validação de Pontos + Calendário de Próximos Eventos */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
-                    {/* 1. Card Compacto de Validação de Pontos & Justificativas de Falta */}
-                    <div
-                      className="content-panel"
-                      style={{
-                        margin: 0,
-                        height: 275,
-                        maxHeight: 275,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        overflow: 'hidden',
-                        boxSizing: 'border-box',
+                  {/* 2 & 3. GRÁFICOS SECUNDÁRIOS: DISTRIBUIÇÃO POR ESTADO + PRODUTIVIDADE */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+                      gap: 20,
+                    }}
+                  >
+                    <SiteStatusDonutChart
+                      sites={sites}
+                      onSelectSite={(site) => {
+                        setSelectedSiteForDetail(site);
+                        setCurrentPage('obras');
                       }}
-                    >
+                    />
+                    <TeamProductivityBarChart
+                      tasks={dashboardTasks}
+                      teams={dashboardTeams}
+                      sites={sites}
+                    />
+                  </div>
+                </div>
+
+                {/* PAINEL OPERACIONAL: ASSIDUIDADE + VALIDAÇÃO DE PONTOS + AGENDA (SEM BURACOS) */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+                    gap: 20,
+                    alignItems: 'stretch',
+                  }}
+                >
+                  {/* 1. Assiduidade da Equipa */}
+                  <AttendanceChart employees={employees} entries={entries} />
+
+                  {/* 2. Card Compacto de Validação de Pontos & Justificativas de Falta */}
+                  <div
+                    className="content-panel"
+                    style={{
+                      margin: 0,
+                      height: 275,
+                      maxHeight: 275,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      overflow: 'hidden',
+                      boxSizing: 'border-box',
+                    }}
+                  >
                       <div
                         className="panel-header-inline"
                         style={{
@@ -945,15 +1187,38 @@ export default function App() {
                           </button>
                         </div>
 
-                        <div
-                          className={`badge-flat ${
-                            (validationTab === 'pontos' ? pendingEntries.length : pendingJustifs.length) > 0
-                              ? 'warning'
-                              : 'primary'
-                          }`}
-                          style={{ fontSize: 10, padding: '2px 6px', flexShrink: 0 }}
-                        >
-                          {validationTab === 'pontos' ? pendingEntries.length : pendingJustifs.length} pendente(s)
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {validationTab === 'pontos' && pendingEntries.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleValidateAllEntries}
+                              className="btn-flat-success"
+                              style={{
+                                padding: '3px 8px',
+                                fontSize: 10,
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                borderRadius: 5,
+                                cursor: 'pointer',
+                              }}
+                              title="Aprovar todas as picagens de ponto pendentes"
+                            >
+                              <CheckCheck size={12} />
+                              Validar Tudo
+                            </button>
+                          )}
+                          <div
+                            className={`badge-flat ${
+                              (validationTab === 'pontos' ? pendingEntries.length : pendingJustifs.length) > 0
+                                ? 'warning'
+                                : 'primary'
+                            }`}
+                            style={{ fontSize: 10, padding: '2px 6px', flexShrink: 0 }}
+                          >
+                            {validationTab === 'pontos' ? pendingEntries.length : pendingJustifs.length} pendente(s)
+                          </div>
                         </div>
                       </div>
 
@@ -1265,14 +1530,13 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* 2. Card do Calendário de Próximos Eventos (ao lado da Assiduidade da Equipa) */}
+                    {/* 3. Card do Calendário de Próximos Eventos */}
                     <DashboardCalendarCard
                       companyId={activeCompany.id}
                       sites={sites}
                       employees={employees}
                       onOpenCalendar={() => setCurrentPage('calendario')}
                     />
-                  </div>
                 </div>
               </>
             )}
@@ -1679,6 +1943,16 @@ export default function App() {
               </>
             )}
 
+            {/* PÁGINA DE EQUIPAS */}
+            {currentPage === 'equipas' && (
+              <TeamsPage
+                companyId={activeCompany.id}
+                employees={employees}
+                sites={sites}
+                showNotice={showNotice}
+              />
+            )}
+
             {/* 3. PÁGINA DE OBRAS (CLIQUE PARA ABRIR PÁGINA DA OBRA) */}
             {currentPage === 'obras' && (
               <>
@@ -1833,7 +2107,7 @@ export default function App() {
                             <th>Nome da Obra</th>
                             <th>Localização</th>
                             <th>Encarregado</th>
-                            <th>Estado</th>
+                            <th style={{ textAlign: 'center', width: 70 }}>Estado</th>
                             <th style={{ textAlign: 'right' }}>Ações</th>
                           </tr>
                         </thead>
@@ -1866,18 +2140,29 @@ export default function App() {
                                 </td>
                                 <td>{site.address}</td>
                                 <td>{site.manager_name || 'Sem encarregado'}</td>
-                                <td>
+                                <td style={{ textAlign: 'center' }}>
                                   <span
-                                    className={`badge-flat ${
-                                      site.status === 'ativa'
-                                        ? 'success'
-                                        : site.status === 'pausada'
-                                        ? 'warning'
-                                        : 'primary'
-                                    }`}
-                                  >
-                                    {site.status.toUpperCase()}
-                                  </span>
+                                    title={site.status === 'ativa' ? 'Ativa' : site.status === 'pausada' ? 'Pausada' : 'Concluída'}
+                                    style={{
+                                      width: 14,
+                                      height: 14,
+                                      borderRadius: '50%',
+                                      backgroundColor:
+                                        site.status === 'ativa'
+                                          ? '#10B981'
+                                          : site.status === 'pausada'
+                                          ? '#F59E0B'
+                                          : '#64748B',
+                                      boxShadow:
+                                        site.status === 'ativa'
+                                          ? '0 0 8px rgba(16, 185, 129, 0.65)'
+                                          : site.status === 'pausada'
+                                          ? '0 0 8px rgba(245, 158, 11, 0.65)'
+                                          : 'none',
+                                      display: 'inline-block',
+                                      cursor: 'help',
+                                    }}
+                                  />
                                 </td>
                                 <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                                   <div style={{ display: 'inline-flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -2021,8 +2306,14 @@ export default function App() {
                 company={activeCompany}
                 sites={sites}
                 records={financialRecords}
+                employees={employees}
+                entries={entries}
                 onRefresh={() => loadData(activeCompany.id)}
                 showNotice={showNotice}
+                onOpenSite={(site) => {
+                  setSelectedSiteForDetail(site);
+                  setCurrentPage('obras');
+                }}
               />
             )}
 
@@ -2052,6 +2343,14 @@ export default function App() {
                 companyId={activeCompany.id}
                 sites={sites}
                 employees={employees}
+                teams={dashboardTeams}
+                tasks={dashboardTasks}
+                justifications={justifications}
+                onOpenSite={(siteId) => {
+                  const found = sites.find((s) => s.id === siteId);
+                  if (found) setSelectedSiteForDetail(found);
+                }}
+                onDataChanged={() => loadData(activeCompany.id)}
                 showNotice={showNotice}
               />
             )}
@@ -2170,23 +2469,81 @@ export default function App() {
                 </div>
 
                 <div className="flat-form-group full">
-                  <label>Foto de Perfil (URL da Imagem)</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {empForm.avatar_url ? (
+                  <label style={{ display: 'block', marginBottom: 6 }}>Foto de Perfil (Upload)</label>
+                  {empForm.avatar_url ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', borderRadius: 8, backgroundColor: 'var(--bg-card-subtle)', border: '1px solid var(--border-color)' }}>
                       <img
                         src={empForm.avatar_url}
-                        alt="Prévia"
-                        style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-color)', flexShrink: 0 }}
+                        alt="Prévia Colaborador"
+                        style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)', flexShrink: 0 }}
                       />
-                    ) : null}
-                    <input
-                      type="url"
-                      placeholder="https://... (deixe em branco para usar iniciais)"
-                      value={empForm.avatar_url}
-                      onChange={(e) => setEmpForm({ ...empForm, avatar_url: e.target.value })}
-                      style={{ flex: 1 }}
-                    />
-                  </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-main)' }}>Foto Carregada</div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                          <label
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: 'var(--primary)',
+                              cursor: uploadingEmpAvatar ? 'not-allowed' : 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              backgroundColor: 'var(--primary-subtle)',
+                              border: '1px solid var(--border-color)',
+                            }}
+                          >
+                            <Upload size={12} />
+                            {uploadingEmpAvatar ? 'A enviar...' : 'Substituir Foto'}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              style={{ display: 'none' }}
+                              disabled={uploadingEmpAvatar}
+                              onChange={handleEmpAvatarUpload}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setEmpForm((prev) => ({ ...prev, avatar_url: '' }))}
+                            className="btn-flat-secondary"
+                            style={{ padding: '2px 8px', fontSize: 11, color: 'var(--danger)' }}
+                          >
+                            <Trash2 size={12} /> Remover
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        padding: '14px 16px',
+                        borderRadius: 8,
+                        border: '2px dashed var(--border-color)',
+                        backgroundColor: 'var(--bg-card-subtle)',
+                        cursor: uploadingEmpAvatar ? 'not-allowed' : 'pointer',
+                        textAlign: 'center',
+                      }}
+                    >
+                      <input
+                        type="file"
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        disabled={uploadingEmpAvatar}
+                        onChange={handleEmpAvatarUpload}
+                      />
+                      <Upload size={16} color="var(--primary)" />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)' }}>
+                        {uploadingEmpAvatar ? 'A enviar foto para a nuvem...' : 'Carregar Foto do Colaborador (Upload)'}
+                      </span>
+                    </label>
+                  )}
                 </div>
               </div>
 
@@ -2276,6 +2633,24 @@ export default function App() {
                     type="number"
                     value={siteForm.budget}
                     onChange={(e) => setSiteForm({ ...siteForm, budget: e.target.value })}
+                  />
+                </div>
+
+                <div className="flat-form-group">
+                  <label>Data de Início da Obra</label>
+                  <input
+                    type="date"
+                    value={siteForm.start_date}
+                    onChange={(e) => setSiteForm({ ...siteForm, start_date: e.target.value })}
+                  />
+                </div>
+
+                <div className="flat-form-group">
+                  <label>Conclusão Prevista (Marco)</label>
+                  <input
+                    type="date"
+                    value={siteForm.expected_end_date}
+                    onChange={(e) => setSiteForm({ ...siteForm, expected_end_date: e.target.value })}
                   />
                 </div>
 

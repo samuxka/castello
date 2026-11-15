@@ -33,6 +33,7 @@ import {
   supabase,
 } from '../lib/supabase';
 import { uploadImageToCloudinary } from '../services/cloudinary';
+import { showCustomAlert } from '../context/DialogContext';
 
 interface VehicleScreenProps {
   employee: EmployeeProfile;
@@ -127,11 +128,11 @@ export function VehicleScreen({ employee, theme }: VehicleScreenProps) {
     if (!vehicle || !selectedStockItem) return;
     const qty = parseInt(loadQuantity, 10);
     if (isNaN(qty) || qty <= 0) {
-      Alert.alert('Aviso', 'Informe uma quantidade válida.');
+      showCustomAlert('Aviso', 'Informe uma quantidade válida.');
       return;
     }
     if (qty > selectedStockItem.available_quantity) {
-      Alert.alert('Estoque Insuficiente', `Disponível no estoque central: ${selectedStockItem.available_quantity} un.`);
+      showCustomAlert('Estoque Insuficiente', `Disponível no estoque central: ${selectedStockItem.available_quantity} un.`);
       return;
     }
 
@@ -151,9 +152,9 @@ export function VehicleScreen({ employee, theme }: VehicleScreenProps) {
       setSelectedStockItem(null);
       setLoadQuantity('1');
       await loadData();
-      Alert.alert('Sucesso', `${qty} un. de ${selectedStockItem.name} carregadas na carrinha!`);
+      showCustomAlert('Sucesso', `${qty} un. de ${selectedStockItem.name} carregadas na carrinha!`);
     } catch (err: any) {
-      Alert.alert('Erro', err.message || 'Falha ao carregar item.');
+      showCustomAlert('Erro', err.message || 'Falha ao carregar item.');
     } finally {
       setLoadingAction(false);
     }
@@ -164,11 +165,11 @@ export function VehicleScreen({ employee, theme }: VehicleScreenProps) {
     if (!vehicle || !selectedVehicleItem) return;
     const qty = parseInt(returnQuantity, 10);
     if (isNaN(qty) || qty <= 0) {
-      Alert.alert('Aviso', 'Informe uma quantidade válida.');
+      showCustomAlert('Aviso', 'Informe uma quantidade válida.');
       return;
     }
     if (qty > selectedVehicleItem.quantity) {
-      Alert.alert('Quantidade Inválida', `Na carrinha só existem ${selectedVehicleItem.quantity} un.`);
+      showCustomAlert('Quantidade Inválida', `Na carrinha só existem ${selectedVehicleItem.quantity} un.`);
       return;
     }
 
@@ -188,9 +189,9 @@ export function VehicleScreen({ employee, theme }: VehicleScreenProps) {
       setSelectedVehicleItem(null);
       setReturnQuantity('1');
       await loadData();
-      Alert.alert('Sucesso', `${qty} un. devolvidas ao estoque central!`);
+      showCustomAlert('Sucesso', `${qty} un. devolvidas ao estoque central!`);
     } catch (err: any) {
-      Alert.alert('Erro', err.message || 'Falha ao devolver item.');
+      showCustomAlert('Erro', err.message || 'Falha ao devolver item.');
     } finally {
       setLoadingAction(false);
     }
@@ -201,7 +202,7 @@ export function VehicleScreen({ employee, theme }: VehicleScreenProps) {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permissão', 'Permissão da câmara é necessária para fotografar.');
+        showCustomAlert('Permissão', 'Permissão da câmara é necessária para fotografar.');
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
@@ -215,7 +216,7 @@ export function VehicleScreen({ employee, theme }: VehicleScreenProps) {
         setReportPhotos((prev) => [...prev, uri]);
       }
     } catch (err: any) {
-      Alert.alert('Erro', err.message || 'Falha ao tirar foto.');
+      showCustomAlert('Erro', err.message || 'Falha ao tirar foto.');
     }
   };
 
@@ -224,7 +225,7 @@ export function VehicleScreen({ employee, theme }: VehicleScreenProps) {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permissão', 'Permissão da galeria necessária.');
+        showCustomAlert('Permissão', 'Permissão da galeria necessária.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -239,7 +240,7 @@ export function VehicleScreen({ employee, theme }: VehicleScreenProps) {
         setReportPhotos((prev) => [...prev, ...uris]);
       }
     } catch (err: any) {
-      Alert.alert('Erro', err.message || 'Falha ao selecionar fotos.');
+      showCustomAlert('Erro', err.message || 'Falha ao selecionar fotos.');
     }
   };
 
@@ -247,7 +248,7 @@ export function VehicleScreen({ employee, theme }: VehicleScreenProps) {
   const handleSubmitReport = async () => {
     if (!vehicle) return;
     if (!reportDescription.trim()) {
-      Alert.alert('Descrição Obrigatória', 'Por favor descreva o motivo ou situação do report.');
+      showCustomAlert('Descrição Obrigatória', 'Por favor descreva o motivo ou situação do report.');
       return;
     }
 
@@ -282,9 +283,9 @@ export function VehicleScreen({ employee, theme }: VehicleScreenProps) {
       setReportDescription('');
       setReportPhotos([]);
       await loadData();
-      Alert.alert('Report Enviado', 'O seu relatório foi enviado para a gerência da firma com sucesso!');
+      showCustomAlert('Report Enviado', 'O seu relatório foi enviado para a gerência da firma com sucesso!');
     } catch (err: any) {
-      Alert.alert('Erro', err.message || 'Falha ao submeter report.');
+      showCustomAlert('Erro', err.message || 'Falha ao submeter report.');
     } finally {
       setUploadingReport(false);
     }

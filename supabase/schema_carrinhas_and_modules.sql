@@ -198,6 +198,50 @@ create table if not exists public.company_notifications (
   created_at timestamptz not null default now()
 );
 
+-- 12. TABELA DE SESSÕES DE TRABALHO DAS EQUIPAS NA OBRA (site_work_sessions)
+create table if not exists public.site_work_sessions (
+  id text primary key,
+  company_id uuid references public.companies(id) on delete cascade,
+  site_id uuid references public.construction_sites(id) on delete cascade,
+  team_name text not null default 'Equipa 1',
+  leader_id text,
+  leader_name text not null,
+  workers_count integer not null default 1,
+  work_date date not null default current_date,
+  hours_worked numeric(6,2) not null default 0,
+  description text,
+  created_at timestamptz not null default now()
+);
+
+-- 13. TABELA DE DOCUMENTOS E CONTRATOS DA OBRA (site_documents)
+create table if not exists public.site_documents (
+  id text primary key,
+  site_id uuid references public.construction_sites(id) on delete cascade,
+  name text not null,
+  doc_type text not null,
+  file_url text,
+  file_size text,
+  uploaded_at date not null default current_date,
+  status text not null default 'disponivel'
+);
+
+-- 14. TABELA DE EQUIPAS DE TRABALHO (teams)
+create table if not exists public.teams (
+  id text primary key,
+  company_id uuid references public.companies(id) on delete cascade,
+  name text not null,
+  leader_id text,
+  leader_name text not null,
+  leader_phone text,
+  member_ids text[] default '{}',
+  member_names text[] default '{}',
+  current_site_id uuid references public.construction_sites(id) on delete set null,
+  current_site_name text,
+  allocated_at timestamptz,
+  notes text,
+  created_at timestamptz not null default now()
+);
+
 -- ============================================================================
 -- POLÍTICAS DE ACESSO (RLS) E PERMISSÕES
 -- ============================================================================
@@ -212,6 +256,18 @@ alter table public.financial_transactions enable row level security;
 alter table public.calendar_events enable row level security;
 alter table public.absence_justifications enable row level security;
 alter table public.company_notifications enable row level security;
+alter table public.site_work_sessions enable row level security;
+alter table public.site_documents enable row level security;
+alter table public.teams enable row level security;
+
+drop policy if exists "teams_open_policy" on public.teams;
+create policy "teams_open_policy" on public.teams for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists "site_work_sessions_open_policy" on public.site_work_sessions;
+create policy "site_work_sessions_open_policy" on public.site_work_sessions for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists "site_documents_open_policy" on public.site_documents;
+create policy "site_documents_open_policy" on public.site_documents for all to anon, authenticated using (true) with check (true);
 
 drop policy if exists "vehicles_open_policy" on public.vehicles;
 create policy "vehicles_open_policy" on public.vehicles for all to anon, authenticated using (true) with check (true);
@@ -259,6 +315,9 @@ grant all on public.financial_transactions to anon, authenticated;
 grant all on public.calendar_events to anon, authenticated;
 grant all on public.absence_justifications to anon, authenticated;
 grant all on public.company_notifications to anon, authenticated;
+grant all on public.site_work_sessions to anon, authenticated;
+grant all on public.site_documents to anon, authenticated;
+grant all on public.teams to anon, authenticated;
 
 -- Recarrega o cache do PostgREST imediatamente
 notify pgrst, 'reload schema';
