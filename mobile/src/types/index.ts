@@ -59,6 +59,8 @@ export interface SiteWorkSession {
   workers_count: number;
   work_date: string; // YYYY-MM-DD
   hours_worked: number;
+  man_hours?: number | null;
+  member_ids_snapshot?: string[];
   description?: string | null;
   created_at?: string;
 }
@@ -201,6 +203,30 @@ export interface VehicleReport {
   description: string;
   current_km?: number | null;
   photos?: string[];
+  created_at: string;
+}
+
+export type AccidentSeverity = 'leve' | 'moderado' | 'grave' | 'critico';
+
+export interface SiteAccident {
+  id: string;
+  company_id?: string | null;
+  site_id: string;
+  site_name?: string | null;
+  title: string;
+  accident_type: string;
+  severity: AccidentSeverity;
+  accident_date: string; // YYYY-MM-DD
+  accident_time?: string | null; // HH:mm
+  victim_name: string;
+  victim_role?: string | null;
+  description: string;
+  first_aid_provided?: boolean;
+  hospital_referral?: boolean;
+  photos?: string[];
+  reported_by_id: string;
+  reported_by_name: string;
+  status: 'registado' | 'investigado' | 'resolvido';
   created_at: string;
 }
 

@@ -31,6 +31,7 @@ import {
   getCompanyById,
   getFinancialRecords,
   getSiteByShareCode,
+  getSiteAccidents,
   getSiteDailyLogs,
   getSiteDocuments,
   getSiteTasks,
@@ -46,6 +47,7 @@ import {
   SiteDocument,
   SiteTask,
   SiteWorkSession,
+  SiteAccident,
   ThemeColor,
   ThemeMode,
 } from '../types';
@@ -88,6 +90,7 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
 
   // Filtro de Tarefas na Tab Tarefas
   const [taskFilter, setTaskFilter] = useState<'todas' | 'pendentes' | 'execucao' | 'concluidas'>('todas');
+  const [accidents, setAccidents] = useState<SiteAccident[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -112,20 +115,53 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
 
         // Carrega tarefas, diários, sessões de equipa, finanças, documentos e marcos do calendário
         await syncSiteMilestonesWithCalendar(foundSite, foundSite.company_id);
-        const [t, l, ws, fin, docs, calEvts] = await Promise.all([
+        const [t, l, ws, fin, docs, calEvts, accs] = await Promise.all([
           getSiteTasks(foundSite.id),
           getSiteDailyLogs(foundSite.id),
           getSiteWorkSessions(foundSite.id),
           getFinancialRecords(foundSite.company_id || undefined),
           getSiteDocuments(foundSite.id),
           getCalendarEvents(foundSite.company_id || undefined),
+          getSiteAccidents(foundSite.id, foundSite.company_id),
         ]);
 
+        // Extrai acidentes que possam estar sincronizados em site_daily_logs e limpa diários
+        const extractedAccidents: SiteAccident[] = [];
+        const cleanLogs: typeof l = [];
+        const ACCIDENT_LOG_REGEX = /<!--CASTELLO_ACCIDENT:([\s\S]*?)-->/;
+
+        (l || []).forEach((log) => {
+          const rawNotes = typeof log.notes === 'string' ? log.notes : '';
+          const match = rawNotes.match(ACCIDENT_LOG_REGEX);
+          if (match && match[1]) {
+            try {
+              const parsed = JSON.parse(match[1]);
+              if (parsed && parsed.accident_date) {
+                extractedAccidents.push(parsed);
+              }
+            } catch {}
+          } else if (!log.summary?.startsWith('[SST_ACIDENTE]')) {
+            cleanLogs.push(log);
+          }
+        });
+
+        // Combina acidentes da tabela dedicada com os dos logs
+        const accidentsMap = new Map<string, SiteAccident>();
+        [...(accs || []), ...extractedAccidents].forEach((item) => {
+          if (item && item.id) {
+            accidentsMap.set(item.id, item);
+          }
+        });
+        const finalAccidents = Array.from(accidentsMap.values()).sort((a, b) =>
+          b.accident_date.localeCompare(a.accident_date)
+        );
+
         setTasks(t);
-        setDailyLogs(l);
+        setDailyLogs(cleanLogs);
         setWorkSessions(ws);
         setFinancials(fin.filter((r) => r.site_id === foundSite.id));
         setDocuments(docs);
+        setAccidents(finalAccidents);
         setClientMilestones(
           calEvts
             .filter(
@@ -796,11 +832,24 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
 
                   {/* Contador Principal de Dias Sem Acidentes */}
                   {(() => {
-                    const refDate = site.start_date || site.created_at;
                     let count = 48;
-                    if (refDate) {
-                      const diffDays = Math.ceil(Math.abs(Date.now() - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24));
-                      count = Math.max(diffDays, 12);
+                    let subtitle = 'Zero ocorrências com baixa de trabalho';
+                    let countColor = '#10B981';
+
+                    if (accidents && accidents.length > 0) {
+                      const sortedAccidents = [...accidents].sort((a, b) => (b.accident_date > a.accident_date ? 1 : -1));
+                      const latest = sortedAccidents[0];
+                      const latestTime = new Date(`${latest.accident_date}T00:00:00`).getTime();
+                      const nowTime = new Date().getTime();
+                      count = Math.max(0, Math.floor((nowTime - latestTime) / (1000 * 60 * 60 * 24)));
+                      subtitle = `${accidents.length} ${accidents.length === 1 ? 'ocorrência registada' : 'ocorrências registadas'} (última: ${latest.accident_date.split('-').reverse().join('/')})`;
+                      countColor = count < 7 ? '#EF4444' : count < 30 ? '#F59E0B' : '#10B981';
+                    } else {
+                      const refDate = site.start_date || site.created_at;
+                      if (refDate) {
+                        const diffDays = Math.ceil(Math.abs(Date.now() - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24));
+                        count = Math.max(diffDays, 12);
+                      }
                     }
                     return (
                       <div
@@ -819,7 +868,7 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
                           style={{
                             fontSize: 44,
                             fontWeight: 900,
-                            color: '#10B981',
+                            color: countColor,
                             fontFamily: 'monospace',
                             lineHeight: 1,
                             letterSpacing: -1,
@@ -832,7 +881,7 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
                             Dias Sem Acidentes
                           </div>
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                            Zero ocorrências com baixa de trabalho
+                            {subtitle}
                           </div>
                         </div>
                       </div>

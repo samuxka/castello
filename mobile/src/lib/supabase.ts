@@ -14,6 +14,7 @@ import {
   InventoryItem,
   InventoryMovement,
   SiteWorkSession,
+  SiteAccident,
   Team,
 } from '../types';
 import { getLocalDateString } from '../utils/timeCalculations';
@@ -978,6 +979,52 @@ export async function submitVehicleReport(
 // SESSÕES DE TRABALHO DA EQUIPA NA OBRA (Registadas pelo Líder da Equipa)
 // ----------------------------------------------------------------------------
 const SITE_SESSIONS_KEY = '@castello:site_work_sessions_';
+const SESS_META_REGEX_MOBILE = /\n?<!--CASTELLO_SESS_META:([\s\S]*?)-->/;
+
+export function stripSessionMetaMobile(desc?: string | null): string | null {
+  if (!desc) return null;
+  const cleaned = desc.replace(SESS_META_REGEX_MOBILE, '').trim();
+  return cleaned || null;
+}
+
+function decodeSessionMobileRow(row: any): SiteWorkSession {
+  const rawDesc = typeof row?.description === 'string' ? row.description : '';
+  let meta: any = {};
+  const match = rawDesc.match(SESS_META_REGEX_MOBILE);
+  if (match && match[1]) {
+    try {
+      meta = JSON.parse(match[1]);
+    } catch {}
+  }
+  const cleanDesc = stripSessionMetaMobile(rawDesc);
+  const hoursWorked = Number(row?.hours_worked || 0);
+  const workersCount = Number(row?.workers_count || 1);
+  return {
+    id: String(row?.id || ''),
+    company_id: (row?.company_id as string | null) || null,
+    site_id: String(row?.site_id || ''),
+    team_id: (row?.team_id as string | null) || (meta.team_id as string | null) || null,
+    team_name: String(row?.team_name || 'Equipa 1'),
+    leader_id: (row?.leader_id as string | null) || null,
+    leader_name: String(row?.leader_name || 'Líder da Equipa'),
+    workers_count: workersCount,
+    work_date: String(row?.work_date || ''),
+    hours_worked: hoursWorked,
+    man_hours:
+      typeof row?.man_hours === 'number'
+        ? row.man_hours
+        : typeof meta?.man_hours === 'number'
+          ? meta.man_hours
+          : Number((hoursWorked * workersCount).toFixed(2)),
+    description: cleanDesc,
+    member_ids_snapshot: Array.isArray(row?.member_ids_snapshot)
+      ? row.member_ids_snapshot
+      : Array.isArray(meta?.member_ids_snapshot)
+        ? meta.member_ids_snapshot
+        : [],
+    created_at: String(row?.created_at || new Date().toISOString()),
+  };
+}
 
 export async function fetchSiteWorkSessionsMobile(siteId: string): Promise<SiteWorkSession[]> {
   const localKey = `${SITE_SESSIONS_KEY}${siteId}`;
@@ -988,9 +1035,10 @@ export async function fetchSiteWorkSessionsMobile(siteId: string): Promise<SiteW
         .select('*')
         .eq('site_id', siteId)
         .order('work_date', { ascending: false });
-      if (!error && data) {
-        await AsyncStorage.setItem(localKey, JSON.stringify(data));
-        return data as SiteWorkSession[];
+      if (!error && Array.isArray(data)) {
+        const decoded = data.map(decodeSessionMobileRow);
+        await AsyncStorage.setItem(localKey, JSON.stringify(decoded));
+        return decoded;
       }
     } catch (e) {
       console.warn('Erro ao carregar sessões de trabalho:', e);
@@ -998,7 +1046,12 @@ export async function fetchSiteWorkSessionsMobile(siteId: string): Promise<SiteW
   }
   try {
     const raw = await AsyncStorage.getItem(localKey);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map(decodeSessionMobileRow);
+      }
+    }
   } catch {}
   return [];
 }
@@ -1008,6 +1061,7 @@ export async function saveSiteWorkSessionMobile(
 ): Promise<SiteWorkSession> {
   const localKey = `${SITE_SESSIONS_KEY}${session.site_id}`;
   const now = new Date().toISOString();
+  const cleanDescription = stripSessionMetaMobile(session.description);
   const newSession: SiteWorkSession = {
     id: session.id || `sess-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     company_id: session.company_id || null,
@@ -1019,7 +1073,7 @@ export async function saveSiteWorkSessionMobile(
     workers_count: Number(session.workers_count || 1),
     work_date: session.work_date || now.slice(0, 10),
     hours_worked: Number(session.hours_worked || 0),
-    description: session.description?.trim() || null,
+    description: cleanDescription,
     created_at: session.created_at || now,
   };
 
@@ -1043,6 +1097,174 @@ export async function saveSiteWorkSessionMobile(
     : [newSession, ...current];
   await AsyncStorage.setItem(localKey, JSON.stringify(updated));
   return newSession;
+}
+
+// ----------------------------------------------------------------------------
+// REGISTO DE ACIDENTES DE TRABALHO NA OBRA (MOBILE)
+// ----------------------------------------------------------------------------
+const SITE_ACCIDENTS_KEY = '@castello:site_accidents_';
+const ACCIDENT_LOG_REGEX_MOBILE = /\n?<!--CASTELLO_ACCIDENT:([\s\S]*?)-->/;
+
+function safeUUIDMobile(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+export async function fetchSiteAccidentsMobile(
+  siteId: string,
+  companyId?: string | null
+): Promise<SiteAccident[]> {
+  const localKey = `${SITE_ACCIDENTS_KEY}${siteId}`;
+  let localAccidents: SiteAccident[] = [];
+  try {
+    const raw = await AsyncStorage.getItem(localKey);
+    if (raw) localAccidents = JSON.parse(raw) as SiteAccident[];
+  } catch {}
+
+  if (supabase) {
+    let cloudAccidents: SiteAccident[] = [];
+
+    // 1. Tenta carregar da tabela dedicada site_accidents
+    try {
+      let query = supabase
+        .from('site_accidents')
+        .select('*')
+        .eq('site_id', siteId)
+        .order('accident_date', { ascending: false });
+
+      if (companyId) {
+        query = query.eq('company_id', companyId);
+      }
+
+      const { data, error } = await query;
+      if (!error && Array.isArray(data) && data.length > 0) {
+        cloudAccidents = data as SiteAccident[];
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar acidentes no Supabase:', e);
+    }
+
+    // 2. Se a tabela não existir ou estiver vazia, sincroniza através de site_daily_logs (compatível com portal do cliente)
+    if (cloudAccidents.length === 0) {
+      try {
+        const { data: logsData, error: logErr } = await supabase
+          .from('site_daily_logs')
+          .select('*')
+          .eq('site_id', siteId)
+          .order('log_date', { ascending: false });
+
+        if (!logErr && Array.isArray(logsData)) {
+          for (const log of logsData) {
+            const rawNotes = typeof log.notes === 'string' ? log.notes : '';
+            const match = rawNotes.match(ACCIDENT_LOG_REGEX_MOBILE);
+            if (match && match[1]) {
+              try {
+                const parsed = JSON.parse(match[1]);
+                if (parsed && !cloudAccidents.some((x) => x.id === parsed.id)) {
+                  cloudAccidents.push(parsed);
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Erro ao ler acidentes de site_daily_logs:', e);
+      }
+    }
+
+    // 3. Auto-sincronização: se existirem acidentes locais no telemóvel que ainda não subiram à nuvem, envia-os agora
+    if (localAccidents.length > 0) {
+      for (const loc of localAccidents) {
+        if (!cloudAccidents.some((c) => c.id === loc.id)) {
+          try {
+            await supabase.from('site_daily_logs').insert({
+              id: safeUUIDMobile(),
+              site_id: loc.site_id,
+              log_date: loc.accident_date,
+              summary: `[SST_ACIDENTE] ${loc.accident_type}: ${loc.victim_name}`,
+              notes: `<!--CASTELLO_ACCIDENT:${JSON.stringify(loc)}-->`,
+              workers_count: 1,
+            });
+            cloudAccidents.unshift(loc);
+          } catch (syncErr) {
+            console.warn('Falha na auto-sincronização do acidente local:', syncErr);
+          }
+        }
+      }
+    }
+
+    if (cloudAccidents.length > 0) {
+      await AsyncStorage.setItem(localKey, JSON.stringify(cloudAccidents));
+      return cloudAccidents;
+    }
+  }
+
+  return localAccidents;
+}
+
+export async function saveSiteAccidentMobile(
+  accident: Omit<SiteAccident, 'id' | 'created_at'> & { id?: string; created_at?: string }
+): Promise<SiteAccident> {
+  const localKey = `${SITE_ACCIDENTS_KEY}${accident.site_id}`;
+  const now = new Date().toISOString();
+  const newAccident: SiteAccident = {
+    id: accident.id || `acc-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    company_id: accident.company_id || null,
+    site_id: accident.site_id,
+    site_name: accident.site_name || null,
+    title: accident.title.trim(),
+    accident_type: accident.accident_type.trim(),
+    severity: accident.severity,
+    accident_date: accident.accident_date,
+    accident_time: accident.accident_time || null,
+    victim_name: accident.victim_name.trim(),
+    victim_role: accident.victim_role?.trim() || null,
+    description: accident.description.trim(),
+    first_aid_provided: Boolean(accident.first_aid_provided),
+    hospital_referral: Boolean(accident.hospital_referral),
+    photos: Array.isArray(accident.photos) ? accident.photos : [],
+    reported_by_id: accident.reported_by_id,
+    reported_by_name: accident.reported_by_name.trim(),
+    status: accident.status || 'registado',
+    created_at: accident.created_at || now,
+  };
+
+  if (supabase) {
+    try {
+      const { error } = await supabase.from('site_accidents').upsert(newAccident, { onConflict: 'id' });
+      if (error) {
+        console.warn('Erro ao gravar em site_accidents no Supabase:', error.message);
+      }
+    } catch (e) {
+      console.warn('Erro de rede ao salvar acidente no Supabase:', e);
+    }
+
+    // Sincronização direta em site_daily_logs (tabela ativa na nuvem e lida pelo Portal do Cliente)
+    try {
+      const dailyLogPayload = {
+        id: safeUUIDMobile(),
+        site_id: newAccident.site_id,
+        log_date: newAccident.accident_date,
+        summary: `[SST_ACIDENTE] ${newAccident.accident_type}: ${newAccident.victim_name}`,
+        notes: `<!--CASTELLO_ACCIDENT:${JSON.stringify(newAccident)}-->`,
+        workers_count: 1,
+      };
+      await supabase.from('site_daily_logs').insert(dailyLogPayload);
+    } catch (logErr) {
+      console.warn('Erro ao sincronizar acidente em site_daily_logs:', logErr);
+    }
+  }
+
+  const current = await fetchSiteAccidentsMobile(accident.site_id, accident.company_id);
+  const exists = current.some((a) => a.id === newAccident.id);
+  const updated = exists
+    ? current.map((a) => (a.id === newAccident.id ? newAccident : a))
+    : [newAccident, ...current];
+  await AsyncStorage.setItem(localKey, JSON.stringify(updated));
+  return newAccident;
 }
 
 // ----------------------------------------------------------------------------

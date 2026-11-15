@@ -474,6 +474,25 @@ html, body {
   cursor: pointer;
 }
 
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 13px;
+  transition: all 0.15s ease;
+}
+.btn-icon:hover {
+  background-color: var(--bg-card-subtle);
+  color: var(--text-main);
+  border-color: var(--border-color);
+}
+
 /* Grid de Cards KPIs */
 .kpi-row {
   display: grid;

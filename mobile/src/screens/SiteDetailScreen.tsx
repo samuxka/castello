@@ -14,13 +14,27 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { ConstructionSite, EmployeeProfile, InventoryItem, SiteTask, SiteWorkSession } from '../types';
+import {
+  AccidentSeverity,
+  ConstructionSite,
+  EmployeeProfile,
+  InventoryItem,
+  SiteAccident,
+  SiteTask,
+  SiteWorkSession,
+  Team,
+} from '../types';
 import {
   completeTaskByWorker,
+  fetchEmployees,
+  fetchSiteAccidentsMobile,
   fetchSiteInventoryMobile,
   fetchSiteTasks,
   fetchSiteWorkSessionsMobile,
+  fetchTeamsMobile,
+  saveSiteAccidentMobile,
   saveSiteWorkSessionMobile,
+  stripSessionMetaMobile,
 } from '../lib/supabase';
 import { uploadImageToCloudinary } from '../services/cloudinary';
 
@@ -61,11 +75,37 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
   // Registro de Horas de Equipa (Líder / Encarregado da Obra)
   const [teamSessions, setTeamSessions] = useState<SiteWorkSession[]>([]);
   const [teamModalOpen, setTeamModalOpen] = useState(false);
+  const [expandedTeamSessions, setExpandedTeamSessions] = useState(false);
   const [teamName, setTeamName] = useState('Equipa 1');
   const [hoursWorked, setHoursWorked] = useState('4');
   const [workersCount, setWorkersCount] = useState('3');
   const [sessionDesc, setSessionDesc] = useState('');
   const [savingSession, setSavingSession] = useState(false);
+
+  // Segurança & Registo de Acidentes
+  const [accidents, setAccidents] = useState<SiteAccident[]>([]);
+  const [accidentModalOpen, setAccidentModalOpen] = useState(false);
+  const [expandedAccidents, setExpandedAccidents] = useState(false);
+  const [accTitle, setAccTitle] = useState('');
+  const [accType, setAccType] = useState('Queda em Altura');
+  const [accSeverity, setAccSeverity] = useState<AccidentSeverity>('leve');
+  const [accVictimName, setAccVictimName] = useState('');
+  const [accVictimRole, setAccVictimRole] = useState('');
+  const [showVictimDropdown, setShowVictimDropdown] = useState(false);
+  const [isExternalVictim, setIsExternalVictim] = useState(false);
+  const [accDate, setAccDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [accTime, setAccTime] = useState(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  });
+  const [accDesc, setAccDesc] = useState('');
+  const [accFirstAid, setAccFirstAid] = useState(false);
+  const [accHospital, setAccHospital] = useState(false);
+  const [savingAccident, setSavingAccident] = useState(false);
+
+  // Lista de Funcionários e Equipas para Seleção Inteligente
+  const [allEmployees, setAllEmployees] = useState<EmployeeProfile[]>([]);
+  const [siteTeams, setSiteTeams] = useState<Team[]>([]);
 
   // Materiais Alocados na Obra
   const [siteMaterials, setSiteMaterials] = useState<InventoryItem[]>([]);
@@ -74,14 +114,21 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
   const loadTasks = async () => {
     setLoadingTasks(true);
     try {
-      const [tasksData, sessionsData, materialsData] = await Promise.all([
-        fetchSiteTasks(site.id),
-        fetchSiteWorkSessionsMobile(site.id),
-        fetchSiteInventoryMobile(site.id, site.company_id || employee.company_id || undefined),
-      ]);
+      const [tasksData, sessionsData, materialsData, accidentsData, employeesData, teamsData] =
+        await Promise.all([
+          fetchSiteTasks(site.id),
+          fetchSiteWorkSessionsMobile(site.id),
+          fetchSiteInventoryMobile(site.id, site.company_id || employee.company_id || undefined),
+          fetchSiteAccidentsMobile(site.id, site.company_id || employee.company_id || undefined),
+          fetchEmployees(),
+          fetchTeamsMobile(site.company_id || employee.company_id || undefined),
+        ]);
       setTasks(tasksData);
       setTeamSessions(sessionsData);
       setSiteMaterials(materialsData || []);
+      setAccidents(accidentsData || []);
+      setAllEmployees(employeesData || []);
+      setSiteTeams(teamsData || []);
     } finally {
       setLoadingTasks(false);
     }
@@ -261,6 +308,138 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
       showCustomAlert('Erro', err.message || 'Falha ao registrar conclusão da tarefa.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Mapeamento dos trabalhadores associados a esta obra (equipa atual, tarefas, encarregado)
+  const siteWorkerIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    const names = new Set<string>();
+
+    if (site.manager_id) ids.add(site.manager_id);
+    if (site.manager_name) names.add(site.manager_name.trim().toLowerCase());
+
+    // Líderes e membros de equipas alocadas a esta obra
+    siteTeams
+      .filter((t) => t.current_site_id === site.id && !t.is_archived)
+      .forEach((t) => {
+        if (t.leader_id) ids.add(t.leader_id);
+        if (t.leader_name) names.add(t.leader_name.trim().toLowerCase());
+        t.member_ids?.forEach((mId) => ids.add(mId));
+        t.member_names?.forEach((mName) => names.add(mName.trim().toLowerCase()));
+      });
+
+    // Colaboradores com tarefas na obra
+    tasks.forEach((t) => {
+      if (t.assigned_to_id) ids.add(t.assigned_to_id);
+      if (t.assigned_to_name) names.add(t.assigned_to_name.trim().toLowerCase());
+    });
+
+    return { ids, names };
+  }, [site, siteTeams, tasks]);
+
+  // Lista ordenada de colaboradores (prioriza os que estão na obra)
+  const candidateEmployees = React.useMemo(() => {
+    return allEmployees
+      .map((emp) => {
+        const isOnSite =
+          siteWorkerIds.ids.has(emp.id) ||
+          siteWorkerIds.names.has(emp.full_name.trim().toLowerCase());
+        return {
+          ...emp,
+          isOnSite,
+        };
+      })
+      .sort((a, b) => {
+        if (a.isOnSite && !b.isOnSite) return -1;
+        if (!a.isOnSite && b.isOnSite) return 1;
+        return a.full_name.localeCompare(b.full_name, 'pt');
+      });
+  }, [allEmployees, siteWorkerIds]);
+
+  // Filtragem interativa conforme o utilizador digita
+  const filteredEmployees = React.useMemo(() => {
+    const query = accVictimName.trim().toLowerCase();
+    if (!query) {
+      // Se não digitou nada, mostra os colaboradores da obra no topo
+      return candidateEmployees.slice(0, 10);
+    }
+    return candidateEmployees.filter(
+      (emp) =>
+        emp.full_name.toLowerCase().includes(query) ||
+        (emp.job_title && emp.job_title.toLowerCase().includes(query))
+    );
+  }, [candidateEmployees, accVictimName]);
+
+  const handleSelectEmployeeVictim = (emp: EmployeeProfile & { isOnSite: boolean }) => {
+    setAccVictimName(emp.full_name);
+    setAccVictimRole(emp.job_title || 'Colaborador da Obra');
+    setIsExternalVictim(false);
+    setShowVictimDropdown(false);
+  };
+
+  const handleSelectExternalVictim = () => {
+    setIsExternalVictim(true);
+    if (!accVictimRole || accVictimRole === 'Colaborador da Obra') {
+      setAccVictimRole('Visitante / Externo');
+    }
+    setShowVictimDropdown(false);
+  };
+
+  const handleSaveAccident = async () => {
+    if (!accVictimName.trim()) {
+      showCustomAlert('Atenção', 'Informe o nome do trabalhador ou visitante que sofreu o acidente.');
+      return;
+    }
+    if (!accDesc.trim()) {
+      showCustomAlert('Atenção', 'Descreva o que ocorreu no acidente.');
+      return;
+    }
+
+    setSavingAccident(true);
+    try {
+      const newAcc = await saveSiteAccidentMobile({
+        company_id: site.company_id || employee.company_id || null,
+        site_id: site.id,
+        site_name: site.name,
+        title: accTitle.trim() || `${accType} - ${accVictimName.trim()}`,
+        accident_type: accType,
+        severity: accSeverity,
+        accident_date: accDate || new Date().toISOString().slice(0, 10),
+        accident_time: accTime || null,
+        victim_name: accVictimName.trim(),
+        victim_role: accVictimRole.trim() || (isExternalVictim ? 'Visitante / Externo' : null),
+        description: accDesc.trim(),
+        first_aid_provided: accFirstAid,
+        hospital_referral: accHospital,
+        reported_by_id: employee.id,
+        reported_by_name: employee.full_name,
+        status: 'registado',
+      });
+
+      setAccidents((prev) => [newAcc, ...prev]);
+      setAccidentModalOpen(false);
+
+      // Limpar formulário
+      setAccTitle('');
+      setAccType('Queda em Altura');
+      setAccSeverity('leve');
+      setAccVictimName('');
+      setAccVictimRole('');
+      setIsExternalVictim(false);
+      setShowVictimDropdown(false);
+      setAccDesc('');
+      setAccFirstAid(false);
+      setAccHospital(false);
+
+      showCustomAlert(
+        'Acidente Registado',
+        'O registo de segurança foi gravado com sucesso. Foi atualizado no histórico e nos indicadores de SST da obra.'
+      );
+    } catch (e: any) {
+      showCustomAlert('Erro', e.message || 'Não foi possível gravar o registo do acidente.');
+    } finally {
+      setSavingAccident(false);
     }
   };
 
@@ -466,47 +645,270 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
             </Text>
           ) : (
             <View style={{ marginTop: 8, gap: 6 }}>
-              {teamSessions.slice(0, 3).map((sess) => (
-                <View
-                  key={sess.id}
-                  style={{
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: 8,
-                    borderRadius: 6,
-                    backgroundColor: colors.cardSubtle,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  }}
-                >
-                  <View>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain }}>
-                      {sess.team_name} ({sess.workers_count} trab.)
-                    </Text>
-                    <Text style={{ fontSize: 10, color: colors.textMuted }}>
-                      {sess.work_date.split('-').reverse().join('/')} • Por {sess.leader_name}
-                      {sess.description ? ` • ${sess.description}` : ''}
-                    </Text>
-                  </View>
+              {(expandedTeamSessions ? teamSessions : teamSessions.slice(0, 3)).map((sess) => {
+                const cleanedDesc = stripSessionMetaMobile(sess.description);
+                return (
                   <View
+                    key={sess.id}
                     style={{
-                      paddingHorizontal: 8,
-                      paddingVertical: 3,
-                      borderRadius: 4,
-                      backgroundColor: colors.primary,
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: 10,
+                      borderRadius: 8,
+                      backgroundColor: colors.cardSubtle,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      gap: 8,
                     }}
                   >
-                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#FFFFFF' }}>
-                      {sess.hours_worked}h
-                    </Text>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textMain }}>
+                        {sess.team_name} ({sess.workers_count} trab.)
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2, lineHeight: 16 }}>
+                        {sess.work_date.split('-').reverse().join('/')} • Por {sess.leader_name}
+                        {cleanedDesc ? ` • ${cleanedDesc}` : ''}
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 5,
+                        borderRadius: 6,
+                        backgroundColor: colors.primary,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: 46,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: '#FFFFFF' }}>
+                        {sess.hours_worked}h
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
+
+              {teamSessions.length > 3 && (
+                <TouchableOpacity
+                  style={{
+                    alignItems: 'center',
+                    paddingVertical: 6,
+                    marginTop: 4,
+                  }}
+                  onPress={() => setExpandedTeamSessions((prev) => !prev)}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>
+                    {expandedTeamSessions
+                      ? 'Ver menos'
+                      : `Ver todas (${teamSessions.length} sessões)`}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </View>
       )}
+
+      {/* Seção de Segurança & Registo de Acidentes na Obra */}
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <View style={styles.sectionHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="shield-checkmark" size={17} color="#EF4444" />
+              <Text style={[styles.sectionTitle, { color: colors.textMain }]}>
+                Segurança & Acidentes
+              </Text>
+            </View>
+            <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+              Registo de ocorrências de SST na obra ({accidents.length})
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#EF4444',
+              paddingHorizontal: 7,
+              paddingVertical: 7,
+              borderRadius: 6,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 5,
+            }}
+            onPress={() => setAccidentModalOpen(true)}
+          >
+            <Ionicons name="warning" size={10} color="#FFFFFF" />
+            <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700' }}>
+              Reportar Acidente
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {accidents.length === 0 ? (
+          <View
+            style={{
+              marginTop: 10,
+              padding: 12,
+              borderRadius: 8,
+              backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : '#ECFDF5',
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#A7F3D0',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <Ionicons name="shield-checkmark" size={22} color="#10B981" />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#10B981' }}>
+                Zero Acidentes Registados
+              </Text>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+                Esta obra não possui nenhum registo de acidente de trabalho ativo.
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View style={{ marginTop: 8, gap: 8 }}>
+            {(expandedAccidents ? accidents : accidents.slice(0, 3)).map((acc) => {
+              const severityBg =
+                acc.severity === 'critico'
+                  ? '#EF4444'
+                  : acc.severity === 'grave'
+                  ? '#F97316'
+                  : acc.severity === 'moderado'
+                  ? '#F59E0B'
+                  : '#10B981';
+
+              const severityLabel =
+                acc.severity === 'critico'
+                  ? 'Crítico'
+                  : acc.severity === 'grave'
+                  ? 'Grave'
+                  : acc.severity === 'moderado'
+                  ? 'Moderado'
+                  : 'Leve';
+
+              return (
+                <View
+                  key={acc.id}
+                  style={{
+                    padding: 12,
+                    borderRadius: 8,
+                    backgroundColor: colors.cardSubtle,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    gap: 6,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textMain }}>
+                        {acc.title || acc.accident_type}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 1 }}>
+                        {acc.accident_date.split('-').reverse().join('/')}
+                        {acc.accident_time ? ` às ${acc.accident_time}` : ''} • Por {acc.reported_by_name}
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: 4,
+                        backgroundColor: severityBg,
+                      }}
+                    >
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#FFFFFF', textTransform: 'uppercase' }}>
+                        {severityLabel}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 2 }}>
+                    <View
+                      style={{
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                        borderRadius: 4,
+                        backgroundColor: colors.card,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                      }}
+                    >
+                      <Text style={{ fontSize: 10, color: colors.textMain }}>
+                        Vítima: <Text style={{ fontWeight: '700' }}>{acc.victim_name}</Text>
+                        {acc.victim_role ? ` (${acc.victim_role})` : ''}
+                      </Text>
+                    </View>
+
+                    {acc.first_aid_provided && (
+                      <View
+                        style={{
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                          borderRadius: 4,
+                          backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                          borderWidth: 1,
+                          borderColor: '#10B981',
+                        }}
+                      >
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#10B981' }}>
+                          ✓ Primeiros Socorros
+                        </Text>
+                      </View>
+                    )}
+
+                    {acc.hospital_referral && (
+                      <View
+                        style={{
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                          borderRadius: 4,
+                          backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                          borderWidth: 1,
+                          borderColor: '#EF4444',
+                        }}
+                      >
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#EF4444' }}>
+                          + Urgências/Hospital
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <Text style={{ fontSize: 12, color: colors.textMain, lineHeight: 17 }}>
+                    {acc.description}
+                  </Text>
+                </View>
+              );
+            })}
+
+            {accidents.length > 3 && (
+              <TouchableOpacity
+                style={{
+                  alignItems: 'center',
+                  paddingVertical: 6,
+                  marginTop: 4,
+                }}
+                onPress={() => setExpandedAccidents((prev) => !prev)}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>
+                  {expandedAccidents
+                    ? 'Ver menos'
+                    : `Ver todos (${accidents.length} registos)`}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </View>
 
       {/* Seção de Tarefas da Obra */}
       <View
@@ -998,6 +1400,478 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
                 </View>
               )}
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal: Reportar Acidente na Obra (SST) */}
+      <Modal
+        visible={accidentModalOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAccidentModalOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalContent,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                maxHeight: '90%',
+              },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="warning" size={18} color="#EF4444" />
+                <Text style={[styles.modalTitle, { color: colors.textMain }]}>
+                  Reportar Acidente na Obra
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setAccidentModalOpen(false)}>
+                <Ionicons name="close" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ marginVertical: 6 }}>
+              <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 14 }}>
+                Registe a ocorrência com precisão para salvaguarda da equipa e cumprimento das normas de Segurança no Trabalho (SST).
+              </Text>
+
+              <View style={{ gap: 12, marginBottom: 14 }}>
+                {/* Tipo de Acidente */}
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain, marginBottom: 6 }}>
+                    Tipo de Ocorrência
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {[
+                      'Queda em Altura',
+                      'Corte / Perfuração',
+                      'Pancada / Esmagamento',
+                      'Queda de Objetos',
+                      'Entorse / Lesão',
+                      'Choque Elétrico',
+                      'Queimadura',
+                      'Outro Acidente',
+                    ].map((type) => {
+                      const isSelected = accType === type;
+                      return (
+                        <TouchableOpacity
+                          key={type}
+                          onPress={() => setAccType(type)}
+                          style={{
+                            paddingHorizontal: 10,
+                            paddingVertical: 5,
+                            borderRadius: 6,
+                            backgroundColor: isSelected ? colors.primary : colors.cardSubtle,
+                            borderWidth: 1,
+                            borderColor: isSelected ? colors.primary : colors.border,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontWeight: isSelected ? '700' : '500',
+                              color: isSelected ? '#FFFFFF' : colors.textMain,
+                            }}
+                          >
+                            {type}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Severidade */}
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain, marginBottom: 6 }}>
+                    Gravidade do Acidente
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    {(
+                      [
+                        { key: 'leve', label: 'Leve', color: '#10B981' },
+                        { key: 'moderado', label: 'Moderado', color: '#F59E0B' },
+                        { key: 'grave', label: 'Grave', color: '#F97316' },
+                        { key: 'critico', label: 'Crítico', color: '#EF4444' },
+                      ] as const
+                    ).map((sev) => {
+                      const isSelected = accSeverity === sev.key;
+                      return (
+                        <TouchableOpacity
+                          key={sev.key}
+                          onPress={() => setAccSeverity(sev.key)}
+                          style={{
+                            flex: 1,
+                            paddingVertical: 7,
+                            borderRadius: 6,
+                            alignItems: 'center',
+                            backgroundColor: isSelected ? sev.color : colors.cardSubtle,
+                            borderWidth: 1,
+                            borderColor: isSelected ? sev.color : colors.border,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontWeight: '700',
+                              color: isSelected ? '#FFFFFF' : colors.textMain,
+                            }}
+                          >
+                            {sev.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Quem sofreu o acidente (Vítima) com busca/dropdown e opção Não Trabalha na Obra */}
+                <View style={{ zIndex: 50 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain }}>
+                      Quem sofreu o acidente? *
+                    </Text>
+                    {isExternalVictim ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <View
+                          style={{
+                            paddingHorizontal: 6,
+                            paddingVertical: 2,
+                            borderRadius: 4,
+                            backgroundColor: isDark ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7',
+                            borderWidth: 1,
+                            borderColor: '#F59E0B',
+                          }}
+                        >
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: '#D97706' }}>
+                            Visitante / Externo
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setIsExternalVictim(false);
+                            setAccVictimRole('');
+                          }}
+                        >
+                          <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <View style={{ position: 'relative' }}>
+                    <TextInput
+                      value={accVictimName}
+                      onChangeText={(text) => {
+                        setAccVictimName(text);
+                        setShowVictimDropdown(true);
+                        if (isExternalVictim && text.length === 0) {
+                          setIsExternalVictim(false);
+                        }
+                      }}
+                      onFocus={() => setShowVictimDropdown(true)}
+                      placeholder="Comece a digitar o nome..."
+                      placeholderTextColor={colors.textMuted}
+                      style={{
+                        backgroundColor: colors.cardSubtle,
+                        borderColor: showVictimDropdown ? colors.primary : colors.border,
+                        borderWidth: 1,
+                        borderRadius: 6,
+                        paddingHorizontal: 12,
+                        paddingVertical: 9,
+                        fontSize: 13,
+                        color: colors.textMain,
+                        paddingRight: 32,
+                      }}
+                    />
+                    {accVictimName ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setAccVictimName('');
+                          setAccVictimRole('');
+                          setIsExternalVictim(false);
+                          setShowVictimDropdown(true);
+                        }}
+                        style={{ position: 'absolute', right: 10, top: 10 }}
+                      >
+                        <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+
+                  {/* Dropdown de sugestões interativas */}
+                  {showVictimDropdown && (
+                    <View
+                      style={{
+                        marginTop: 4,
+                        backgroundColor: colors.card,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        borderRadius: 8,
+                        maxHeight: 220,
+                        overflow: 'hidden',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 3 },
+                        shadowOpacity: 0.15,
+                        shadowRadius: 5,
+                        elevation: 5,
+                      }}
+                    >
+                      <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                        {filteredEmployees.length > 0 ? (
+                          filteredEmployees.map((emp) => (
+                            <TouchableOpacity
+                              key={emp.id}
+                              onPress={() => handleSelectEmployeeVictim(emp)}
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                paddingHorizontal: 12,
+                                paddingVertical: 8,
+                                borderBottomWidth: 1,
+                                borderBottomColor: colors.border,
+                              }}
+                            >
+                              <View style={{ flex: 1, marginRight: 8 }}>
+                                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textMain }}>
+                                  {emp.full_name}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                                  {emp.job_title || 'Colaborador'}
+                                </Text>
+                              </View>
+                              {emp.isOnSite ? (
+                                <View
+                                  style={{
+                                    paddingHorizontal: 6,
+                                    paddingVertical: 2,
+                                    borderRadius: 4,
+                                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                                    borderWidth: 1,
+                                    borderColor: '#10B981',
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#10B981' }}>
+                                    Na Obra
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </TouchableOpacity>
+                          ))
+                        ) : (
+                          <View style={{ padding: 12 }}>
+                            <Text style={{ fontSize: 12, color: colors.textMuted, fontStyle: 'italic' }}>
+                              Nenhum funcionário encontrado com este nome.
+                            </Text>
+                          </View>
+                        )}
+
+                        {/* Botão "Não trabalha na obra" */}
+                        {accVictimName.trim().length > 0 && (
+                          <TouchableOpacity
+                            onPress={handleSelectExternalVictim}
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 8,
+                              padding: 10,
+                              backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FFFBEB',
+                              borderTopWidth: 1,
+                              borderTopColor: colors.border,
+                            }}
+                          >
+                            <Ionicons name="person-add" size={16} color="#D97706" />
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: '#D97706' }}>
+                                Não trabalha na obra
+                              </Text>
+                              <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                                Registar "{accVictimName.trim()}" como visitante ou externo
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        )}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+
+                {/* Função / Especialidade / Relação */}
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain, marginBottom: 4 }}>
+                    {isExternalVictim
+                      ? 'Relação com a Obra (Visitante / Cliente / etc.)'
+                      : 'Função / Especialidade da Vítima'}
+                  </Text>
+                  <TextInput
+                    value={accVictimRole}
+                    onChangeText={setAccVictimRole}
+                    placeholder={
+                      isExternalVictim
+                        ? 'Ex: Visitante, Cliente, Fiscal, Subempreiteiro...'
+                        : 'Ex: Pedreiro, Servente, Eletricista...'
+                    }
+                    placeholderTextColor={colors.textMuted}
+                    style={{
+                      backgroundColor: colors.cardSubtle,
+                      borderColor: colors.border,
+                      borderWidth: 1,
+                      borderRadius: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      fontSize: 13,
+                      color: colors.textMain,
+                    }}
+                  />
+                </View>
+
+                {/* Data e Hora */}
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain, marginBottom: 4 }}>
+                      Data (AAAA-MM-DD)
+                    </Text>
+                    <TextInput
+                      value={accDate}
+                      onChangeText={setAccDate}
+                      placeholder="2026-11-15"
+                      placeholderTextColor={colors.textMuted}
+                      style={{
+                        backgroundColor: colors.cardSubtle,
+                        borderColor: colors.border,
+                        borderWidth: 1,
+                        borderRadius: 6,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        fontSize: 13,
+                        color: colors.textMain,
+                      }}
+                    />
+                  </View>
+                  <View style={{ width: 100 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain, marginBottom: 4 }}>
+                      Hora (HH:mm)
+                    </Text>
+                    <TextInput
+                      value={accTime}
+                      onChangeText={setAccTime}
+                      placeholder="14:30"
+                      placeholderTextColor={colors.textMuted}
+                      style={{
+                        backgroundColor: colors.cardSubtle,
+                        borderColor: colors.border,
+                        borderWidth: 1,
+                        borderRadius: 6,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        fontSize: 13,
+                        color: colors.textMain,
+                      }}
+                    />
+                  </View>
+                </View>
+
+                {/* Descrição */}
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textMain, marginBottom: 4 }}>
+                    Descrição da Ocorrência *
+                  </Text>
+                  <TextInput
+                    value={accDesc}
+                    onChangeText={setAccDesc}
+                    placeholder="Explique o que aconteceu, local exato e causas identificadas..."
+                    placeholderTextColor={colors.textMuted}
+                    multiline
+                    style={{
+                      backgroundColor: colors.cardSubtle,
+                      borderColor: colors.border,
+                      borderWidth: 1,
+                      borderRadius: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      fontSize: 13,
+                      color: colors.textMain,
+                      minHeight: 65,
+                    }}
+                  />
+                </View>
+
+                {/* Toggles de Socorro */}
+                <View style={{ gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => setAccFirstAid((prev) => !prev)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: 10,
+                      borderRadius: 6,
+                      backgroundColor: accFirstAid ? 'rgba(16, 185, 129, 0.15)' : colors.cardSubtle,
+                      borderWidth: 1,
+                      borderColor: accFirstAid ? '#10B981' : colors.border,
+                    }}
+                  >
+                    <Ionicons
+                      name={accFirstAid ? 'checkbox' : 'square-outline'}
+                      size={18}
+                      color={accFirstAid ? '#10B981' : colors.textMuted}
+                    />
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textMain }}>
+                      Prestados primeiros socorros no local
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => setAccHospital((prev) => !prev)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: 10,
+                      borderRadius: 6,
+                      backgroundColor: accHospital ? 'rgba(239, 68, 68, 0.15)' : colors.cardSubtle,
+                      borderWidth: 1,
+                      borderColor: accHospital ? '#EF4444' : colors.border,
+                    }}
+                  >
+                    <Ionicons
+                      name={accHospital ? 'checkbox' : 'square-outline'}
+                      size={18}
+                      color={accHospital ? '#EF4444' : colors.textMuted}
+                    />
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textMain }}>
+                      Encaminhado para urgências / centro médico
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.btnConfirmModal,
+                  { backgroundColor: savingAccident ? colors.border : '#EF4444', marginTop: 10 },
+                ]}
+                disabled={savingAccident}
+                onPress={handleSaveAccident}
+              >
+                {savingAccident ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={styles.btnConfirmModalText}>A gravar registo de segurança...</Text>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="shield-checkmark" size={16} color="#FFFFFF" />
+                    <Text style={styles.btnConfirmModalText}>Registar Ocorrência / Acidente</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>

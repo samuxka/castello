@@ -1913,42 +1913,39 @@ export function TeamsPage({
                       </div>
 
                       <div
-                        style={{ display: 'flex', gap: 4, flexShrink: 0 }}
+                        style={{ display: 'flex', gap: 6, flexShrink: 0 }}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
                           type="button"
                           onClick={() => openEditModal(team)}
-                          className="btn-icon"
-                          style={{ padding: 6, color: 'var(--text-muted)' }}
+                          className="btn-flat-secondary"
+                          style={{ padding: '6px 8px' }}
                           title="Editar Equipa"
                           aria-label={`Editar ${team.name}`}
                         >
-                          <Edit2 size={15} />
+                          <Edit2 size={13} />
                         </button>
                         <button
                           type="button"
                           onClick={() => handleToggleArchive(team)}
-                          className="btn-icon"
-                          style={{
-                            padding: 6,
-                            color: team.is_archived ? 'var(--primary)' : 'var(--text-muted)',
-                          }}
+                          className={team.is_archived ? 'btn-flat-primary' : 'btn-flat-secondary'}
+                          style={{ padding: '6px 8px' }}
                           title={team.is_archived ? 'Restaurar Equipa' : 'Arquivar Equipa'}
                           aria-label={team.is_archived ? `Restaurar ${team.name}` : `Arquivar ${team.name}`}
                         >
-                          {team.is_archived ? <RotateCcw size={15} /> : <Archive size={15} />}
+                          {team.is_archived ? <RotateCcw size={13} /> : <Archive size={13} />}
                         </button>
                         {team.is_archived && (
                           <button
                             type="button"
                             onClick={() => handlePermanentDelete(team)}
-                            className="btn-icon"
-                            style={{ padding: 6, color: 'var(--danger)' }}
+                            className="btn-flat-danger"
+                            style={{ padding: '6px 8px' }}
                             title="Eliminar Permanentemente"
                             aria-label={`Eliminar ${team.name}`}
                           >
-                            <Trash2 size={15} />
+                            <Trash2 size={13} />
                           </button>
                         )}
                       </div>
@@ -2578,20 +2575,22 @@ export function TeamsPage({
                           <button
                             type="button"
                             onClick={() => openEditModal(team)}
-                            className="btn-icon"
-                            style={{ padding: 6, color: 'var(--text-muted)' }}
+                            className="btn-flat-secondary"
+                            style={{ padding: '6px 8px' }}
                             title="Editar Equipa"
+                            aria-label={`Editar ${team.name}`}
                           >
-                            <Edit2 size={15} />
+                            <Edit2 size={13} />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleToggleArchive(team)}
-                            className="btn-icon"
-                            style={{ padding: 6, color: 'var(--text-muted)' }}
+                            className={team.is_archived ? 'btn-flat-primary' : 'btn-flat-secondary'}
+                            style={{ padding: '6px 8px' }}
                             title={team.is_archived ? 'Restaurar Equipa' : 'Arquivar Equipa'}
+                            aria-label={team.is_archived ? `Restaurar ${team.name}` : `Arquivar ${team.name}`}
                           >
-                            {team.is_archived ? <RotateCcw size={15} /> : <Archive size={15} />}
+                            {team.is_archived ? <RotateCcw size={13} /> : <Archive size={13} />}
                           </button>
                         </div>
                       </td>
