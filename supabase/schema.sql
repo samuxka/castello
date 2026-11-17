@@ -16,8 +16,24 @@ create table if not exists public.companies (
   owner_email text not null unique,
   password_hash text not null,
   phone text,
+  logo_url text,
+  theme_color text default 'azul',
+  theme_mode text default 'dark',
   created_at timestamptz not null default now()
 );
+
+do $$ 
+begin
+  if not exists (select 1 from information_schema.columns where table_name='companies' and column_name='logo_url') then
+    alter table public.companies add column logo_url text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='companies' and column_name='theme_color') then
+    alter table public.companies add column theme_color text default 'azul';
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='companies' and column_name='theme_mode') then
+    alter table public.companies add column theme_mode text default 'dark';
+  end if;
+end $$;
 
 -- 2. TABELA DE OBRAS (construction_sites)
 create table if not exists public.construction_sites (

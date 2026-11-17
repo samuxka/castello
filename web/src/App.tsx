@@ -47,6 +47,7 @@ import {
   getActiveCompanySession,
   getAbsenceJustifications,
   getAllTimeEntries,
+  getCompanyById,
   getEmployees,
   getFinancialRecords,
   getSavedTheme,
@@ -93,7 +94,6 @@ import { EmployeeAutocompleteSelect } from './components/EmployeeAutocompleteSel
 import { JobTitleAutocompleteSelect } from './components/JobTitleAutocompleteSelect';
 import { SiteProgressLineChart } from './components/SiteProgressLineChart';
 import { SiteStatusDonutChart } from './components/SiteStatusDonutChart';
-import { TeamProductivityBarChart } from './components/TeamProductivityBarChart';
 import { customConfirm, customAlert } from './context/DialogContext';
 import { getEffectivePaidAmount, roundCents } from './lib/financialCalculations';
 
@@ -140,6 +140,35 @@ export default function App() {
   useEffect(() => {
     applyTheme(themeColor, theme);
   }, [themeColor, theme]);
+
+  // Sincroniza dados da firma e personalizações da nuvem (logo, cores e tema)
+  useEffect(() => {
+    const session = getActiveCompanySession();
+    if (session?.id) {
+      getCompanyById(session.id).then((fresh) => {
+        if (fresh) {
+          setActiveCompany(fresh);
+          if (fresh.theme_color && fresh.theme_color !== themeColor) {
+            setThemeColor(fresh.theme_color);
+          }
+          if (fresh.theme_mode && fresh.theme_mode !== theme) {
+            setTheme(fresh.theme_mode);
+          }
+        }
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeCompany) {
+      if (activeCompany.theme_color && activeCompany.theme_color !== themeColor) {
+        setThemeColor(activeCompany.theme_color);
+      }
+      if (activeCompany.theme_mode && activeCompany.theme_mode !== theme) {
+        setTheme(activeCompany.theme_mode);
+      }
+    }
+  }, [activeCompany?.theme_color, activeCompany?.theme_mode]);
 
   const toggleThemeMode = () => {
     const nextMode = theme === 'dark' ? 'light' : 'dark';
@@ -542,6 +571,13 @@ export default function App() {
       <AuthModal
         onSuccess={(company) => {
           setActiveCompany(company);
+          if (company.theme_color) {
+            setThemeColor(company.theme_color);
+          }
+          if (company.theme_mode) {
+            setTheme(company.theme_mode);
+          }
+          applyTheme(company.theme_color || 'azul', company.theme_mode || 'dark');
         }}
       />
     );
@@ -1098,27 +1134,14 @@ export default function App() {
                   {/* 1. GRÁFICO PRINCIPAL EM DESTAQUE: EVOLUÇÃO DAS OBRAS (LINE CHART) */}
                   <SiteProgressLineChart sites={sites} tasks={dashboardTasks} />
 
-                  {/* 2 & 3. GRÁFICOS SECUNDÁRIOS: DISTRIBUIÇÃO POR ESTADO + PRODUTIVIDADE */}
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
-                      gap: 20,
+                  {/* 2. GRÁFICO SECUNDÁRIO: DISTRIBUIÇÃO DAS OBRAS POR ESTADO */}
+                  <SiteStatusDonutChart
+                    sites={sites}
+                    onSelectSite={(site) => {
+                      setSelectedSiteForDetail(site);
+                      setCurrentPage('obras');
                     }}
-                  >
-                    <SiteStatusDonutChart
-                      sites={sites}
-                      onSelectSite={(site) => {
-                        setSelectedSiteForDetail(site);
-                        setCurrentPage('obras');
-                      }}
-                    />
-                    <TeamProductivityBarChart
-                      tasks={dashboardTasks}
-                      teams={dashboardTeams}
-                      sites={sites}
-                    />
-                  </div>
+                  />
                 </div>
 
                 {/* PAINEL OPERACIONAL: ASSIDUIDADE + VALIDAÇÃO DE PONTOS + AGENDA (SEM BURACOS) */}

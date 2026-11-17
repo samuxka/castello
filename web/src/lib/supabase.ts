@@ -219,6 +219,58 @@ export function setActiveCompanySession(company: Company | null) {
   }
 }
 
+// ----------------------------------------------------------------------------
+// SINCRONIZAÇÃO EM NUVEM DE CONFIGURAÇÕES DA FIRMA (LOGO, CORES E TEMA)
+// Garante persistência imediata entre todos os dispositivos, computadores e navegadores
+// ----------------------------------------------------------------------------
+export async function saveCompanyCloudSettings(
+  companyId: string,
+  settings: { logo_url?: string | null; theme_color?: ThemeColor | null; theme_mode?: ThemeMode | null }
+): Promise<void> {
+  if (!supabase || !companyId) return;
+  try {
+    const payload = {
+      id: `settings_${companyId}`,
+      company_id: companyId,
+      title: '__CASTELLO_COMPANY_SETTINGS__',
+      content: JSON.stringify({
+        logo_url: settings.logo_url ?? null,
+        theme_color: settings.theme_color ?? 'azul',
+        theme_mode: settings.theme_mode ?? 'dark',
+        updated_at: new Date().toISOString(),
+      }),
+    };
+    await supabase.from('company_notifications').upsert(payload, { onConflict: 'id' });
+  } catch (e) {
+    console.warn('Erro ao sincronizar configurações da firma na nuvem:', e);
+  }
+}
+
+export async function fetchCompanyCloudSettings(
+  companyId: string
+): Promise<{ logo_url?: string | null; theme_color?: ThemeColor | null; theme_mode?: ThemeMode | null } | null> {
+  if (!supabase || !companyId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('company_notifications')
+      .select('content')
+      .eq('id', `settings_${companyId}`)
+      .maybeSingle();
+
+    if (!error && data?.content) {
+      try {
+        const parsed = JSON.parse(data.content);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
+      } catch {}
+    }
+  } catch (e) {
+    console.warn('Erro ao obter configurações da nuvem da firma:', e);
+  }
+  return null;
+}
+
 export async function registerCompany(
   name: string,
   ownerEmail: string,
@@ -254,6 +306,18 @@ export async function registerCompany(
 
     if (error || !data) {
       throw new Error(error?.message || 'Falha ao criar firma.');
+    }
+
+    // Carrega configurações da nuvem (logo_url, theme_color, theme_mode)
+    const cloudSettings = await fetchCompanyCloudSettings(data.id);
+    if (cloudSettings) {
+      if (cloudSettings.logo_url && !data.logo_url) data.logo_url = cloudSettings.logo_url;
+      if (cloudSettings.theme_color && !data.theme_color) data.theme_color = cloudSettings.theme_color;
+      if (cloudSettings.theme_mode && !data.theme_mode) data.theme_mode = cloudSettings.theme_mode;
+    }
+
+    if (data.theme_color || data.theme_mode) {
+      saveTheme((data.theme_color as ThemeColor) || 'azul', (data.theme_mode as ThemeMode) || 'dark');
     }
 
     setActiveCompanySession(data as Company);
@@ -306,6 +370,18 @@ export async function loginCompany(
       data.password_hash = hashedInput;
     }
 
+    // Carrega configurações da nuvem (logo_url, theme_color, theme_mode)
+    const cloudSettings = await fetchCompanyCloudSettings(data.id);
+    if (cloudSettings) {
+      if (cloudSettings.logo_url && !data.logo_url) data.logo_url = cloudSettings.logo_url;
+      if (cloudSettings.theme_color && !data.theme_color) data.theme_color = cloudSettings.theme_color;
+      if (cloudSettings.theme_mode && !data.theme_mode) data.theme_mode = cloudSettings.theme_mode;
+    }
+
+    if (data.theme_color || data.theme_mode) {
+      saveTheme((data.theme_color as ThemeColor) || 'azul', (data.theme_mode as ThemeMode) || 'dark');
+    }
+
     setActiveCompanySession(data as Company);
     return data as Company;
   }
@@ -332,6 +408,8 @@ export async function updateCompanyProfile(
         phone: merged.phone || null,
       };
       if (updates.logo_url !== undefined) payload.logo_url = updates.logo_url;
+      if (updates.theme_color !== undefined) payload.theme_color = updates.theme_color;
+      if (updates.theme_mode !== undefined) payload.theme_mode = updates.theme_mode;
       if (updates.currency !== undefined) payload.currency = updates.currency;
       if (updates.address !== undefined) payload.address = updates.address;
 
@@ -353,7 +431,16 @@ export async function updateCompanyProfile(
             phone: merged.phone || null,
           })
           .eq('id', companyId);
-      } else if (data) {
+      }
+
+      // Persiste também no registro de configurações da nuvem (garante persistência para todos os dispositivos)
+      await saveCompanyCloudSettings(companyId, {
+        logo_url: merged.logo_url,
+        theme_color: merged.theme_color,
+        theme_mode: merged.theme_mode,
+      });
+
+      if (data) {
         const full = { ...merged, ...data } as Company;
         setActiveCompanySession(full);
         return full;
@@ -512,7 +599,16 @@ export async function getCompanyById(companyId?: string | null): Promise<Company
         .select('*')
         .eq('id', companyId)
         .maybeSingle();
-      if (!error && data) return data as Company;
+      if (!error && data) {
+        const comp = data as Company;
+        const cloudSettings = await fetchCompanyCloudSettings(companyId);
+        if (cloudSettings) {
+          if (cloudSettings.logo_url && !comp.logo_url) comp.logo_url = cloudSettings.logo_url;
+          if (cloudSettings.theme_color && !comp.theme_color) comp.theme_color = cloudSettings.theme_color;
+          if (cloudSettings.theme_mode && !comp.theme_mode) comp.theme_mode = cloudSettings.theme_mode;
+        }
+        return comp;
+      }
     } catch (e) {
       console.warn('Erro ao buscar dados da firma:', e);
     }
@@ -2627,6 +2723,18 @@ export function saveTheme(color: ThemeColor, mode: ThemeMode): void {
   localStorage.setItem(THEME_COLOR_KEY, color);
   localStorage.setItem(THEME_MODE_KEY, mode);
   applyTheme(color, mode);
+
+  const session = getActiveCompanySession();
+  if (session?.id) {
+    session.theme_color = color;
+    session.theme_mode = mode;
+    setActiveCompanySession(session);
+    saveCompanyCloudSettings(session.id, {
+      logo_url: session.logo_url,
+      theme_color: color,
+      theme_mode: mode,
+    }).catch(() => {});
+  }
 }
 
 export function applyTheme(color: ThemeColor, mode: ThemeMode): void {

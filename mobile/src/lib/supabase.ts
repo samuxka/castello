@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import {
   AbsenceJustification,
+  Company,
   CompanyNotification,
   ConstructionSite,
   EmployeeProfile,
@@ -104,6 +105,35 @@ export async function setActiveEmployeeId(employeeId: string): Promise<void> {
 
 export async function clearActiveEmployee(): Promise<void> {
   await AsyncStorage.removeItem(CURRENT_EMPLOYEE_ID_KEY);
+}
+
+export async function fetchCompanyMobile(companyId?: string | null): Promise<Company | null> {
+  if (!companyId) return null;
+  const localKey = `@castello:company_${companyId}`;
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', companyId)
+        .maybeSingle();
+
+      if (!error && data) {
+        await AsyncStorage.setItem(localKey, JSON.stringify(data));
+        return data as Company;
+      }
+    } catch (e) {
+      console.warn('Erro ao buscar dados da firma no mobile:', e);
+    }
+  }
+
+  const stored = await AsyncStorage.getItem(localKey);
+  if (stored) {
+    try {
+      return JSON.parse(stored) as Company;
+    } catch {}
+  }
+  return null;
 }
 
 export async function authenticateEmployee(

@@ -29,8 +29,10 @@ import {
   fetchAbsenceJustifications,
   sendAbsenceReminderEmail,
   fetchAssignedVehicle,
+  fetchCompanyMobile,
 } from './src/lib/supabase';
 import {
+  Company,
   CompanyNotification,
   ConstructionSite,
   EmployeeProfile,
@@ -71,6 +73,7 @@ function MainApp() {
   const [loading, setLoading] = useState<boolean>(true);
   const [sites, setSites] = useState<ConstructionSite[]>([]);
   const [currentEmployee, setCurrentEmployee] = useState<EmployeeProfile | null>(null);
+  const [company, setCompany] = useState<Company | null>(null);
   const [assignedVehicle, setAssignedVehicle] = useState<Vehicle | null>(null);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [hasBiometricsSaved, setHasBiometricsSaved] = useState<boolean>(false);
@@ -189,14 +192,24 @@ function MainApp() {
     return `${parts[0]} ${parts[parts.length - 1]}`;
   };
 
+  const THEME_PRIMARY_COLORS: Record<string, string> = {
+    azul: '#2563EB',
+    vermelho: '#DC2626',
+    verde: '#16A34A',
+    amarelo: '#D97706',
+    laranja: '#EA580C',
+  };
+
+  const primaryAccent = (company?.theme_color && THEME_PRIMARY_COLORS[company.theme_color]) || '#2563EB';
+
   const colors = {
     bg: isDark ? '#0F172A' : '#F8FAFC',
     card: isDark ? '#1E293B' : '#FFFFFF',
     border: isDark ? '#334155' : '#E2E8F0',
     textMain: isDark ? '#F8FAFC' : '#0F172A',
     textMuted: isDark ? '#94A3B8' : '#64748B',
-    primary: '#2563EB',
-    cardSubtle: isDark ? '#172554' : '#EFF6FF',
+    primary: primaryAccent,
+    cardSubtle: isDark ? (company?.theme_color === 'vermelho' ? '#450A0A' : '#172554') : (company?.theme_color === 'vermelho' ? '#FEF2F2' : '#EFF6FF'),
   };
 
   const loadData = useCallback(async () => {
@@ -213,14 +226,21 @@ function MainApp() {
       setHasBiometricsSaved(Boolean(bioCreds));
 
       if (activeEmp) {
-        const [empEntries, loadedNotifs, veh] = await Promise.all([
+        const [empEntries, loadedNotifs, veh, comp] = await Promise.all([
           fetchEmployeeTimeEntries(activeEmp.id),
           fetchCompanyNotifications(activeEmp.company_id),
           fetchAssignedVehicle(activeEmp.id, activeEmp.full_name),
+          fetchCompanyMobile(activeEmp.company_id),
         ]);
         setEntries(empEntries);
         setNotifications(loadedNotifs);
         setAssignedVehicle(veh);
+        if (comp) {
+          setCompany(comp);
+          if (comp.theme_mode) {
+            setTheme(comp.theme_mode === 'light' ? 'light' : 'dark');
+          }
+        }
         await checkUnexcusedAbsences(activeEmp, empEntries);
       }
     } finally {
@@ -238,12 +258,19 @@ function MainApp() {
     if (!emp) return false;
     setCurrentEmployee(emp);
     setHasBiometricsSaved(true);
-    const [empEntries, veh] = await Promise.all([
+    const [empEntries, veh, comp] = await Promise.all([
       fetchEmployeeTimeEntries(emp.id),
       fetchAssignedVehicle(emp.id, emp.full_name),
+      fetchCompanyMobile(emp.company_id),
     ]);
     setEntries(empEntries);
     setAssignedVehicle(veh);
+    if (comp) {
+      setCompany(comp);
+      if (comp.theme_mode) {
+        setTheme(comp.theme_mode === 'light' ? 'light' : 'dark');
+      }
+    }
     return true;
   };
 
@@ -286,8 +313,17 @@ function MainApp() {
       if (!emp) return false;
       setCurrentEmployee(emp);
       setHasBiometricsSaved(true);
-      const empEntries = await fetchEmployeeTimeEntries(emp.id);
+      const [empEntries, comp] = await Promise.all([
+        fetchEmployeeTimeEntries(emp.id),
+        fetchCompanyMobile(emp.company_id),
+      ]);
       setEntries(empEntries);
+      if (comp) {
+        setCompany(comp);
+        if (comp.theme_mode) {
+          setTheme(comp.theme_mode === 'light' ? 'light' : 'dark');
+        }
+      }
       return true;
     } catch (err: any) {
       console.warn('Erro ao autenticar biometricamente:', err);
@@ -390,21 +426,46 @@ function MainApp() {
           </View>
         </View>
 
-        {/* Sino de Notificações / Mensagens da Empresa (Substitui o menu hambúrguer) */}
-        <TouchableOpacity
-          style={[styles.bellBtn, { borderColor: colors.border }]}
-          onPress={() => setNotificationsOpen(true)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={unreadNotificationsCount > 0 ? 'notifications' : 'notifications-outline'}
-            size={22}
-            color={unreadNotificationsCount > 0 ? colors.primary : colors.textMain}
-          />
-          {unreadNotificationsCount > 0 && (
-            <View style={styles.unreadBadgeDot} />
-          )}
-        </TouchableOpacity>
+        {/* Logo da Firma e Sino de Notificações */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {company?.logo_url ? (
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                overflow: 'hidden',
+                backgroundColor: colors.card,
+                borderWidth: 1,
+                borderColor: colors.border,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Image
+                source={{ uri: company.logo_url }}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="cover"
+              />
+            </View>
+          ) : null}
+
+          {/* Sino de Notificações / Mensagens da Empresa */}
+          <TouchableOpacity
+            style={[styles.bellBtn, { borderColor: colors.border }]}
+            onPress={() => setNotificationsOpen(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={unreadNotificationsCount > 0 ? 'notifications' : 'notifications-outline'}
+              size={22}
+              color={unreadNotificationsCount > 0 ? colors.primary : colors.textMain}
+            />
+            {unreadNotificationsCount > 0 && (
+              <View style={[styles.unreadBadgeDot, { backgroundColor: colors.primary }]} />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Navegação entre Telas */}

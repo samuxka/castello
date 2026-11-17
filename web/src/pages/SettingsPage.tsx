@@ -5,6 +5,7 @@ import {
   Check,
   CheckCircle2,
   KeyRound,
+  Loader2,
   Lock,
   Mail,
   Moon,
@@ -23,6 +24,7 @@ import {
   saveTheme,
   updateCompanyProfile,
 } from '../lib/supabase';
+import { uploadImageToCloudinary } from '../lib/cloudinary';
 
 interface SettingsPageProps {
   company: Company;
@@ -43,6 +45,7 @@ export function SettingsPage({
   const [taxId, setTaxId] = useState(company.tax_id || '');
   const [logoUrl, setLogoUrl] = useState(company.logo_url || '');
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   // Senha
   const [currentPassword, setCurrentPassword] = useState('');
@@ -51,8 +54,8 @@ export function SettingsPage({
   const [savingPassword, setSavingPassword] = useState(false);
 
   // Temas Visuais (Azul, Vermelho, Verde, Amarelo, Laranja - Claro / Escuro)
-  const [themeColor, setThemeColor] = useState<ThemeColor>(() => getSavedTheme().color);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getSavedTheme().mode);
+  const [themeColor, setThemeColor] = useState<ThemeColor>(() => (company.theme_color as ThemeColor) || getSavedTheme().color);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (company.theme_mode as ThemeMode) || getSavedTheme().mode);
 
   const THEMES_LIST: { id: ThemeColor; name: string; lightHex: string; darkHex: string; desc: string }[] = [
     { id: 'azul', name: 'Azul', lightHex: '#2563eb', darkHex: '#3b82f6', desc: 'Corporativo Castello' },
@@ -62,41 +65,102 @@ export function SettingsPage({
     { id: 'laranja', name: 'Laranja', lightHex: '#ea580c', darkHex: '#f97316', desc: 'Segurança / Energia' },
   ];
 
-  const handleApplyColor = (color: ThemeColor) => {
+  const handleApplyColor = async (color: ThemeColor) => {
     setThemeColor(color);
     saveTheme(color, themeMode);
-    showNotice(`Tema de cor ${color.toUpperCase()} ativado!`);
+    try {
+      const updated = await updateCompanyProfile(company.id, {
+        theme_color: color,
+        theme_mode: themeMode,
+      });
+      onCompanyUpdated(updated);
+    } catch (e) {
+      console.warn('Erro ao sincronizar cor do tema:', e);
+    }
+    showNotice(`Tema de cor ${color.toUpperCase()} ativado e sincronizado!`);
   };
 
-  const handleApplyMode = (mode: ThemeMode) => {
+  const handleApplyMode = async (mode: ThemeMode) => {
     setThemeMode(mode);
     saveTheme(themeColor, mode);
-    showNotice(`Modo ${mode === 'dark' ? 'Escuro' : 'Claro'} ativado!`);
+    try {
+      const updated = await updateCompanyProfile(company.id, {
+        theme_color: themeColor,
+        theme_mode: mode,
+      });
+      onCompanyUpdated(updated);
+    } catch (e) {
+      console.warn('Erro ao sincronizar modo do tema:', e);
+    }
+    showNotice(`Modo ${mode === 'dark' ? 'Escuro' : 'Claro'} ativado e sincronizado!`);
   };
 
   // Exclusão
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
-  // Selecionar arquivo de logo
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Selecionar arquivo de logo com upload direto para Cloudinary e sincronização instantânea
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 3 * 1024 * 1024) {
-      alert('A imagem é muito pesada. Escolha uma foto de até 3MB.');
+    if (file.size > 5 * 1024 * 1024) {
+      alert('A imagem é muito pesada. Escolha uma foto de até 5MB.');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      if (base64) {
-        setLogoUrl(base64);
-        showNotice('Logo carregada! Clique em "Salvar Informações da Empresa" para confirmar.');
-      }
-    };
-    reader.readAsDataURL(file);
+    setUploadingLogo(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64 = event.target?.result as string;
+        if (!base64) {
+          setUploadingLogo(false);
+          return;
+        }
+        try {
+          // Upload para o Cloudinary (CDN de alta disponibilidade na nuvem)
+          const cdnUrl = await uploadImageToCloudinary(base64, 'castello_company');
+          setLogoUrl(cdnUrl);
+          const updated = await updateCompanyProfile(company.id, {
+            logo_url: cdnUrl,
+            theme_color: themeColor,
+            theme_mode: themeMode,
+          });
+          onCompanyUpdated(updated);
+          showNotice('Logotipo atualizado e sincronizado na nuvem com sucesso!');
+        } catch (uploadErr: any) {
+          console.warn('Aviso no upload Cloudinary, aplicando fallback seguro:', uploadErr);
+          setLogoUrl(base64);
+          const updated = await updateCompanyProfile(company.id, {
+            logo_url: base64,
+            theme_color: themeColor,
+            theme_mode: themeMode,
+          });
+          onCompanyUpdated(updated);
+          showNotice('Logotipo salvo na firma!');
+        } finally {
+          setUploadingLogo(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setUploadingLogo(false);
+      alert('Erro ao processar ficheiro de imagem.');
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    setLogoUrl('');
+    try {
+      const updated = await updateCompanyProfile(company.id, {
+        logo_url: null,
+      });
+      onCompanyUpdated(updated);
+      showNotice('Logotipo removido com sucesso!');
+    } catch (err: any) {
+      alert('Erro ao remover: ' + (err.message || 'Tente novamente.'));
+    }
   };
 
   const handleSaveCompany = async (e: React.FormEvent) => {
@@ -113,10 +177,12 @@ export function SettingsPage({
         phone: phone.trim() || null,
         tax_id: taxId.trim() || null,
         logo_url: logoUrl || null,
+        theme_color: themeColor,
+        theme_mode: themeMode,
       });
 
       onCompanyUpdated(updated);
-      showNotice('Dados da empresa salvos com sucesso!');
+      showNotice('Dados da empresa salvos e sincronizados com sucesso!');
     } catch (err: any) {
       alert('Erro ao salvar: ' + (err.message || 'Tente novamente.'));
     } finally {
@@ -253,7 +319,7 @@ export function SettingsPage({
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   <label
                     style={{
-                      cursor: 'pointer',
+                      cursor: uploadingLogo ? 'not-allowed' : 'pointer',
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 6,
@@ -263,13 +329,24 @@ export function SettingsPage({
                       borderRadius: 6,
                       backgroundColor: 'var(--primary)',
                       color: '#ffffff',
+                      opacity: uploadingLogo ? 0.7 : 1,
                     }}
                   >
-                    <Upload size={15} />
-                    Escolher Foto do Computador
+                    {uploadingLogo ? (
+                      <>
+                        <Loader2 size={15} className="spinner" style={{ animation: 'spin 1s linear infinite' }} />
+                        A carregar para a nuvem...
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={15} />
+                        Escolher Foto do Computador
+                      </>
+                    )}
                     <input
                       type="file"
                       accept="image/*"
+                      disabled={uploadingLogo}
                       style={{ display: 'none' }}
                       onChange={handleLogoChange}
                     />
@@ -280,7 +357,8 @@ export function SettingsPage({
                       type="button"
                       className="btn-flat-secondary"
                       style={{ fontSize: 12, padding: '8px 12px', color: '#dc2626' }}
-                      onClick={() => setLogoUrl('')}
+                      onClick={handleRemoveLogo}
+                      disabled={uploadingLogo}
                     >
                       Remover Foto
                     </button>

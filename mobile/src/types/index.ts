@@ -10,6 +10,9 @@ export interface Company {
   owner_email: string;
   password_hash: string;
   phone?: string | null;
+  logo_url?: string | null;
+  theme_color?: string | null;
+  theme_mode?: string | null;
 }
 
 export interface ConstructionSite {
