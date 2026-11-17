@@ -20,7 +20,8 @@
           "audio",
           "fetch",
           "remote-notification"
-        ]
+        ],
+        "NSFaceIDUsageDescription": "Permitir ao castello autenticar a sua identidade rapidamente usando Face ID ou impressão digital."
       }
     },
     "android": {
@@ -42,10 +43,18 @@
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.READ_MEDIA_IMAGES"
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
       ]
     },
     "plugins": [
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Permitir ao castello autenticar a sua identidade rapidamente usando Face ID ou impressão digital."
+        }
+      ],
       [
         "expo-image-picker",
         {

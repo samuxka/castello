@@ -50,7 +50,7 @@ import { SettingsModal } from './src/screens/SettingsModal';
 import { NotificationsScreen } from './src/screens/NotificationsScreen';
 import { VehicleScreen } from './src/screens/VehicleScreen';
 import { setupAlarmNotifications } from './src/utils/alarmService';
-import { DialogProvider } from './src/context/DialogContext';
+import { DialogProvider, showCustomAlert } from './src/context/DialogContext';
 
 type TabKey = 'inicio' | 'obras' | 'carrinha' | 'calendario' | 'perfil';
 
@@ -278,39 +278,71 @@ function MainApp() {
   const handleBiometricLogin = async (): Promise<boolean> => {
     try {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-
-      if (!hasHardware || !isEnrolled) {
-        Alert.alert(
-          'Biometria Não Disponível',
-          'O seu dispositivo não possui suporte a biometria ou nenhuma digital/Face ID foi cadastrada.'
+      if (!hasHardware) {
+        showCustomAlert(
+          'Biometria Não Suportada',
+          'O seu dispositivo não possui sensor de impressão digital ou Face ID compatível.',
+          [{ text: 'Entendido' }],
+          'warning'
         );
         return false;
       }
 
-      const authRes = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Autenticação Castello',
-        fallbackLabel: 'Usar Código PIN',
-        cancelLabel: 'Cancelar',
-        disableDeviceFallback: false,
-      });
-
-      if (!authRes.success) {
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      if (!isEnrolled) {
+        showCustomAlert(
+          'Biometria Não Registada',
+          'Não há impressões digitais ou Face ID registadas no seu telemóvel. Por favor, configure uma digital nas definições de segurança do aparelho primeiro.',
+          [{ text: 'Entendido' }],
+          'warning'
+        );
         return false;
       }
 
       const creds = await getSavedBiometricCredentials();
       if (!creds) {
-        Alert.alert(
-          'Primeiro Acesso',
-          'Por favor, inicie sessão com o seu e-mail e código PIN uma primeira vez para ativar o login biométrico.'
+        showCustomAlert(
+          'Primeiro Acesso Necessário',
+          'Por favor, inicie sessão com o seu e-mail e código PIN uma primeira vez para ativar o login por biometria.',
+          [{ text: 'Entendido' }],
+          'info'
         );
+        return false;
+      }
+
+      const authRes = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Entrar no Castello',
+        cancelLabel: 'Cancelar',
+        disableDeviceFallback: true,
+      });
+
+      if (!authRes.success) {
+        if (authRes.error === 'user_cancel' || authRes.error === 'system_cancel') {
+          return false;
+        }
+        if (authRes.error === 'lockout') {
+          showCustomAlert(
+            'Sensor Bloqueado',
+            'O sensor biométrico foi bloqueado temporariamente por excesso de tentativas. Entre com o seu código PIN.',
+            [{ text: 'Entendido' }],
+            'warning'
+          );
+        }
         return false;
       }
 
       // Autentica usando as credenciais preservadas com segurança
       const emp = await authenticateEmployee(creds.email, creds.code);
-      if (!emp) return false;
+      if (!emp) {
+        showCustomAlert(
+          'Credenciais Inválidas',
+          'As suas credenciais foram alteradas no sistema ou o utilizador não foi encontrado. Por favor, introduza o seu e-mail e código PIN.',
+          [{ text: 'Entendido' }],
+          'warning'
+        );
+        return false;
+      }
+
       setCurrentEmployee(emp);
       setHasBiometricsSaved(true);
       const [empEntries, comp] = await Promise.all([
@@ -327,6 +359,12 @@ function MainApp() {
       return true;
     } catch (err: any) {
       console.warn('Erro ao autenticar biometricamente:', err);
+      showCustomAlert(
+        'Erro na Biometria',
+        'Ocorreu um erro ao aceder ao sensor biométrico: ' + (err?.message || 'Tente novamente.'),
+        [{ text: 'Fechar' }],
+        'danger'
+      );
       return false;
     }
   };

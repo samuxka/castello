@@ -158,11 +158,26 @@ export async function authenticateEmployee(
           BIOMETRIC_SAVED_CREDS_KEY,
           JSON.stringify({ email: cleanEmail, code: cleanCode, id: data.id })
         );
+        await AsyncStorage.setItem(`@castello:profile_${data.id}`, JSON.stringify(data));
         return data as EmployeeProfile;
       }
     } catch (e) {
       console.warn('Erro ao autenticar no Supabase', e);
     }
+  }
+
+  // Fallback offline / cache local se as credenciais corresponderem às salvas
+  try {
+    const saved = await getSavedBiometricCredentials();
+    if (saved && saved.email.toLowerCase() === cleanEmail && saved.code === cleanCode) {
+      const cached = await AsyncStorage.getItem(`@castello:profile_${saved.id}`);
+      if (cached) {
+        await setActiveEmployeeId(saved.id);
+        return JSON.parse(cached) as EmployeeProfile;
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao verificar cache offline de autenticação:', err);
   }
 
   return null;

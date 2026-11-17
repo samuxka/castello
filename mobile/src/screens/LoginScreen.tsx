@@ -49,9 +49,33 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   const handleBiometricPress = async () => {
     if (!hasBiometricsSaved) {
+      if (email.trim() && code.trim()) {
+        setLoading(true);
+        setErrorMsg(null);
+        try {
+          const success = await onLogin(email.trim(), code.trim());
+          if (!success) {
+            setErrorMsg('Credenciais incorretas ou utilizador não encontrado.');
+            return;
+          }
+          showCustomAlert(
+            'Biometria Ativada!',
+            'Sessão iniciada com sucesso. A biometria foi ativada para os seus próximos acessos.',
+            [{ text: 'Continuar' }],
+            'success'
+          );
+          return;
+        } catch {
+          setErrorMsg('Erro de comunicação. Tente novamente.');
+          return;
+        } finally {
+          setLoading(false);
+        }
+      }
+
       showCustomAlert(
         'Ativação de Biometria',
-        'Para ativar a biometria ou Face ID, faça o primeiro acesso digitando o seu e-mail e código PIN. O aplicativo salvará as suas credenciais com segurança para os próximos acessos com apenas um toque.',
+        'Para ativar o acesso por biometria ou Face ID, preencha o seu e-mail e código PIN e entre pela primeira vez. A partir daí, poderá aceder sempre com apenas um toque.',
         [{ text: 'Entendido' }],
         'info'
       );
@@ -61,10 +85,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setLoading(true);
     setErrorMsg(null);
     try {
-      const success = await onBiometricLogin();
-      if (!success) {
-        setErrorMsg('Autenticação biométrica não concluída.');
-      }
+      await onBiometricLogin();
     } catch {
       setErrorMsg('Falha na validação biométrica.');
     } finally {
