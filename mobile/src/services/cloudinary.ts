@@ -1,100 +1,61 @@
+import { supabase } from '../lib/supabase';
+
+interface CloudinarySignResponse {
+  signature: string;
+  timestamp: number;
+  api_key: string;
+  cloud_name: string;
+  folder: string;
+}
+
 /**
- * Serviço de Upload de Imagens no Cloudinary
- * As chaves são mantidas no código interno / variáveis de ambiente e não são expostas.
+ * Obtém parâmetros e assinatura criptográfica segura gerados no backend/banco de dados,
+ * garantindo que nenhuma chave secreta (API Secret) seja exposta no aplicativo móvel.
  */
-
-const CLOUDINARY_CLOUD_NAME = 'dtxa1leih';
-const CLOUDINARY_API_KEY = '877397175965442';
-const CLOUDINARY_API_SECRET = 'trBeUlTPCEXvI58JS7FAUD6eJj0';
-
-/**
- * Função SHA1 pura em TypeScript/JS (funciona tanto no browser quanto no React Native sem bibliotecas pesadas)
- */
-function sha1(str: string): string {
-  function rotateLeft(n: number, s: number) {
-    return (n << s) | (n >>> (32 - s));
-  }
-  function cvtHex(val: number) {
-    let str = '';
-    for (let i = 7; i >= 0; i--) {
-      const v = (val >>> (i * 4)) & 0x0f;
-      str += v.toString(16);
-    }
-    return str;
-  }
-
-  const blocksize = 64;
-  const utf8 = unescape(encodeURIComponent(str));
-  const words: number[] = [];
-  for (let i = 0; i < utf8.length; i++) {
-    words[i >> 2] |= (utf8.charCodeAt(i) & 0xff) << ((3 - (i % 4)) * 8);
-  }
-  words[utf8.length >> 2] |= 0x80 << ((3 - (utf8.length % 4)) * 8);
-  words[(((utf8.length + 8) >> 6) + 1) * 16 - 1] = utf8.length * 8;
-
-  let h0 = 0x67452301;
-  let h1 = 0xefcdab89;
-  let h2 = 0x98badcfe;
-  let h3 = 0x10325476;
-  let h4 = 0xc3d2e1f0;
-
-  const w = new Array(80);
-  for (let i = 0; i < words.length; i += 16) {
-    for (let j = 0; j < 16; j++) w[j] = words[i + j] | 0;
-    for (let j = 16; j < 80; j++) {
-      w[j] = rotateLeft(w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16], 1);
-    }
-
-    let a = h0;
-    let b = h1;
-    let c = h2;
-    let d = h3;
-    let e = h4;
-
-    for (let j = 0; j < 80; j++) {
-      let f: number, k: number;
-      if (j < 20) {
-        f = (b & c) | (~b & d);
-        k = 0x5a827999;
-      } else if (j < 40) {
-        f = b ^ c ^ d;
-        k = 0x6ed9eba1;
-      } else if (j < 60) {
-        f = (b & c) | (b & d) | (c & d);
-        k = 0x8f1bbcdc;
-      } else {
-        f = b ^ c ^ d;
-        k = 0xca62c1d6;
+async function getSecureUploadParams(folder: string): Promise<CloudinarySignResponse> {
+  // 1. Supabase RPC seguro (sem expor segredos no APK)
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.rpc('sign_cloudinary_upload', {
+        folder,
+      });
+      if (!error && data?.signature && data?.timestamp) {
+        return data as CloudinarySignResponse;
       }
-      const temp = (rotateLeft(a, 5) + f + e + k + w[j]) | 0;
-      e = d;
-      d = c;
-      c = rotateLeft(b, 30);
-      b = a;
-      a = temp;
+      if (error) {
+        console.warn('Supabase RPC sign_cloudinary_upload não disponível:', error.message);
+      }
+    } catch (err) {
+      console.warn('Erro ao chamar sign_cloudinary_upload via RPC:', err);
     }
-
-    h0 = (h0 + a) | 0;
-    h1 = (h1 + b) | 0;
-    h2 = (h2 + c) | 0;
-    h3 = (h3 + d) | 0;
-    h4 = (h4 + e) | 0;
   }
 
-  return (cvtHex(h0) + cvtHex(h1) + cvtHex(h2) + cvtHex(h3) + cvtHex(h4)).toLowerCase();
+  // 2. Fallback via API serverless da web
+  try {
+    const res = await fetch(`https://castello-ponto.vercel.app/api/sign-cloudinary?folder=${encodeURIComponent(folder)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.signature && data.timestamp && data.api_key && data.cloud_name) {
+        return data as CloudinarySignResponse;
+      }
+    }
+  } catch (err) {
+    console.warn('Endpoint /api/sign-cloudinary remoto indisponível:', err);
+  }
+
+  throw new Error('Falha ao gerar credencial segura para envio de imagem.');
 }
 
 /**
  * Faz upload de imagem (Data URI base64, URL ou URI local de arquivo) diretamente para o Cloudinary
- * Retorna a secure_url do Cloudinary
+ * usando assinatura segura gerada pelo backend.
+ * Retorna a secure_url do Cloudinary.
  */
 export async function uploadImageToCloudinary(
   fileInput: string | { uri: string; name?: string; type?: string },
   folder: string = 'castello_profiles'
 ): Promise<string> {
-  const timestamp = Math.floor(Date.now() / 1000);
-  const paramsToSign = `folder=${folder}&timestamp=${timestamp}`;
-  const signature = sha1(paramsToSign + CLOUDINARY_API_SECRET);
+  const params = await getSecureUploadParams(folder);
 
   const formData = new FormData();
 
@@ -106,7 +67,7 @@ export async function uploadImageToCloudinary(
     ) {
       formData.append('file', fileInput);
     } else {
-      // É uma URI local do dispositivo (ex: file:///... ou content://...)
+      // URI local do dispositivo (ex: file:///... ou content://...)
       const filename = fileInput.split('/').pop() || 'profile.jpg';
       const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
       const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
@@ -125,13 +86,13 @@ export async function uploadImageToCloudinary(
     } as any);
   }
 
-  formData.append('api_key', CLOUDINARY_API_KEY);
-  formData.append('timestamp', String(timestamp));
-  formData.append('folder', folder);
-  formData.append('signature', signature);
+  formData.append('api_key', params.api_key);
+  formData.append('timestamp', String(params.timestamp));
+  formData.append('folder', params.folder);
+  formData.append('signature', params.signature);
 
   const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+    `https://api.cloudinary.com/v1_1/${params.cloud_name}/image/upload`,
     {
       method: 'POST',
       body: formData,
@@ -146,4 +107,3 @@ export async function uploadImageToCloudinary(
   console.error('Falha no upload Cloudinary:', data);
   throw new Error(data.error?.message || 'Falha ao fazer upload da imagem no Cloudinary');
 }
-
