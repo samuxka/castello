@@ -117,16 +117,15 @@ export default function App() {
     return <ClientPortalPage shareCode={clientShareCode} />;
   }
 
-  const [activeCompany, setActiveCompany] = useState<Company | null>(() =>
-    getActiveCompanySession()
-  );
+  const initialSession = getActiveCompanySession();
+  const [activeCompany, setActiveCompany] = useState<Company | null>(() => initialSession);
 
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [selectedSiteForDetail, setSelectedSiteForDetail] = useState<ConstructionSite | null>(null);
   const [selectedEmployeeForDetail, setSelectedEmployeeForDetail] = useState<EmployeeProfile | null>(null);
   const [selectedVehicleForDetail, setSelectedVehicleForDetail] = useState<Vehicle | null>(null);
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => getSavedTheme().mode);
-  const [themeColor, setThemeColor] = useState<ThemeColor>(() => getSavedTheme().color);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => initialSession?.theme_mode || getSavedTheme().mode);
+  const [themeColor, setThemeColor] = useState<ThemeColor>(() => (initialSession?.theme_color as ThemeColor) || getSavedTheme().color);
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth <= 900 : false
   );
@@ -148,27 +147,34 @@ export default function App() {
       getCompanyById(session.id).then((fresh) => {
         if (fresh) {
           setActiveCompany(fresh);
-          if (fresh.theme_color && fresh.theme_color !== themeColor) {
-            setThemeColor(fresh.theme_color);
+          setActiveCompanySession(fresh);
+          if (fresh.theme_color) {
+            setThemeColor(fresh.theme_color as ThemeColor);
           }
-          if (fresh.theme_mode && fresh.theme_mode !== theme) {
-            setTheme(fresh.theme_mode);
+          if (fresh.theme_mode) {
+            setTheme(fresh.theme_mode as ThemeMode);
           }
+          applyTheme((fresh.theme_color as ThemeColor) || 'azul', (fresh.theme_mode as ThemeMode) || 'dark');
         }
       });
     }
   }, []);
 
+  // Atualização em tempo real quando as propriedades da firma mudarem
   useEffect(() => {
     if (activeCompany) {
       if (activeCompany.theme_color && activeCompany.theme_color !== themeColor) {
-        setThemeColor(activeCompany.theme_color);
+        setThemeColor(activeCompany.theme_color as ThemeColor);
       }
       if (activeCompany.theme_mode && activeCompany.theme_mode !== theme) {
-        setTheme(activeCompany.theme_mode);
+        setTheme(activeCompany.theme_mode as ThemeMode);
       }
+      applyTheme(
+        (activeCompany.theme_color as ThemeColor) || themeColor,
+        (activeCompany.theme_mode as ThemeMode) || theme
+      );
     }
-  }, [activeCompany?.theme_color, activeCompany?.theme_mode]);
+  }, [activeCompany?.id, activeCompany?.theme_color, activeCompany?.theme_mode, activeCompany?.logo_url]);
 
   const toggleThemeMode = () => {
     const nextMode = theme === 'dark' ? 'light' : 'dark';
@@ -571,13 +577,14 @@ export default function App() {
       <AuthModal
         onSuccess={(company) => {
           setActiveCompany(company);
+          setActiveCompanySession(company);
           if (company.theme_color) {
-            setThemeColor(company.theme_color);
+            setThemeColor(company.theme_color as ThemeColor);
           }
           if (company.theme_mode) {
-            setTheme(company.theme_mode);
+            setTheme(company.theme_mode as ThemeMode);
           }
-          applyTheme(company.theme_color || 'azul', company.theme_mode || 'dark');
+          applyTheme((company.theme_color as ThemeColor) || 'azul', (company.theme_mode as ThemeMode) || 'dark');
         }}
       />
     );

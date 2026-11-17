@@ -607,6 +607,16 @@ export async function getCompanyById(companyId?: string | null): Promise<Company
           if (cloudSettings.theme_color && !comp.theme_color) comp.theme_color = cloudSettings.theme_color;
           if (cloudSettings.theme_mode && !comp.theme_mode) comp.theme_mode = cloudSettings.theme_mode;
         }
+        const currentSession = getActiveCompanySession();
+        if (currentSession && currentSession.id === comp.id) {
+          setActiveCompanySession(comp);
+        }
+        if (comp.theme_color) {
+          localStorage.setItem(THEME_COLOR_KEY, comp.theme_color);
+        }
+        if (comp.theme_mode) {
+          localStorage.setItem(THEME_MODE_KEY, comp.theme_mode);
+        }
         return comp;
       }
     } catch (e) {
