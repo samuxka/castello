@@ -49,16 +49,59 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
 const CURRENT_EMPLOYEE_ID_KEY = '@castello:current_employee_id_v4';
 const BIOMETRIC_SAVED_CREDS_KEY = '@castello:biometric_saved_creds_v4';
 
-export async function fetchSites(): Promise<ConstructionSite[]> {
+// ============================================================================
+// CACHE INTELIGENTE EM MEMÓRIA & PROTEÇÃO DE CONCORRÊNCIA (MOBILE PERFORMANCE)
+// ============================================================================
+interface MobileCacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+const mobileMemoryCache = new Map<string, MobileCacheEntry<any>>();
+
+function getMobileCached<T>(key: string, ttlMs = 30000): T | null {
+  const entry = mobileMemoryCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > ttlMs) {
+    mobileMemoryCache.delete(key);
+    return null;
+  }
+  return entry.data as T;
+}
+
+function setMobileCached<T>(key: string, data: T): void {
+  mobileMemoryCache.set(key, { data, timestamp: Date.now() });
+}
+
+export function clearMobileCache(): void {
+  mobileMemoryCache.clear();
+}
+
+// Guard de concorrência e idempotência de picagem de ponto contra toques repetidos
+let lastRegisteredEntry: { empId: string; type: EntryType; time: number; result: TimeEntry } | null = null;
+
+export async function fetchSites(forceRefresh = false): Promise<ConstructionSite[]> {
+  const emp = await getActiveEmployee();
+  const cacheKey = `sites_${emp?.company_id || 'all'}`;
+  if (!forceRefresh) {
+    const cached = getMobileCached<ConstructionSite[]>(cacheKey, 30000);
+    if (cached) return cached;
+  }
+
   if (supabase) {
     try {
-      const emp = await getActiveEmployee();
-      let query = supabase.from('construction_sites').select('*').order('created_at', { ascending: false });
+      let query = supabase
+        .from('construction_sites')
+        .select('id, company_id, name, address, client_name, client_phone, client_email, status, notes, share_code, photo_url, start_date, expected_end_date, created_at')
+        .order('created_at', { ascending: false });
       if (emp && emp.company_id) {
         query = query.or(`company_id.eq.${emp.company_id},company_id.is.null`);
       }
       const { data, error } = await query;
-      if (!error && data) return data as ConstructionSite[];
+      if (!error && data) {
+        const mapped = data as unknown as ConstructionSite[];
+        setMobileCached(cacheKey, mapped);
+        return mapped;
+      }
     } catch (e) {
       console.warn('Erro ao carregar obras:', e);
     }
@@ -66,15 +109,25 @@ export async function fetchSites(): Promise<ConstructionSite[]> {
   return [];
 }
 
-export async function fetchEmployees(): Promise<EmployeeProfile[]> {
+export async function fetchEmployees(forceRefresh = false): Promise<EmployeeProfile[]> {
+  const cacheKey = 'employees_active';
+  if (!forceRefresh) {
+    const cached = getMobileCached<EmployeeProfile[]>(cacheKey, 30000);
+    if (cached) return cached;
+  }
+
   if (supabase) {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, company_id, name, full_name, email, phone, role, job_title, access_code, avatar_url, is_active, created_at')
         .eq('is_active', true)
         .order('full_name', { ascending: true });
-      if (!error && data) return data as EmployeeProfile[];
+      if (!error && data) {
+        const mapped = data as unknown as EmployeeProfile[];
+        setMobileCached(cacheKey, mapped);
+        return mapped;
+      }
     } catch (e) {
       console.warn('Erro ao carregar perfis:', e);
     }
@@ -197,21 +250,24 @@ export async function getSavedBiometricCredentials(): Promise<{
   }
 }
 
-export async function fetchEmployeeTimeEntries(employeeId: string): Promise<TimeEntry[]> {
+export async function fetchEmployeeTimeEntries(employeeId: string, limit = 60): Promise<TimeEntry[]> {
   if (supabase) {
     try {
       const { data, error } = await supabase
         .from('time_entries')
-        .select('*')
+        .select('id, company_id, employee_id, site_id, employee_name, site_name, entry_type, recorded_at, work_date, status, notes, photo_url, location_lat, location_lng, address, created_at')
         .eq('employee_id', employeeId)
-        .order('recorded_at', { ascending: true });
+        .order('recorded_at', { ascending: false })
+        .limit(limit);
       if (!error && data) {
-        return data
+        // Ordena cronologicamente para a timeline móvel
+        return (data as any[])
           .filter((d: any) => !d.notes || !d.notes.startsWith('[JUSTIFICATIVA_FALTA]'))
           .map((d: any) => ({
             ...d,
             status: d.status || 'pendente',
-          })) as TimeEntry[];
+          }))
+          .reverse() as TimeEntry[];
       }
     } catch (e) {
       console.warn('Erro ao buscar picagens:', e);
@@ -221,7 +277,7 @@ export async function fetchEmployeeTimeEntries(employeeId: string): Promise<Time
 }
 
 /**
- * Registo de Ponto compatível com schema Supabase (inclui company_id, data retroativa e fallback)
+ * Registo de Ponto compatível com schema Supabase (inclui company_id, data retroativa, fallback e idempotência)
  */
 export async function registerTimeEntry(
   employeeId: string,
@@ -234,6 +290,16 @@ export async function registerTimeEntry(
   const now = new Date();
   const workDate = customWorkDate || getLocalDateString(now);
   const recordedAt = customRecordedAt || now.toISOString();
+
+  // Proteção de idempotência contra cliques duplos rápidos no botão físico/tela do telemóvel (dentro de 4s)
+  if (
+    lastRegisteredEntry &&
+    lastRegisteredEntry.empId === employeeId &&
+    lastRegisteredEntry.type === entryType &&
+    Date.now() - lastRegisteredEntry.time < 4000
+  ) {
+    return lastRegisteredEntry.result;
+  }
 
   let compId: string | null = null;
   const activeEmp = await getActiveEmployee();
@@ -258,10 +324,12 @@ export async function registerTimeEntry(
         .single();
 
       if (!error && data) {
-        return {
+        const res: TimeEntry = {
           ...data,
           status: data.status || 'pendente',
-        } as TimeEntry;
+        };
+        lastRegisteredEntry = { empId: employeeId, type: entryType, time: Date.now(), result: res };
+        return res;
       }
     } catch (e) {
       console.warn('Tentativa com status falhou, aplicando fallback de colunas', e);
@@ -282,10 +350,12 @@ export async function registerTimeEntry(
         .single();
 
       if (!error && data) {
-        return {
+        const res: TimeEntry = {
           ...data,
           status: 'pendente',
-        } as TimeEntry;
+        };
+        lastRegisteredEntry = { empId: employeeId, type: entryType, time: Date.now(), result: res };
+        return res;
       }
     } catch (e) {
       console.error('Erro total ao gravar ponto no Supabase', e);

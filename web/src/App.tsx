@@ -46,6 +46,7 @@ import {
   deleteSite,
   getActiveCompanySession,
   getAbsenceJustifications,
+  getAllCompanyTasks,
   getAllTimeEntries,
   getCompanyById,
   getEmployees,
@@ -78,16 +79,25 @@ import {
   Vehicle,
 } from './types';
 import { AuthModal } from './components/AuthModal';
-import { SiteDetailPage } from './pages/SiteDetailPage';
-import { TeamsPage } from './pages/TeamsPage';
-import { ClientPortalPage } from './pages/ClientPortalPage';
-import { FinancialPage } from './pages/FinancialPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { InventoryPage } from './pages/InventoryPage';
-import { VehiclesPage } from './pages/VehiclesPage';
-import { VehicleDetailPage } from './pages/VehicleDetailPage';
-import { CalendarPage } from './pages/CalendarPage';
-import { EmployeeDetailPage } from './pages/EmployeeDetailPage';
+
+// Code-Splitting: Carregamento dinâmico (lazy) de páginas pesadas sob demanda
+const SiteDetailPage = React.lazy(() => import('./pages/SiteDetailPage').then((m) => ({ default: m.SiteDetailPage })));
+const TeamsPage = React.lazy(() => import('./pages/TeamsPage').then((m) => ({ default: m.TeamsPage })));
+const ClientPortalPage = React.lazy(() => import('./pages/ClientPortalPage').then((m) => ({ default: m.ClientPortalPage })));
+const FinancialPage = React.lazy(() => import('./pages/FinancialPage').then((m) => ({ default: m.FinancialPage })));
+const SettingsPage = React.lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const InventoryPage = React.lazy(() => import('./pages/InventoryPage').then((m) => ({ default: m.InventoryPage })));
+const VehiclesPage = React.lazy(() => import('./pages/VehiclesPage').then((m) => ({ default: m.VehiclesPage })));
+const VehicleDetailPage = React.lazy(() => import('./pages/VehicleDetailPage').then((m) => ({ default: m.VehicleDetailPage })));
+const CalendarPage = React.lazy(() => import('./pages/CalendarPage').then((m) => ({ default: m.CalendarPage })));
+const EmployeeDetailPage = React.lazy(() => import('./pages/EmployeeDetailPage').then((m) => ({ default: m.EmployeeDetailPage })));
+
+const PageLoadingFallback = () => (
+  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 340, gap: 12, color: 'var(--text-muted)' }}>
+    <div style={{ width: 28, height: 28, border: '3px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+    <span style={{ fontSize: 13, fontWeight: 500 }}>A carregar módulo...</span>
+  </div>
+);
 import { AttendanceChart } from './components/AttendanceChart';
 import { DashboardCalendarCard } from './components/DashboardCalendarCard';
 import { EmployeeAutocompleteSelect } from './components/EmployeeAutocompleteSelect';
@@ -114,7 +124,11 @@ export default function App() {
   const clientShareCode = queryParams.get('obra');
 
   if (clientShareCode) {
-    return <ClientPortalPage shareCode={clientShareCode} />;
+    return (
+      <React.Suspense fallback={<PageLoadingFallback />}>
+        <ClientPortalPage shareCode={clientShareCode} />
+      </React.Suspense>
+    );
   }
 
   const initialSession = getActiveCompanySession();
@@ -319,8 +333,9 @@ export default function App() {
     setDashboardTeams(tm || []);
 
     try {
-      const taskLists = await Promise.all(s.map((site) => getSiteTasks(site.id)));
-      setDashboardTasks(taskLists.flat());
+      // Otimização: Consulta em lote evitando N requisições por obra (resolução do problema N+1)
+      const allTasks = await getAllCompanyTasks(targetCompId, s.map((site) => site.id));
+      setDashboardTasks(allTasks);
     } catch (err) {
       console.warn('Erro ao carregar tarefas para gráficos do dashboard:', err);
     }
@@ -1014,6 +1029,8 @@ export default function App() {
             </div>
           )}
 
+          {/* CONTEÚDO PRINCIPAL COM CODE-SPLITTING E SUSPENSE */}
+          <React.Suspense fallback={<PageLoadingFallback />}>
           {/* DETALHE DA OBRA (Quando o usuário clica numa obra) */}
           {selectedSiteForDetail ? (
             <SiteDetailPage
@@ -2418,6 +2435,7 @@ export default function App() {
             )}
           </>
         )}
+          </React.Suspense>
         </div>
 
         {/* RODAPÉ DO SITE */}

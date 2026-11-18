@@ -211,7 +211,55 @@ export function getActiveCompanySession(): Company | null {
   }
 }
 
+// ============================================================================
+// CACHE INTELIGENTE EM MEMÓRIA & DEDUPLICAÇÃO DE REQUISIÇÕES (SRE / PERFORMANCE)
+// ============================================================================
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+const memoryCache = new Map<string, CacheEntry<any>>();
+const inFlightRequests = new Map<string, Promise<any>>();
+
+export function getCached<T>(key: string, ttlMs = 30000): T | null {
+  const entry = memoryCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > ttlMs) {
+    memoryCache.delete(key);
+    return null;
+  }
+  return entry.data as T;
+}
+
+export function setCached<T>(key: string, data: T): void {
+  memoryCache.set(key, { data, timestamp: Date.now() });
+}
+
+export function invalidateCache(keyPrefix?: string): void {
+  if (!keyPrefix) {
+    memoryCache.clear();
+    return;
+  }
+  for (const k of memoryCache.keys()) {
+    if (k.startsWith(keyPrefix)) {
+      memoryCache.delete(k);
+    }
+  }
+}
+
+export async function fetchWithDedupe<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  if (inFlightRequests.has(key)) {
+    return inFlightRequests.get(key) as Promise<T>;
+  }
+  const promise = fetcher().finally(() => {
+    inFlightRequests.delete(key);
+  });
+  inFlightRequests.set(key, promise);
+  return promise;
+}
+
 export function setActiveCompanySession(company: Company | null) {
+  invalidateCache(); // Limpa cache imediatamente na troca de sessão/logout (isolamento multi-tenant)
   if (company) {
     localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(company));
   } else {
@@ -541,27 +589,40 @@ function setLocalSiteDates(siteId: string, startDate?: string | null, expectedEn
   } catch {}
 }
 
-export async function getSites(companyId?: string): Promise<ConstructionSite[]> {
-  if (supabase) {
-    try {
-      let query = supabase.from('construction_sites').select('*').order('created_at', { ascending: false });
-      if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
-      }
-      const { data, error } = await query;
-      if (!error && data) {
-        const localDates = getLocalSiteDates();
-        return (data as ConstructionSite[]).map((s) => ({
-          ...s,
-          start_date: s.start_date || localDates[s.id]?.start_date || null,
-          expected_end_date: s.expected_end_date || localDates[s.id]?.expected_end_date || null,
-        }));
-      }
-    } catch (e) {
-      console.warn('Erro ao carregar obras:', e);
-    }
+export async function getSites(companyId?: string, forceRefresh = false): Promise<ConstructionSite[]> {
+  const cacheKey = `sites_${companyId || 'all'}`;
+  if (!forceRefresh) {
+    const cached = getCached<ConstructionSite[]>(cacheKey, 30000);
+    if (cached) return cached;
   }
-  return [];
+
+  return fetchWithDedupe(cacheKey, async () => {
+    if (supabase) {
+      try {
+        let query = supabase
+          .from('construction_sites')
+          .select('id, company_id, name, address, client_name, client_phone, client_email, status, notes, share_code, photo_url, contracted_value, cost_budget, initial_predicted_profit, start_date, expected_end_date, created_at, updated_at')
+          .order('created_at', { ascending: false });
+        if (companyId) {
+          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          const localDates = getLocalSiteDates();
+          const mapped = (data as unknown as ConstructionSite[]).map((s) => ({
+            ...s,
+            start_date: s.start_date || localDates[s.id]?.start_date || null,
+            expected_end_date: s.expected_end_date || localDates[s.id]?.expected_end_date || null,
+          }));
+          setCached(cacheKey, mapped);
+          return mapped;
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar obras:', e);
+      }
+    }
+    return [];
+  });
 }
 
 export async function getSiteByShareCode(shareCode: string): Promise<ConstructionSite | null> {
@@ -1239,6 +1300,7 @@ export async function saveSite(
           console.warn('Erro ao sincronizar marcos da obra no calendário:', err);
         }
       }
+      invalidateCache('sites');
       return savedSite;
     }
   }
@@ -1249,6 +1311,7 @@ export async function deleteSite(id: string): Promise<void> {
   if (supabase) {
     await supabase.from('construction_sites').delete().eq('id', id);
   }
+  invalidateCache('sites');
   try {
     await deleteCalendarEvent(`sync-site-start-${id}`);
     await deleteCalendarEvent(`sync-site-end-${id}`);
@@ -1281,45 +1344,40 @@ function setLocalAvatar(empId: string, url: string | null) {
   } catch {}
 }
 
-export async function getEmployees(companyId?: string): Promise<EmployeeProfile[]> {
-  if (supabase) {
-    try {
-      // Migração automática de segurança: criptografa senhas de empresas que ainda estejam em texto simples
-      supabase
-        .from('companies')
-        .select('id, password_hash')
-        .then(({ data: comps }) => {
-          if (comps) {
-            comps.forEach((c: any) => {
-              if (c.password_hash && !isHashedCredential(c.password_hash)) {
-                supabase!
-                  .from('companies')
-                  .update({ password_hash: hashCredential(c.password_hash) })
-                  .eq('id', c.id)
-                  .then(() => {});
-              }
-            });
-          }
-        }, () => {});
-
-      let query = supabase.from('profiles').select('*').order('created_at', { ascending: false });
-      if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
-      }
-      const { data, error } = await query;
-      if (!error && data) {
-        const localAvatars = getLocalAvatars();
-        const mapped = (data as EmployeeProfile[]).map((emp) => ({
-          ...emp,
-          avatar_url: emp.avatar_url || localAvatars[emp.id] || null,
-        }));
-        return recoverHashedEmployeePins(mapped);
-      }
-    } catch (e) {
-      console.warn('Erro ao carregar colaboradores:', e);
-    }
+export async function getEmployees(companyId?: string, forceRefresh = false): Promise<EmployeeProfile[]> {
+  const cacheKey = `employees_${companyId || 'all'}`;
+  if (!forceRefresh) {
+    const cached = getCached<EmployeeProfile[]>(cacheKey, 30000);
+    if (cached) return cached;
   }
-  return [];
+
+  return fetchWithDedupe(cacheKey, async () => {
+    if (supabase) {
+      try {
+        let query = supabase
+          .from('profiles')
+          .select('id, company_id, name, email, phone, role, job_title, hourly_rate, access_code, avatar_url, is_active, created_at, user_id, updated_at')
+          .order('created_at', { ascending: false });
+        if (companyId) {
+          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          const localAvatars = getLocalAvatars();
+          const mapped = (data as unknown as EmployeeProfile[]).map((emp) => ({
+            ...emp,
+            avatar_url: emp.avatar_url || localAvatars[emp.id] || null,
+          }));
+          const recovered = recoverHashedEmployeePins(mapped);
+          setCached(cacheKey, recovered);
+          return recovered;
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar colaboradores:', e);
+      }
+    }
+    return [];
+  });
 }
 
 export async function saveEmployee(
@@ -1399,6 +1457,7 @@ export async function saveEmployee(
         if (emp.avatar_url) {
           setLocalAvatar(data.id, emp.avatar_url);
         }
+        invalidateCache('employees');
         return {
           ...(data as EmployeeProfile),
           avatar_url: data.avatar_url || emp.avatar_url || null,
@@ -1413,6 +1472,7 @@ export async function deleteEmployee(id: string): Promise<void> {
   if (supabase) {
     await supabase.from('profiles').delete().eq('id', id);
   }
+  invalidateCache('employees');
 }
 
 // ============================================================================
@@ -1945,19 +2005,40 @@ export async function addSiteDailyLog(
   throw new Error('Falha ao adicionar registo diário.');
 }
 
+export interface PaginationOptions {
+  limit?: number;
+  offset?: number;
+}
+
 // ============================================================================
 // PICAGENS DE PONTO
 // ============================================================================
-export async function getAllTimeEntries(companyId?: string): Promise<TimeEntry[]> {
+export async function getAllTimeEntries(
+  companyId?: string,
+  options?: PaginationOptions
+): Promise<TimeEntry[]> {
   let entries: TimeEntry[] = [];
 
-  // 1. Tenta carregar do Supabase
+  // 1. Tenta carregar do Supabase com projeção explícita e paginação segura
   if (supabase) {
     try {
-      let query = supabase.from('time_entries').select('*').order('recorded_at', { ascending: false });
+      let query = supabase
+        .from('time_entries')
+        .select('id, company_id, employee_id, site_id, employee_name, site_name, entry_type, recorded_at, work_date, status, notes, photo_url, location_lat, location_lng, address, created_at')
+        .order('recorded_at', { ascending: false });
+
       if (companyId) {
         query = query.or(`company_id.eq.${companyId},company_id.is.null`);
       }
+
+      if (options?.limit) {
+        const offset = options.offset || 0;
+        query = query.range(offset, offset + options.limit - 1);
+      } else {
+        // Limite padrão seguro de 500 registos para preservar banda de rede e performance
+        query = query.limit(500);
+      }
+
       const { data, error } = await query;
       if (!error && data) {
         entries = data
@@ -2148,17 +2229,33 @@ function ensureValidUuid(id?: string): string {
   });
 }
 
-export async function getFinancialRecords(companyId?: string): Promise<FinancialRecord[]> {
+export async function getFinancialRecords(
+  companyId?: string,
+  options?: PaginationOptions
+): Promise<FinancialRecord[]> {
   const localKey = getFinStorageKey(companyId);
   const stored = localStorage.getItem(localKey);
   const localList: FinancialRecord[] = stored ? JSON.parse(stored) : [];
 
   if (supabase) {
     try {
-      let query = supabase.from('financial_transactions').select('*').order('due_date', { ascending: false });
+      let query = supabase
+        .from('financial_transactions')
+        .select('id, company_id, description, amount, type, category, due_date, paid, payment_date')
+        .order('due_date', { ascending: false });
+
       if (companyId) {
         query = query.or(`company_id.eq.${companyId},company_id.is.null`);
       }
+
+      if (options?.limit) {
+        const offset = options.offset || 0;
+        query = query.range(offset, offset + options.limit - 1);
+      } else {
+        // Limite padrão protetor de 500 registos para otimização de rede e renderização
+        query = query.limit(500);
+      }
+
       const { data, error } = await query;
       if (!error && data) {
         const recordsNeedingMetaSync: FinancialRecord[] = [];
@@ -2758,31 +2855,42 @@ export function applyTheme(color: ThemeColor, mode: ThemeMode): void {
 const getInvStorageKey = (companyId?: string) =>
   `castello_inventory_${companyId || 'default'}`;
 
-export async function getInventoryItems(companyId?: string): Promise<InventoryItem[]> {
-  const localKey = getInvStorageKey(companyId);
-  if (supabase) {
-    try {
-      let query = supabase.from('inventory_items').select('*').order('name', { ascending: true });
-      if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
-      }
-      const { data, error } = await query;
-      if (!error && data) {
-        localStorage.setItem(localKey, JSON.stringify(data));
-        return data as InventoryItem[];
-      }
-    } catch (e) {
-      console.warn('Erro ao carregar inventário do Supabase:', e);
-    }
+export async function getInventoryItems(companyId?: string, forceRefresh = false): Promise<InventoryItem[]> {
+  const cacheKey = `inventory_${companyId || 'all'}`;
+  if (!forceRefresh) {
+    const cached = getCached<InventoryItem[]>(cacheKey, 30000);
+    if (cached) return cached;
   }
 
-  const stored = localStorage.getItem(localKey);
-  if (stored) {
-    try {
-      return JSON.parse(stored) as InventoryItem[];
-    } catch {}
-  }
-  return [];
+  return fetchWithDedupe(cacheKey, async () => {
+    const localKey = getInvStorageKey(companyId);
+    if (supabase) {
+      try {
+        let query = supabase.from('inventory_items').select('*').order('name', { ascending: true });
+        if (companyId) {
+          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          localStorage.setItem(localKey, JSON.stringify(data));
+          setCached(cacheKey, data as InventoryItem[]);
+          return data as InventoryItem[];
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar inventário do Supabase:', e);
+      }
+    }
+
+    const stored = localStorage.getItem(localKey);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as InventoryItem[];
+        setCached(cacheKey, parsed);
+        return parsed;
+      } catch {}
+    }
+    return [];
+  });
 }
 
 export async function saveInventoryItem(
@@ -2836,6 +2944,7 @@ export async function saveInventoryItem(
     : [newItem, ...current];
 
   localStorage.setItem(localKey, JSON.stringify(updated));
+  invalidateCache('inventory');
   return newItem;
 }
 
@@ -2855,6 +2964,7 @@ export async function deleteInventoryItem(
   const current = await getInventoryItems(companyId);
   const filtered = current.filter((i) => i.id !== itemId);
   localStorage.setItem(localKey, JSON.stringify(filtered));
+  invalidateCache('inventory');
 }
 
 // ============================================================================
@@ -2863,44 +2973,55 @@ export async function deleteInventoryItem(
 const getVehiclesStorageKey = (companyId?: string) =>
   `castello_vehicles_${companyId || 'default'}`;
 
-export async function getVehicles(companyId?: string): Promise<Vehicle[]> {
-  const localKey = getVehiclesStorageKey(companyId);
-  if (supabase) {
-    try {
-      let query = supabase.from('vehicles').select('*').order('brand', { ascending: true });
-      if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
-      }
-      const { data, error } = await query;
-      if (!error && data) {
-        // Se houver viaturas no localStorage que ainda não estão no Supabase, sincroniza para o Supabase
-        const stored = localStorage.getItem(localKey);
-        if (stored) {
-          try {
-            const localList = JSON.parse(stored) as Vehicle[];
-            for (const lv of localList) {
-              if (!data.some((sv: any) => sv.id === lv.id || (sv.license_plate && sv.license_plate === lv.license_plate))) {
-                await supabase.from('vehicles').upsert(lv, { onConflict: 'id' });
-                data.push(lv);
-              }
-            }
-          } catch {}
-        }
-        localStorage.setItem(localKey, JSON.stringify(data));
-        return data as Vehicle[];
-      }
-    } catch (e) {
-      console.warn('Erro ao carregar carrinhas do Supabase:', e);
-    }
+export async function getVehicles(companyId?: string, forceRefresh = false): Promise<Vehicle[]> {
+  const cacheKey = `vehicles_${companyId || 'all'}`;
+  if (!forceRefresh) {
+    const cached = getCached<Vehicle[]>(cacheKey, 30000);
+    if (cached) return cached;
   }
 
-  const stored = localStorage.getItem(localKey);
-  if (stored) {
-    try {
-      return JSON.parse(stored) as Vehicle[];
-    } catch {}
-  }
-  return [];
+  return fetchWithDedupe(cacheKey, async () => {
+    const localKey = getVehiclesStorageKey(companyId);
+    if (supabase) {
+      try {
+        let query = supabase.from('vehicles').select('*').order('brand', { ascending: true });
+        if (companyId) {
+          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          // Se houver viaturas no localStorage que ainda não estão no Supabase, sincroniza para o Supabase
+          const stored = localStorage.getItem(localKey);
+          if (stored) {
+            try {
+              const localList = JSON.parse(stored) as Vehicle[];
+              for (const lv of localList) {
+                if (!data.some((sv: any) => sv.id === lv.id || (sv.license_plate && sv.license_plate === lv.license_plate))) {
+                  await supabase.from('vehicles').upsert(lv, { onConflict: 'id' });
+                  data.push(lv);
+                }
+              }
+            } catch {}
+          }
+          localStorage.setItem(localKey, JSON.stringify(data));
+          setCached(cacheKey, data as Vehicle[]);
+          return data as Vehicle[];
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar carrinhas do Supabase:', e);
+      }
+    }
+
+    const stored = localStorage.getItem(localKey);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as Vehicle[];
+        setCached(cacheKey, parsed);
+        return parsed;
+      } catch {}
+    }
+    return [];
+  });
 }
 
 export async function saveVehicle(
@@ -2958,6 +3079,7 @@ export async function saveVehicle(
     : [newVehicle, ...current];
 
   localStorage.setItem(localKey, JSON.stringify(updated));
+  invalidateCache('vehicles');
   return newVehicle;
 }
 
@@ -2977,6 +3099,7 @@ export async function deleteVehicle(
   const current = await getVehicles(companyId);
   const filtered = current.filter((v) => v.id !== vehicleId);
   localStorage.setItem(localKey, JSON.stringify(filtered));
+  invalidateCache('vehicles');
 }
 
 // ----------------------------------------------------------------------------
@@ -4583,34 +4706,45 @@ export function validateTeamPayload(params: {
   };
 }
 
-export async function getTeams(companyId?: string): Promise<Team[]> {
-  const localKey = getTeamsStorageKey(companyId);
-  if (supabase) {
-    try {
-      let query = supabase.from('teams').select('*').order('name', { ascending: true });
-      if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
-      }
-      const { data, error } = await query;
-      if (!error && data) {
-        const decoded = (data as Record<string, unknown>[]).map(decodeTeamRow);
-        localStorage.setItem(localKey, JSON.stringify(decoded));
-        return decoded;
-      }
-    } catch (e) {
-      console.warn('Erro ao carregar equipas de Supabase:', e);
-    }
+export async function getTeams(companyId?: string, forceRefresh = false): Promise<Team[]> {
+  const cacheKey = `teams_${companyId || 'all'}`;
+  if (!forceRefresh) {
+    const cached = getCached<Team[]>(cacheKey, 30000);
+    if (cached) return cached;
   }
 
-  const stored = localStorage.getItem(localKey);
-  if (stored) {
-    try {
-      return (JSON.parse(stored) as Record<string, unknown>[]).map(decodeTeamRow);
-    } catch (err) {
-      console.warn('Erro ao ler equipas locais:', err);
+  return fetchWithDedupe(cacheKey, async () => {
+    const localKey = getTeamsStorageKey(companyId);
+    if (supabase) {
+      try {
+        let query = supabase.from('teams').select('*').order('name', { ascending: true });
+        if (companyId) {
+          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          const decoded = (data as Record<string, unknown>[]).map(decodeTeamRow);
+          localStorage.setItem(localKey, JSON.stringify(decoded));
+          setCached(cacheKey, decoded);
+          return decoded;
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar equipas de Supabase:', e);
+      }
     }
-  }
-  return [];
+
+    const stored = localStorage.getItem(localKey);
+    if (stored) {
+      try {
+        const decoded = (JSON.parse(stored) as Record<string, unknown>[]).map(decodeTeamRow);
+        setCached(cacheKey, decoded);
+        return decoded;
+      } catch (err) {
+        console.warn('Erro ao ler equipas locais:', err);
+      }
+    }
+    return [];
+  });
 }
 
 export async function saveTeam(
@@ -4760,6 +4894,7 @@ export async function saveTeam(
           ? currentTeams.map((t) => (t.id === decoded.id ? decoded : t))
           : [...currentTeams, decoded];
         localStorage.setItem(localKey, JSON.stringify(updated));
+        invalidateCache('teams');
         return decoded;
       }
     } catch (e) {
@@ -4772,6 +4907,7 @@ export async function saveTeam(
     ? currentTeams.map((t) => (t.id === newTeam.id ? newTeam : t))
     : [...currentTeams, newTeam];
   localStorage.setItem(localKey, JSON.stringify(updated));
+  invalidateCache('teams');
   return newTeam;
 }
 
@@ -5201,6 +5337,7 @@ export async function deleteTeam(teamId: string, companyId?: string): Promise<vo
   const current = await getTeams(companyId);
   const filtered = current.filter((t) => t.id !== teamId);
   localStorage.setItem(localKey, JSON.stringify(filtered));
+  invalidateCache('teams');
 }
 
 // ============================================================================
