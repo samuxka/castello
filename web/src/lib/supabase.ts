@@ -601,7 +601,7 @@ export async function getSites(companyId?: string, forceRefresh = false): Promis
       try {
         let query = supabase
           .from('construction_sites')
-          .select('id, company_id, name, address, client_name, client_phone, client_email, status, notes, share_code, photo_url, contracted_value, cost_budget, initial_predicted_profit, start_date, expected_end_date, created_at, updated_at')
+          .select('*')
           .order('created_at', { ascending: false });
         if (companyId) {
           query = query.or(`company_id.eq.${companyId},company_id.is.null`);
@@ -1356,7 +1356,7 @@ export async function getEmployees(companyId?: string, forceRefresh = false): Pr
       try {
         let query = supabase
           .from('profiles')
-          .select('id, company_id, name, email, phone, role, job_title, hourly_rate, access_code, avatar_url, is_active, created_at, user_id, updated_at')
+          .select('*')
           .order('created_at', { ascending: false });
         if (companyId) {
           query = query.or(`company_id.eq.${companyId},company_id.is.null`);
@@ -2024,7 +2024,7 @@ export async function getAllTimeEntries(
     try {
       let query = supabase
         .from('time_entries')
-        .select('id, company_id, employee_id, site_id, employee_name, site_name, entry_type, recorded_at, work_date, status, notes, photo_url, location_lat, location_lng, address, created_at')
+        .select('*')
         .order('recorded_at', { ascending: false });
 
       if (companyId) {
@@ -2241,7 +2241,7 @@ export async function getFinancialRecords(
     try {
       let query = supabase
         .from('financial_transactions')
-        .select('id, company_id, description, amount, type, category, due_date, paid, payment_date')
+        .select('*')
         .order('due_date', { ascending: false });
 
       if (companyId) {
