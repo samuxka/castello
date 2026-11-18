@@ -116,7 +116,7 @@ export interface FinancialPageProps {
   onOpenSite?: (site: ConstructionSite) => void;
 }
 
-type FinancialTab = 'visao_geral' | 'movimentacoes' | 'contas' | 'rentabilidade' | 'medicoes';
+type FinancialTab = 'visao_geral' | 'movimentacoes' | 'contas' | 'rentabilidade';
 
 const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   transferencia: 'Transferência Bancária',
@@ -1643,11 +1643,6 @@ export function FinancialPage({
             id: 'rentabilidade',
             label: `4. Rentabilidade & Orçamento (${sites.length})`,
             icon: TrendingUp,
-          },
-          {
-            id: 'medicoes',
-            label: `5. Medições de Obra (${measurements.length})`,
-            icon: ClipboardCheck,
           },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -3420,170 +3415,7 @@ export function FinancialPage({
         </div>
       )}
 
-      {/* ==================================================================== */}
-      {/* ABA 5 — MEDIÇÕES E FATURAÇÃO DE OBRAS                                */}
-      {/* ==================================================================== */}
-      {activeTab === 'medicoes' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div
-            className="content-panel"
-            style={{
-              margin: 0,
-              padding: '14px 18px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: 12,
-            }}
-          >
-            <div>
-              <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>
-                Autos de Medição, Adiantamentos e Trabalhos Adicionais
-              </h3>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '2px 0 0' }}>
-                Acompanhe os valores medidos em obra, aprovações do cliente, retenções de garantia e conversão direta em recebimentos.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn-flat-primary"
-              onClick={handleOpenNewMeasurement}
-              style={{ padding: '9px 16px', fontSize: 13, fontWeight: 700 }}
-            >
-              <Plus size={16} />
-              Novo Auto de Medição
-            </button>
-          </div>
 
-          <div className="content-panel" style={{ margin: 0 }}>
-            <div className="flat-table-wrap">
-              <table className="flat-table">
-                <thead>
-                  <tr>
-                    <th>Nº / Tipo</th>
-                    <th>Obra & Período</th>
-                    <th>Descrição</th>
-                    <th style={{ textAlign: 'right' }}>Medido (€)</th>
-                    <th style={{ textAlign: 'right' }}>Aprovado (€)</th>
-                    <th style={{ textAlign: 'right' }}>Retenção (€)</th>
-                    <th style={{ textAlign: 'right' }}>Recebido (€)</th>
-                    <th style={{ textAlign: 'center' }}>Estado</th>
-                    <th style={{ textAlign: 'right' }}>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {measurements.filter(
-                    (m) => selectedSiteId === 'todos' || m.site_id === selectedSiteId
-                  ).length === 0 ? (
-                    <tr>
-                      <td colSpan={9} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
-                        Nenhum auto de medição registado para o filtro atual. Clique em "Novo Auto de Medição" para começar.
-                      </td>
-                    </tr>
-                  ) : (
-                    measurements
-                      .filter((m) => selectedSiteId === 'todos' || m.site_id === selectedSiteId)
-                      .map((m) => {
-                        const st = MEASUREMENT_STATUS_MAP[m.status] || MEASUREMENT_STATUS_MAP.rascunho;
-                        return (
-                          <tr key={m.id}>
-                            <td>
-                              <div style={{ fontWeight: 800, color: 'var(--primary)' }}>
-                                Medição #{m.measurement_number}
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                {m.kind === 'adiantamento'
-                                  ? 'Adiantamento'
-                                  : m.kind === 'trabalho_adicional'
-                                  ? 'Trabalho Adicional'
-                                  : 'Medição Normal'}
-                              </div>
-                            </td>
-                            <td>
-                              <div style={{ fontWeight: 700 }}>{m.site_name || 'Obra'}</div>
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                {formatDatePt(m.period_start)} a {formatDatePt(m.period_end)}
-                              </div>
-                            </td>
-                            <td>
-                              <div style={{ fontWeight: 600 }}>{m.description}</div>
-                              {m.attachments && m.attachments.length > 0 && (
-                                <a
-                                  href={m.attachments[0]}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 700 }}
-                                >
-                                  Ver Auto Anexo ({m.attachments.length})
-                                </a>
-                              )}
-                            </td>
-                            <td style={{ textAlign: 'right', fontWeight: 600 }}>
-                              {formatEuro(m.measured_value, true)}
-                            </td>
-                            <td style={{ textAlign: 'right', fontWeight: 700, color: '#2563EB' }}>
-                              {formatEuro(m.approved_value, true)}
-                            </td>
-                            <td style={{ textAlign: 'right', color: '#F59E0B' }}>
-                              {formatEuro(m.retention_value, true)} ({m.retention_pct}%)
-                            </td>
-                            <td style={{ textAlign: 'right', fontWeight: 800, color: '#10B981' }}>
-                              {formatEuro(m.received_value, true)}
-                            </td>
-                            <td style={{ textAlign: 'center' }}>
-                              <span
-                                style={{
-                                  padding: '3px 8px',
-                                  borderRadius: 6,
-                                  fontSize: 10.5,
-                                  fontWeight: 800,
-                                  backgroundColor: st.bg,
-                                  color: st.color,
-                                }}
-                              >
-                                {st.label}
-                              </span>
-                            </td>
-                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                              <div style={{ display: 'inline-flex', gap: 5 }}>
-                                <button
-                                  type="button"
-                                  className="btn-flat-secondary"
-                                  style={{ padding: '5px 8px', fontSize: 11, fontWeight: 700, color: '#10B981' }}
-                                  onClick={() => handleGenerateReceivableFromMeasurement(m)}
-                                  title="Gerar Conta a Receber associada a esta medição"
-                                >
-                                  + Gerar Recebimento
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn-flat-secondary"
-                                  style={{ padding: '5px 8px' }}
-                                  onClick={() => handleOpenEditMeasurement(m)}
-                                >
-                                  <Edit2 size={13} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn-flat-danger"
-                                  style={{ padding: '5px 8px' }}
-                                  onClick={() => handleDeleteMeasurement(m)}
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ==================================================================== */}
       {/* MODAL 1: CRIAR / EDITAR MOVIMENTAÇÃO FINANCEIRA COMPLETA             */}

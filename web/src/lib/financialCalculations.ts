@@ -676,7 +676,7 @@ export interface FinancialAlertItem {
   amount?: number;
   recordId?: string;
   siteId?: string;
-  targetTab: 'visao_geral' | 'movimentacoes' | 'contas' | 'rentabilidade' | 'medicoes';
+  targetTab: 'visao_geral' | 'movimentacoes' | 'contas' | 'rentabilidade';
 }
 
 export function generateFinancialAlerts(
