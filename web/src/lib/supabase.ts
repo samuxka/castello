@@ -37,6 +37,18 @@ import {
   TaskPriority,
   TaskExecutionStatus,
 } from '../types';
+import {
+  constructionSiteSchema,
+  employeeSchema,
+  financialRecordSchema,
+  inventoryItemSchema,
+  loginSchema,
+  registerSchema,
+  siteTaskSchema,
+  teamSchema,
+  validateWithZod,
+  vehicleSchema,
+} from './validation';
 
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL ||
@@ -326,6 +338,17 @@ export async function registerCompany(
   phone?: string,
   taxId?: string
 ): Promise<Company> {
+  const validation = validateWithZod(registerSchema, {
+    companyName: name,
+    email: ownerEmail,
+    password,
+    phone,
+    taxId,
+  });
+  if (!validation.success) {
+    throw new Error(validation.error);
+  }
+
   const cleanEmail = ownerEmail.trim().toLowerCase();
   const hashedPassword = hashCredential(password);
 
@@ -388,6 +411,14 @@ export async function loginCompany(
   ownerEmail: string,
   password: string
 ): Promise<Company> {
+  const validation = validateWithZod(loginSchema, {
+    email: ownerEmail,
+    password,
+  });
+  if (!validation.success) {
+    throw new Error(validation.error);
+  }
+
   const cleanEmail = ownerEmail.trim().toLowerCase();
   const hashedInput = hashCredential(password);
 
@@ -434,6 +465,90 @@ export async function loginCompany(
     return data as Company;
   }
   throw new Error('Serviço indisponível.');
+}
+
+export async function loginWithGoogle(): Promise<void> {
+  if (!supabase) {
+    throw new Error('Serviço de autenticação não configurado.');
+  }
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: window.location.origin,
+      queryParams: {
+        access_type: 'offline',
+        prompt: 'consent',
+      },
+    },
+  });
+  if (error) {
+    throw new Error(error.message || 'Falha ao autenticar com o Google.');
+  }
+}
+
+export async function handleGoogleAuthRedirect(): Promise<Company | null> {
+  if (!supabase) return null;
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error || !session || !session.user) {
+      return null;
+    }
+    const user = session.user;
+    const userEmail = user.email;
+    if (!userEmail) return null;
+
+    // Procura se já existe uma firma associada a este e-mail
+    const { data: existingCompany } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('admin_email', userEmail.toLowerCase().trim())
+      .maybeSingle();
+
+    if (existingCompany) {
+      setActiveCompanySession(existingCompany as Company);
+      return existingCompany as Company;
+    }
+
+    // Se é a primeira vez que entra via Google, regista a firma automaticamente
+    const companyName =
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      userEmail.split('@')[0] ||
+      'Firma Castello';
+
+    const newCompanyId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : 'comp_' + Math.random().toString(36).substring(2, 11);
+
+    const newCompany: any = {
+      id: newCompanyId,
+      name: companyName,
+      admin_email: userEmail.toLowerCase().trim(),
+      password_hash: hashCredential(newCompanyId),
+      phone: user.phone || '',
+      created_at: new Date().toISOString(),
+    };
+
+    const { data: created, error: insertError } = await supabase
+      .from('companies')
+      .insert([newCompany])
+      .select('*')
+      .maybeSingle();
+
+    if (insertError) {
+      console.warn('Erro ao registar firma via Google:', insertError);
+      return null;
+    }
+
+    if (created) {
+      setActiveCompanySession(created as Company);
+      return created as Company;
+    }
+  } catch (err) {
+    console.warn('Erro ao processar sessão Google:', err);
+  }
+  return null;
 }
 
 export async function updateCompanyProfile(
@@ -1292,6 +1407,11 @@ export async function saveSite(
   companyId?: string,
   skipCalendarSync?: boolean
 ): Promise<ConstructionSite> {
+  const validation = validateWithZod(constructionSiteSchema, site);
+  if (!validation.success) {
+    throw new Error(`Validação da obra falhou: ${validation.error}`);
+  }
+
   const payload: any = {
     ...site,
     share_code: site.share_code || generateShareCode(),
@@ -1444,6 +1564,11 @@ export async function saveEmployee(
   emp: Omit<EmployeeProfile, 'id'> & { id?: string },
   companyId?: string
 ): Promise<EmployeeProfile> {
+  const validation = validateWithZod(employeeSchema, emp);
+  if (!validation.success) {
+    throw new Error(`Validação do colaborador falhou: ${validation.error}`);
+  }
+
   const payload = {
     ...emp,
     company_id: emp.company_id || companyId || null,
@@ -1739,6 +1864,17 @@ export async function createSiteTask(
   assignedToId?: string,
   extra?: Partial<SiteTask>
 ): Promise<SiteTask> {
+  const validation = validateWithZod(siteTaskSchema, {
+    title,
+    site_id: siteId,
+    description,
+    due_date: dueDate,
+    priority: extra?.priority || 'media',
+  });
+  if (!validation.success) {
+    throw new Error(`Validação da tarefa falhou: ${validation.error}`);
+  }
+
   const localKey = getTasksStorageKey(siteId);
   const newTask: SiteTask = {
     id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -2448,6 +2584,21 @@ export async function saveFinancialRecord(
   record: Partial<FinancialRecord>,
   companyId?: string
 ): Promise<FinancialRecord> {
+  const validation = validateWithZod(financialRecordSchema, {
+    description: record.description || record.title || 'Lançamento financeiro',
+    amount: record.amount || 0,
+    type: record.type || 'expense',
+    category: record.category || 'Geral',
+    due_date: record.due_date || new Date().toISOString().split('T')[0],
+    paid: (record as any).paid ?? (record.status === 'pago'),
+    payment_date: record.payment_date,
+    site_id: record.site_id,
+    subcategory: record.subcategory,
+  });
+  if (!validation.success) {
+    throw new Error(`Validação financeira falhou: ${validation.error}`);
+  }
+
   const localKey = getFinStorageKey(companyId);
   const now = new Date().toISOString();
   const id = ensureValidUuid(record.id);
@@ -2957,6 +3108,15 @@ export async function saveInventoryItem(
   item: Partial<InventoryItem>,
   companyId?: string
 ): Promise<InventoryItem> {
+  const validation = validateWithZod(inventoryItemSchema, {
+    name: item.name || '',
+    quantity: item.total_quantity ?? 1,
+    category: item.category || 'ferramentas',
+  });
+  if (!validation.success) {
+    throw new Error(`Validação do item de inventário falhou: ${validation.error}`);
+  }
+
   const localKey = getInvStorageKey(companyId);
   const now = new Date().toISOString();
   const id = item.id || `inv-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -3088,6 +3248,15 @@ export async function saveVehicle(
   vehicle: Partial<Vehicle>,
   companyId?: string
 ): Promise<Vehicle> {
+  const validation = validateWithZod(vehicleSchema, {
+    plate: vehicle.license_plate || '',
+    model: vehicle.model || vehicle.brand || '',
+    year: vehicle.year,
+  });
+  if (!validation.success) {
+    throw new Error(`Validação da viatura falhou: ${validation.error}`);
+  }
+
   const localKey = getVehiclesStorageKey(companyId);
   const now = new Date().toISOString();
   const id = vehicle.id || `veh-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -4812,6 +4981,15 @@ export async function saveTeam(
   companyId?: string,
   options?: { employees?: EmployeeProfile[]; skipValidationError?: boolean }
 ): Promise<Team> {
+  const zodVal = validateWithZod(teamSchema, {
+    name: team.name || '',
+    leader_name: team.leader_name || '',
+    leader_phone: team.leader_phone || '',
+  });
+  if (!zodVal.success && !options?.skipValidationError) {
+    throw new Error(`Validação da equipa falhou: ${zodVal.error}`);
+  }
+
   const localKey = getTeamsStorageKey(companyId);
   const currentTeams = await getTeams(companyId);
   const existingTeam = team.id ? currentTeams.find((t) => t.id === team.id) : undefined;

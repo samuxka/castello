@@ -56,6 +56,7 @@ import {
   getSites,
   getSiteTasks,
   getTeams,
+  handleGoogleAuthRedirect,
   isSupabaseConfigured,
   saveEmployee,
   saveSite,
@@ -156,6 +157,21 @@ export default function App() {
   useEffect(() => {
     applyTheme(themeColor, theme);
   }, [themeColor, theme]);
+
+  // Processa retorno de autenticação via Google OAuth se aplicável
+  useEffect(() => {
+    handleGoogleAuthRedirect().then((company) => {
+      if (company) {
+        setActiveCompany(company);
+        if (company.theme_color) {
+          setThemeColor(company.theme_color as ThemeColor);
+        }
+        if (company.theme_mode) {
+          setTheme(company.theme_mode as ThemeMode);
+        }
+      }
+    });
+  }, []);
 
   // Sincroniza dados da firma e personalizações da nuvem (logo, cores e tema)
   useEffect(() => {
