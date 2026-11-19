@@ -19,6 +19,13 @@ export interface Company {
   theme_color?: ThemeColor | null;
   theme_mode?: ThemeMode | null;
   created_at?: string;
+  industry?: string | null;
+  years_active?: string | null;
+  team_size?: string | null;
+  active_sites_count?: string | null;
+  primary_goal?: string | null;
+  terms_accepted_at?: string | null;
+  email_verified_at?: string | null;
 }
 
 export type FinancialType = 'receita' | 'despesa';
