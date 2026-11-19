@@ -363,6 +363,32 @@ export async function registerCompany(
       throw new Error('Já existe uma firma registada com este e-mail.');
     }
 
+    // Dispara o registo com envio do e-mail de verificação oficial pelo Supabase Auth
+    const redirectUrl =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}/?verified=true`
+        : undefined;
+
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password: password,
+      options: {
+        data: {
+          company_name: name.trim(),
+          phone: phone?.trim() || null,
+          tax_id: taxId?.trim() || null,
+        },
+        emailRedirectTo: redirectUrl,
+      },
+    });
+
+    if (authError) {
+      if (authError.message.toLowerCase().includes('already registered')) {
+        throw new Error('Já existe uma conta registada com este e-mail no sistema.');
+      }
+      console.warn('Aviso no supabase.auth.signUp:', authError.message);
+    }
+
     const { data, error } = await supabase
       .from('companies')
       .insert({
@@ -371,6 +397,7 @@ export async function registerCompany(
         password_hash: hashedPassword,
         phone: phone?.trim() || null,
         tax_id: taxId?.trim() || null,
+        email_verified_at: authData?.user?.email_confirmed_at || null,
       })
       .select('*')
       .single();
@@ -391,7 +418,6 @@ export async function registerCompany(
       saveTheme((data.theme_color as ThemeColor) || 'azul', (data.theme_mode as ThemeMode) || 'dark');
     }
 
-    setActiveCompanySession(data as Company);
     return data as Company;
   }
 
@@ -403,8 +429,62 @@ export async function registerCompany(
     phone,
     tax_id: taxId,
   };
-  setActiveCompanySession(mockCompany);
   return mockCompany;
+}
+
+export async function resendVerificationEmail(email: string): Promise<void> {
+  if (!supabase) throw new Error('Serviço indisponível.');
+  const redirectUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/?verified=true`
+      : undefined;
+
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email: email.trim().toLowerCase(),
+    options: {
+      emailRedirectTo: redirectUrl,
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Falha ao reenviar e-mail de verificação.');
+  }
+}
+
+export async function checkEmailVerificationStatus(email: string): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user && session.user.email?.toLowerCase() === email.toLowerCase()) {
+      return !!session.user.email_confirmed_at;
+    }
+
+    const { data } = await supabase
+      .from('companies')
+      .select('email_verified_at')
+      .eq('owner_email', email.trim().toLowerCase())
+      .maybeSingle();
+
+    if (data?.email_verified_at) return true;
+  } catch (e) {
+    console.warn('Erro ao verificar status de e-mail:', e);
+  }
+  return false;
+}
+
+export async function getCompanyByEmail(email: string): Promise<Company | null> {
+  if (!supabase) return null;
+  try {
+    const { data } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('owner_email', email.trim().toLowerCase())
+      .maybeSingle();
+    return (data as Company) || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function loginCompany(

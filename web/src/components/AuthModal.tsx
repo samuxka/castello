@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -6,9 +6,11 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  ExternalLink,
   Eye,
   EyeOff,
   FileText,
+  Inbox,
   Lock,
   Mail,
   RefreshCw,
@@ -18,7 +20,16 @@ import {
   Users,
   Wrench,
 } from 'lucide-react';
-import { loginCompany, loginWithGoogle, registerCompany, updateCompanyProfile } from '../lib/supabase';
+import {
+  checkEmailVerificationStatus,
+  getCompanyByEmail,
+  loginCompany,
+  loginWithGoogle,
+  registerCompany,
+  resendVerificationEmail,
+  supabase,
+  updateCompanyProfile,
+} from '../lib/supabase';
 import { Company } from '../types';
 import { loginSchema, registerSchema, validateWithZod } from '../lib/validation';
 
@@ -237,9 +248,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
 
   // Pending company state after initial registration
   const [pendingCompany, setPendingCompany] = useState<Company | null>(null);
-  const [emailVerified, setEmailVerified] = useState(false);
-  const [verifyingEmail, setVerifyingEmail] = useState(false);
-  const [resendNotice, setResendNotice] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [manualCheckMsg, setManualCheckMsg] = useState<string | null>(null);
 
   // Multi-step Onboarding State
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -255,6 +266,66 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [acceptPrivacy, setAcceptPrivacy] = useState(false);
   const [savingOnboarding, setSavingOnboarding] = useState(false);
+
+  // Detecta se o utilizador acabou de abrir a aplicação através do link de verificação no e-mail
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const hash = window.location.hash;
+    const isReturningFromEmailVerification =
+      urlParams.get('verified') === 'true' ||
+      urlParams.get('type') === 'signup' ||
+      hash.includes('type=signup') ||
+      hash.includes('access_token');
+
+    if (isReturningFromEmailVerification && supabase) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user?.email) {
+          getCompanyByEmail(session.user.email).then((comp) => {
+            if (comp) {
+              setPendingCompany(comp);
+              setAuthStage('onboarding');
+            }
+          });
+        }
+      });
+    }
+  }, []);
+
+  // Monitoriza em tempo real se o e-mail foi verificado (webhook/polling/auth change)
+  useEffect(() => {
+    if (stage !== 'verify-email') return;
+
+    const targetEmail = pendingCompany?.owner_email || email;
+    if (!targetEmail || !supabase) return;
+
+    // 1. Ouvinte de alteração de autenticação do Supabase
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (
+        (event === 'SIGNED_IN' || event === 'USER_UPDATED') &&
+        session?.user?.email?.toLowerCase() === targetEmail.toLowerCase()
+      ) {
+        if (session.user.email_confirmed_at) {
+          setAuthStage('onboarding');
+        }
+      }
+    });
+
+    // 2. Polling periódico de 3 em 3 segundos para detetar quando o utilizador clica no e-mail
+    const interval = setInterval(async () => {
+      const isConfirmed = await checkEmailVerificationStatus(targetEmail);
+      if (isConfirmed) {
+        clearInterval(interval);
+        setAuthStage('onboarding');
+      }
+    }, 3000);
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+      clearInterval(interval);
+    };
+  }, [stage, pendingCompany?.owner_email, email]);
 
   const handleGoogleAuth = async () => {
     setErrorMsg(null);
@@ -313,7 +384,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           val.data.phone || '',
           val.data.taxId || ''
         );
-        // Guarda a empresa registada e avança para a página de verificação de e-mail!
+        // O e-mail de confirmação real foi disparado pelo Supabase Auth!
+        // Guarda a firma e avança para a tela informativa aguardando o clique do utilizador no seu e-mail
         setPendingCompany(created);
         setAuthStage('verify-email');
       } catch (err: any) {
@@ -324,23 +396,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
     }
   };
 
-  // 1. Verificação de E-mail
-  const handleVerifyEmail = () => {
-    setVerifyingEmail(true);
-    setTimeout(() => {
-      setEmailVerified(true);
-      setVerifyingEmail(false);
-      // Avança para o formulário multi-step para conhecer a firma
-      setAuthStage('onboarding');
-    }, 750);
+  // Botão manual para verificar se o utilizador já clicou no link do e-mail
+  const handleCheckEmailStatusManual = async () => {
+    const targetEmail = pendingCompany?.owner_email || email;
+    if (!targetEmail) return;
+
+    setCheckingStatus(true);
+    setManualCheckMsg(null);
+
+    try {
+      const isConfirmed = await checkEmailVerificationStatus(targetEmail);
+      if (isConfirmed) {
+        setAuthStage('onboarding');
+      } else {
+        setManualCheckMsg(
+          'O link no seu e-mail ainda não foi clicado. Por favor aceda à sua caixa de entrada e clique no botão "Verificar E-mail".'
+        );
+      }
+    } catch (e: any) {
+      setManualCheckMsg(e.message || 'Erro ao verificar estado.');
+    } finally {
+      setCheckingStatus(false);
+    }
   };
 
-  const handleResendEmail = () => {
-    setResendNotice(true);
-    setTimeout(() => setResendNotice(false), 4000);
+  // Reenvio de e-mail de verificação oficial
+  const handleResendEmail = async () => {
+    const targetEmail = pendingCompany?.owner_email || email;
+    if (!targetEmail) return;
+
+    setResendStatus('A enviar novo e-mail...');
+    try {
+      await resendVerificationEmail(targetEmail);
+      setResendStatus('✓ Novo e-mail de verificação enviado! Verifique a sua caixa de entrada e Spam.');
+    } catch (err: any) {
+      setResendStatus('Aviso: ' + (err.message || 'Aguarde 60 segundos antes de reenviar novo e-mail.'));
+    }
   };
 
-  // 2. Multi-step Onboarding
+  // Multi-step Onboarding
   const currentStep = ONBOARDING_STEPS[currentStepIndex];
   const selectedOptionForCurrentStep = onboardingAnswers[currentStep?.field];
 
@@ -356,7 +450,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
     if (currentStepIndex < ONBOARDING_STEPS.length - 1) {
       setCurrentStepIndex(currentStepIndex + 1);
     } else {
-      // Chegou ao fim do questionário -> avança para os Termos de Uso
       setAuthStage('terms');
     }
   };
@@ -367,7 +460,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
     }
   };
 
-  // 3. Finalização dos Termos de Uso e Entrada no Sistema
+  // Finalização dos Termos de Uso e Entrada no Sistema
   const handleCompleteRegistration = async () => {
     if (!acceptTerms || !acceptPrivacy) return;
     setSavingOnboarding(true);
@@ -399,6 +492,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   };
 
   const isSignup = mode === 'signup';
+
+  // Deteta provedor de e-mail para atalho rápido
+  const emailDomain = (pendingCompany?.owner_email || email).split('@')[1]?.toLowerCase() || '';
+  const isGmail = emailDomain === 'gmail.com' || emailDomain === 'googlemail.com';
+  const isOutlook =
+    emailDomain === 'outlook.com' ||
+    emailDomain === 'hotmail.com' ||
+    emailDomain === 'live.com';
 
   return (
     <div
@@ -1041,39 +1142,58 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       )}
 
       {/* ==================================================================== */}
-      {/* ESTÁGIO 2: VERIFICAÇÃO DE E-MAIL                                     */}
+      {/* ESTÁGIO 2: AGUARDANDO VERIFICAÇÃO DE E-MAIL (BOTÃO NO E-MAIL)        */}
       {/* ==================================================================== */}
       {stage === 'verify-email' && (
         <div
           style={{
             position: 'relative',
             width: '100%',
-            maxWidth: '580px',
+            maxWidth: '620px',
             borderRadius: '28px',
             backgroundColor: '#ffffff',
             boxShadow: '0 30px 80px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1)',
-            padding: '48px 40px',
+            padding: '48px 42px',
             textAlign: 'center',
             zIndex: 10,
           }}
         >
-          {/* Animated Envelope & Security Badge */}
+          {/* Animated Mail Sent Icon */}
           <div
             style={{
-              width: '80px',
-              height: '80px',
+              position: 'relative',
+              width: '88px',
+              height: '88px',
               margin: '0 auto 24px auto',
-              borderRadius: '24px',
+              borderRadius: '26px',
               backgroundColor: '#eff6ff',
               border: '2px solid #bfdbfe',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: '#2563eb',
-              boxShadow: '0 12px 30px -8px rgba(37, 99, 235, 0.3)',
+              boxShadow: '0 16px 36px -10px rgba(37, 99, 235, 0.35)',
             }}
           >
-            <Mail size={40} />
+            <Mail size={44} />
+            <div
+              style={{
+                position: 'absolute',
+                top: '-4px',
+                right: '-4px',
+                width: '26px',
+                height: '26px',
+                borderRadius: '50%',
+                backgroundColor: '#22c55e',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '3px solid #ffffff',
+              }}
+            >
+              <Check size={14} strokeWidth={3} />
+            </div>
           </div>
 
           <h2
@@ -1085,11 +1205,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               marginBottom: '10px',
             }}
           >
-            Verifique o seu E-mail
+            Verifique a sua Caixa de Entrada
           </h2>
 
-          <p style={{ fontSize: '14px', color: '#64748b', lineHeight: 1.6, marginBottom: '20px' }}>
-            Enviámos uma mensagem de verificação e confirmação de segurança para:
+          <p style={{ fontSize: '14.5px', color: '#475569', lineHeight: 1.6, marginBottom: '18px' }}>
+            Enviámos uma mensagem com o botão oficial de confirmação para:
           </p>
 
           {/* Email Highlight Badge */}
@@ -1098,84 +1218,227 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
-              padding: '10px 18px',
+              padding: '10px 20px',
               borderRadius: '12px',
               backgroundColor: '#f1f5f9',
-              border: '1px solid #e2e8f0',
+              border: '1px solid #cbd5e1',
               color: '#0f172a',
-              fontWeight: 600,
-              fontSize: '14px',
+              fontWeight: 700,
+              fontSize: '14.5px',
               marginBottom: '26px',
             }}
           >
-            <ShieldCheck size={18} color="#2563eb" />
+            <Mail size={16} color="#2563eb" />
             <span>{pendingCompany?.owner_email || email}</span>
           </div>
 
-          <p style={{ fontSize: '13px', color: '#94a3b8', lineHeight: 1.5, marginBottom: '32px' }}>
-            Para ativar os recursos da sua firma e prosseguir com a configuração do sistema,
-            confirme o seu endereço clicando no botão abaixo.
-          </p>
-
-          {/* Primary Action Button: "Verificar" */}
-          <button
-            type="button"
-            onClick={handleVerifyEmail}
-            disabled={verifyingEmail}
+          {/* Instructions Box */}
+          <div
             style={{
-              width: '100%',
-              padding: '14px 24px',
-              borderRadius: '12px',
-              backgroundColor: '#09090b',
-              color: '#ffffff',
-              fontSize: '14.5px',
-              fontWeight: 600,
-              border: 'none',
-              cursor: verifyingEmail ? 'not-allowed' : 'pointer',
+              textAlign: 'left',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '16px',
+              padding: '18px 20px',
+              marginBottom: '26px',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                color: '#2563eb',
+                letterSpacing: '0.8px',
+                textTransform: 'uppercase',
+                marginBottom: '10px',
+              }}
+            >
+              Passos para concluir a ativação:
+            </div>
+            <ol
+              style={{
+                margin: 0,
+                paddingLeft: '20px',
+                fontSize: '13px',
+                color: '#334155',
+                lineHeight: 1.7,
+              }}
+            >
+              <li>
+                Abra a sua aplicação ou caixa de correio eletrónico (<strong>{pendingCompany?.owner_email || email}</strong>).
+              </li>
+              <li>
+                Procure o e-mail enviado por <strong>Castello</strong> (se não encontrar na caixa de entrada, verifique a pasta de <em>Spam / Lixo</em>).
+              </li>
+              <li>
+                Clique no botão <strong>"Confirm your signup"</strong> ou <strong>"Verificar E-mail"</strong> contido na mensagem.
+              </li>
+              <li>
+                Assim que clicar, esta página detetará a confirmação e avançará automaticamente para o questionário da sua firma!
+              </li>
+            </ol>
+          </div>
+
+          {/* Webmail Shortcut Button */}
+          {isGmail && (
+            <a
+              href="https://mail.google.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                width: '100%',
+                padding: '13px 20px',
+                borderRadius: '12px',
+                backgroundColor: '#ffffff',
+                border: '1.5px solid #cbd5e1',
+                color: '#0f172a',
+                fontSize: '13.5px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                textDecoration: 'none',
+                marginBottom: '14px',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+                transition: 'background-color 0.2s',
+              }}
+            >
+              <Inbox size={18} color="#ea4335" />
+              <span>Abrir Caixa de Entrada no Gmail</span>
+              <ExternalLink size={14} color="#94a3b8" />
+            </a>
+          )}
+
+          {isOutlook && (
+            <a
+              href="https://outlook.live.com/mail/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                width: '100%',
+                padding: '13px 20px',
+                borderRadius: '12px',
+                backgroundColor: '#ffffff',
+                border: '1.5px solid #cbd5e1',
+                color: '#0f172a',
+                fontSize: '13.5px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                textDecoration: 'none',
+                marginBottom: '14px',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+                transition: 'background-color 0.2s',
+              }}
+            >
+              <Inbox size={18} color="#0078d4" />
+              <span>Abrir Caixa de Entrada no Outlook</span>
+              <ExternalLink size={14} color="#94a3b8" />
+            </a>
+          )}
+
+          {/* Pulse Live Waiting Indicator */}
+          <div
+            style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: '10px',
-              marginBottom: '16px',
-              transition: 'all 0.2s',
-              boxShadow: '0 8px 24px -6px rgba(0, 0, 0, 0.4)',
+              padding: '12px 18px',
+              borderRadius: '12px',
+              backgroundColor: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              color: '#166534',
+              fontSize: '13px',
+              fontWeight: 600,
+              marginBottom: '18px',
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#18181b')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#09090b')}
           >
-            {verifyingEmail ? (
-              <>
-                <RefreshCw size={18} className="spin-slow" />
-                <span>A verificar e-mail...</span>
-              </>
-            ) : (
-              <>
-                <CheckCircle2 size={18} color="#22c55e" />
-                <span>Verificar E-mail</span>
-              </>
-            )}
+            <div
+              style={{
+                width: '10px',
+                height: '10px',
+                borderRadius: '50%',
+                backgroundColor: '#22c55e',
+                animation: 'pulse 1.8s infinite',
+              }}
+            />
+            <span>A aguardar que clique no botão do seu e-mail...</span>
+          </div>
+
+          {/* Manual Check Status button (caso tenha clicado noutro dispositivo/aba) */}
+          <button
+            type="button"
+            onClick={handleCheckEmailStatusManual}
+            disabled={checkingStatus}
+            style={{
+              width: '100%',
+              padding: '11px 18px',
+              borderRadius: '10px',
+              backgroundColor: '#09090b',
+              color: '#ffffff',
+              fontSize: '13px',
+              fontWeight: 600,
+              border: 'none',
+              cursor: checkingStatus ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              marginBottom: '16px',
+            }}
+          >
+            <RefreshCw size={15} className={checkingStatus ? 'spin-slow' : ''} />
+            <span>{checkingStatus ? 'A consultar estado...' : 'Já cliquei no e-mail / Atualizar estado'}</span>
           </button>
 
-          {/* Resend option */}
-          <div style={{ marginTop: '14px' }}>
+          {manualCheckMsg && (
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: '10px',
+                backgroundColor: '#fffbeb',
+                border: '1px solid #fef3c7',
+                color: '#b45309',
+                fontSize: '12px',
+                marginBottom: '16px',
+                textAlign: 'left',
+              }}
+            >
+              {manualCheckMsg}
+            </div>
+          )}
+
+          {/* Resend Option */}
+          <div style={{ paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
             <button
               type="button"
               onClick={handleResendEmail}
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#64748b',
+                color: '#2563eb',
                 fontSize: '12.5px',
-                fontWeight: 500,
+                fontWeight: 600,
                 cursor: 'pointer',
                 textDecoration: 'underline',
               }}
             >
-              Não recebeu o e-mail? Reenviar mensagem
+              Não recebeu o e-mail de confirmação? Reenviar mensagem
             </button>
-            {resendNotice && (
-              <p style={{ fontSize: '12px', color: '#16a34a', marginTop: '6px', fontWeight: 500 }}>
-                ✓ Novo link de verificação enviado para a sua caixa de entrada!
+            {resendStatus && (
+              <p
+                style={{
+                  fontSize: '12px',
+                  color: resendStatus.startsWith('✓') ? '#16a34a' : '#d97706',
+                  marginTop: '8px',
+                  fontWeight: 500,
+                }}
+              >
+                {resendStatus}
               </p>
             )}
           </div>
@@ -1688,6 +1951,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         }
         .spin-slow {
           animation: spin 1s linear infinite;
+        }
+        @keyframes pulse {
+          0% { transform: scale(0.95); opacity: 0.7; }
+          50% { transform: scale(1.25); opacity: 1; }
+          100% { transform: scale(0.95); opacity: 0.7; }
         }
       `}</style>
     </div>
