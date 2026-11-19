@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -6,14 +6,14 @@ import {
   Check,
   CheckCircle2,
   Clock,
-  ExternalLink,
   Eye,
   EyeOff,
   FileText,
-  Inbox,
+  KeyRound,
   Lock,
   Mail,
   RefreshCw,
+  RotateCcw,
   Shield,
   ShieldCheck,
   Sparkles,
@@ -27,8 +27,8 @@ import {
   loginWithGoogle,
   registerCompany,
   resendVerificationEmail,
-  supabase,
   updateCompanyProfile,
+  verifyRegistrationCode,
 } from '../lib/supabase';
 import { Company } from '../types';
 import { loginSchema, registerSchema, validateWithZod } from '../lib/validation';
@@ -37,7 +37,7 @@ interface AuthModalProps {
   onSuccess: (company: Company) => void;
 }
 
-type AuthStage = 'auth' | 'verify-email' | 'onboarding' | 'terms';
+type AuthStage = 'auth' | 'code-verification' | 'onboarding' | 'terms';
 
 interface OnboardingOption {
   id: string;
@@ -248,9 +248,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
 
   // Pending company state after initial registration
   const [pendingCompany, setPendingCompany] = useState<Company | null>(null);
-  const [checkingStatus, setCheckingStatus] = useState(false);
-  const [resendStatus, setResendStatus] = useState<string | null>(null);
-  const [manualCheckMsg, setManualCheckMsg] = useState<string | null>(null);
+
+  // OTP 6-Digit Code State
+  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [verifyingCode, setVerifyingCode] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeSuccess, setCodeSuccess] = useState(false);
+  const [resendTimer, setResendTimer] = useState(45);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
 
   // Multi-step Onboarding State
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -267,65 +273,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [acceptPrivacy, setAcceptPrivacy] = useState(false);
   const [savingOnboarding, setSavingOnboarding] = useState(false);
 
-  // Detecta se o utilizador acabou de abrir a aplicação através do link de verificação no e-mail
+  // Temporizador para reenvio do código
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (stage !== 'code-verification') return;
+    if (resendTimer <= 0) return;
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const hash = window.location.hash;
-    const isReturningFromEmailVerification =
-      urlParams.get('verified') === 'true' ||
-      urlParams.get('type') === 'signup' ||
-      hash.includes('type=signup') ||
-      hash.includes('access_token');
+    const timer = setInterval(() => {
+      setResendTimer((prev) => Math.max(0, prev - 1));
+    }, 1000);
 
-    if (isReturningFromEmailVerification && supabase) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session?.user?.email) {
-          getCompanyByEmail(session.user.email).then((comp) => {
-            if (comp) {
-              setPendingCompany(comp);
-              setAuthStage('onboarding');
-            }
-          });
-        }
-      });
+    return () => clearInterval(timer);
+  }, [stage, resendTimer]);
+
+  // Foco automático no primeiro campo quando entra na tela de código
+  useEffect(() => {
+    if (stage === 'code-verification') {
+      setTimeout(() => {
+        otpInputRefs.current[0]?.focus();
+      }, 150);
     }
-  }, []);
-
-  // Monitoriza em tempo real se o e-mail foi verificado (webhook/polling/auth change)
-  useEffect(() => {
-    if (stage !== 'verify-email') return;
-
-    const targetEmail = pendingCompany?.owner_email || email;
-    if (!targetEmail || !supabase) return;
-
-    // 1. Ouvinte de alteração de autenticação do Supabase
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (
-        (event === 'SIGNED_IN' || event === 'USER_UPDATED') &&
-        session?.user?.email?.toLowerCase() === targetEmail.toLowerCase()
-      ) {
-        if (session.user.email_confirmed_at) {
-          setAuthStage('onboarding');
-        }
-      }
-    });
-
-    // 2. Polling periódico de 3 em 3 segundos para detetar quando o utilizador clica no e-mail
-    const interval = setInterval(async () => {
-      const isConfirmed = await checkEmailVerificationStatus(targetEmail);
-      if (isConfirmed) {
-        clearInterval(interval);
-        setAuthStage('onboarding');
-      }
-    }, 3000);
-
-    return () => {
-      authListener?.subscription.unsubscribe();
-      clearInterval(interval);
-    };
-  }, [stage, pendingCompany?.owner_email, email]);
+  }, [stage]);
 
   const handleGoogleAuth = async () => {
     setErrorMsg(null);
@@ -361,7 +328,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         setLoading(false);
       }
     } else {
-      // Registo de Conta
+      // 1. Registo de Conta: Dispara o registo e envio de código
       const val = validateWithZod(registerSchema, {
         companyName,
         email,
@@ -384,10 +351,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           val.data.phone || '',
           val.data.taxId || ''
         );
-        // O e-mail de confirmação real foi disparado pelo Supabase Auth!
-        // Guarda a firma e avança para a tela informativa aguardando o clique do utilizador no seu e-mail
+        // Guarda a firma pendente e avança para a tela de introdução do código!
         setPendingCompany(created);
-        setAuthStage('verify-email');
+        setOtpDigits(['', '', '', '', '', '']);
+        setCodeError(null);
+        setCodeSuccess(false);
+        setResendTimer(45);
+        setAuthStage('code-verification');
       } catch (err: any) {
         setErrorMsg(err.message || 'Falha no registo da firma.');
       } finally {
@@ -396,41 +366,119 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
     }
   };
 
-  // Botão manual para verificar se o utilizador já clicou no link do e-mail
-  const handleCheckEmailStatusManual = async () => {
-    const targetEmail = pendingCompany?.owner_email || email;
-    if (!targetEmail) return;
+  // Gerenciamento dos 6 dígitos de OTP
+  const handleOtpChange = (index: number, value: string) => {
+    setCodeError(null);
 
-    setCheckingStatus(true);
-    setManualCheckMsg(null);
-
-    try {
-      const isConfirmed = await checkEmailVerificationStatus(targetEmail);
-      if (isConfirmed) {
-        setAuthStage('onboarding');
-      } else {
-        setManualCheckMsg(
-          'O link no seu e-mail ainda não foi clicado. Por favor aceda à sua caixa de entrada e clique no botão "Verificar E-mail".'
-        );
+    // Se o utilizador colar uma string com múltiplos caracteres (ex: "123456")
+    const cleanedDigits = value.replace(/\D/g, '');
+    if (cleanedDigits.length > 1) {
+      const newDigits = [...otpDigits];
+      for (let i = 0; i < 6; i++) {
+        newDigits[i] = cleanedDigits[i] || '';
       }
-    } catch (e: any) {
-      setManualCheckMsg(e.message || 'Erro ao verificar estado.');
-    } finally {
-      setCheckingStatus(false);
+      setOtpDigits(newDigits);
+      const nextFocus = Math.min(cleanedDigits.length, 5);
+      otpInputRefs.current[nextFocus]?.focus();
+      if (cleanedDigits.length >= 6) {
+        executeVerifyCode(newDigits.join(''));
+      }
+      return;
+    }
+
+    const singleDigit = cleanedDigits.slice(-1);
+    const newDigits = [...otpDigits];
+    newDigits[index] = singleDigit;
+    setOtpDigits(newDigits);
+
+    // Se digitou um número, salta para o próximo campo
+    if (singleDigit && index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+
+    // Se preencheu os 6 dígitos, dispara a validação automaticamente
+    if (singleDigit && index === 5 && newDigits.every((d) => d !== '')) {
+      executeVerifyCode(newDigits.join(''));
     }
   };
 
-  // Reenvio de e-mail de verificação oficial
-  const handleResendEmail = async () => {
-    const targetEmail = pendingCompany?.owner_email || email;
-    if (!targetEmail) return;
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    }
+    if (e.key === 'ArrowLeft' && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    }
+    if (e.key === 'ArrowRight' && index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  };
 
-    setResendStatus('A enviar novo e-mail...');
+  const handleOtpPaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!pastedData) return;
+
+    const newDigits = [...otpDigits];
+    for (let i = 0; i < 6; i++) {
+      newDigits[i] = pastedData[i] || '';
+    }
+    setOtpDigits(newDigits);
+
+    const nextIndex = Math.min(pastedData.length, 5);
+    otpInputRefs.current[nextIndex]?.focus();
+
+    if (pastedData.length === 6) {
+      executeVerifyCode(pastedData);
+    }
+  };
+
+  // Executa verificação do código digitado
+  const executeVerifyCode = async (codeToVerify?: string) => {
+    const fullCode = codeToVerify || otpDigits.join('');
+    const targetEmail = pendingCompany?.owner_email || email;
+
+    if (fullCode.length !== 6) {
+      setCodeError('Por favor introduza o código completo de 6 dígitos.');
+      return;
+    }
+
+    setVerifyingCode(true);
+    setCodeError(null);
+
+    try {
+      const result = await verifyRegistrationCode(targetEmail, fullCode);
+      if (result.success) {
+        setCodeSuccess(true);
+        setTimeout(() => {
+          // Conta verificada com sucesso! Avança para o formulário multistep
+          setAuthStage('onboarding');
+        }, 600);
+      } else {
+        setCodeError(result.error || 'Código incorreto. Tente novamente.');
+      }
+    } catch (err: any) {
+      setCodeError(err.message || 'Falha ao validar o código.');
+    } finally {
+      setVerifyingCode(false);
+    }
+  };
+
+  // Reenviar código
+  const handleResendCode = async () => {
+    if (resendTimer > 0) return;
+    const targetEmail = pendingCompany?.owner_email || email;
+
+    setResendNotice('A enviar novo código...');
     try {
       await resendVerificationEmail(targetEmail);
-      setResendStatus('✓ Novo e-mail de verificação enviado! Verifique a sua caixa de entrada e Spam.');
+      setResendTimer(45);
+      setResendNotice('✓ Novo código de 6 dígitos enviado para o seu e-mail!');
+      setOtpDigits(['', '', '', '', '', '']);
+      otpInputRefs.current[0]?.focus();
+      setTimeout(() => setResendNotice(null), 4000);
     } catch (err: any) {
-      setResendStatus('Aviso: ' + (err.message || 'Aguarde 60 segundos antes de reenviar novo e-mail.'));
+      setResendNotice('Aviso: ' + (err.message || 'Aguarde antes de reenviar novo código.'));
     }
   };
 
@@ -492,14 +540,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   };
 
   const isSignup = mode === 'signup';
-
-  // Deteta provedor de e-mail para atalho rápido
-  const emailDomain = (pendingCompany?.owner_email || email).split('@')[1]?.toLowerCase() || '';
-  const isGmail = emailDomain === 'gmail.com' || emailDomain === 'googlemail.com';
-  const isOutlook =
-    emailDomain === 'outlook.com' ||
-    emailDomain === 'hotmail.com' ||
-    emailDomain === 'live.com';
+  const isFullCodeEntered = otpDigits.every((d) => d !== '');
 
   return (
     <div
@@ -537,7 +578,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       />
 
       {/* ==================================================================== */}
-      {/* ESTÁGIO 1: AUTENTICAÇÃO SLIDING (LOGIN / SIGN-UP)                    */}
+      {/* ESTÁGIO 1: FORMULÁRIO DE CADASTRO / LOGIN COM ANIMAÇÃO SLIDING       */}
       {/* ==================================================================== */}
       {stage === 'auth' && (
         <div
@@ -571,7 +612,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             }}
             className="auth-image-panel"
           >
-            {/* High-res Modern Architectural Building Image Background */}
             <div
               style={{
                 position: 'absolute',
@@ -583,7 +623,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               }}
             />
 
-            {/* Neon atmospheric glow over the building photo */}
             <div
               style={{
                 position: 'absolute',
@@ -596,7 +635,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               }}
             />
 
-            {/* Top Quote Tag */}
             <div style={{ position: 'relative', zIndex: 2 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <span
@@ -620,7 +658,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               </div>
             </div>
 
-            {/* Bottom Dramatic Quote Typography */}
             <div style={{ position: 'relative', zIndex: 2 }}>
               <h1
                 style={{
@@ -671,7 +708,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             }}
             className="auth-form-panel"
           >
-            {/* Top Brand Logo */}
             <div
               style={{
                 display: 'flex',
@@ -714,7 +750,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               </span>
             </div>
 
-            {/* Form Header */}
             <div style={{ marginBottom: '22px' }}>
               <h2
                 style={{
@@ -735,7 +770,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               </p>
             </div>
 
-            {/* Global Error Banner */}
             {errorMsg && (
               <div
                 style={{
@@ -756,7 +790,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               </div>
             )}
 
-            {/* The Form */}
             <form onSubmit={handleSubmit} noValidate>
               {isSignup && (
                 <>
@@ -786,12 +819,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                         fontSize: '13px',
                         color: '#0f172a',
                         outline: 'none',
-                        transition: 'border-color 0.2s',
                       }}
-                      onFocus={(e) => (e.target.style.borderColor = '#0f172a')}
-                      onBlur={(e) =>
-                        (e.target.style.borderColor = fieldErrors.companyName ? '#ef4444' : '#e2e8f0')
-                      }
                     />
                     {fieldErrors.companyName && (
                       <span style={{ fontSize: '11.5px', color: '#ef4444', marginTop: '4px', display: 'block' }}>
@@ -891,12 +919,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                     fontSize: '13px',
                     color: '#0f172a',
                     outline: 'none',
-                    transition: 'border-color 0.2s',
                   }}
-                  onFocus={(e) => (e.target.style.borderColor = '#0f172a')}
-                  onBlur={(e) =>
-                    (e.target.style.borderColor = fieldErrors.email ? '#ef4444' : '#e2e8f0')
-                  }
                 />
                 {fieldErrors.email && (
                   <span style={{ fontSize: '11.5px', color: '#ef4444', marginTop: '4px', display: 'block' }}>
@@ -933,12 +956,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                       fontSize: '13px',
                       color: '#0f172a',
                       outline: 'none',
-                      transition: 'border-color 0.2s',
                     }}
-                    onFocus={(e) => (e.target.style.borderColor = '#0f172a')}
-                    onBlur={(e) =>
-                      (e.target.style.borderColor = fieldErrors.password ? '#ef4444' : '#e2e8f0')
-                    }
                   />
                   <button
                     type="button"
@@ -956,7 +974,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                       alignItems: 'center',
                       padding: 0,
                     }}
-                    aria-label={showPassword ? 'Ocultar senha' : 'Ver senha'}
                   >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -968,7 +985,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 )}
               </div>
 
-              {/* Remember me & Forgot Password */}
               {!isSignup && (
                 <div
                   style={{
@@ -1006,9 +1022,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   <button
                     type="button"
                     onClick={() =>
-                      alert(
-                        'Para repor a sua palavra-passe, contacte o suporte técnico ou o administrador do sistema.'
-                      )
+                      alert('Contacte o suporte técnico ou administrador para repor a sua senha.')
                     }
                     style={{
                       background: 'none',
@@ -1025,7 +1039,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 </div>
               )}
 
-              {/* Solid Dark Primary Button */}
+              {/* Submit Button */}
               <button
                 type="submit"
                 disabled={loading}
@@ -1044,14 +1058,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   justifyContent: 'center',
                   gap: '8px',
                   marginBottom: '12px',
-                  transition: 'background-color 0.2s, transform 0.1s',
                   opacity: loading ? 0.75 : 1,
-                }}
-                onMouseEnter={(e) => {
-                  if (!loading) (e.currentTarget.style.backgroundColor = '#18181b');
-                }}
-                onMouseLeave={(e) => {
-                  if (!loading) (e.currentTarget.style.backgroundColor = '#09090b');
                 }}
               >
                 {loading ? 'A processar...' : isSignup ? 'Sign Up' : 'Sign In'}
@@ -1077,18 +1084,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   justifyContent: 'center',
                   gap: '10px',
                   marginBottom: '20px',
-                  transition: 'background-color 0.2s, border-color 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f8fafc';
-                  e.currentTarget.style.borderColor = '#cbd5e1';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.borderColor = '#e2e8f0';
                 }}
               >
-                {/* Official Google G Logo SVG */}
                 <svg width="18" height="18" viewBox="0 0 24 24">
                   <path
                     fill="#4285F4"
@@ -1111,7 +1108,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               </button>
             </form>
 
-            {/* Footer toggle mode */}
             <div style={{ textAlign: 'center', marginTop: 'auto' }}>
               <span style={{ fontSize: '12.5px', color: '#64748b' }}>
                 {isSignup ? 'Already have an account? ' : "Don't have an account? "}
@@ -1142,306 +1138,280 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       )}
 
       {/* ==================================================================== */}
-      {/* ESTÁGIO 2: AGUARDANDO VERIFICAÇÃO DE E-MAIL (BOTÃO NO E-MAIL)        */}
+      {/* ESTÁGIO 2: TELA DE CÓDIGO (USUÁRIO DIGITA O CÓDIGO DE 6 DÍGITOS)     */}
       {/* ==================================================================== */}
-      {stage === 'verify-email' && (
+      {stage === 'code-verification' && (
         <div
           style={{
             position: 'relative',
             width: '100%',
-            maxWidth: '620px',
+            maxWidth: '560px',
             borderRadius: '28px',
             backgroundColor: '#ffffff',
             boxShadow: '0 30px 80px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1)',
-            padding: '48px 42px',
+            padding: '48px 40px',
             textAlign: 'center',
             zIndex: 10,
           }}
         >
-          {/* Animated Mail Sent Icon */}
+          {/* Key / Shield Icon */}
           <div
             style={{
-              position: 'relative',
-              width: '88px',
-              height: '88px',
-              margin: '0 auto 24px auto',
-              borderRadius: '26px',
+              width: '80px',
+              height: '80px',
+              margin: '0 auto 20px auto',
+              borderRadius: '24px',
               backgroundColor: '#eff6ff',
               border: '2px solid #bfdbfe',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: '#2563eb',
-              boxShadow: '0 16px 36px -10px rgba(37, 99, 235, 0.35)',
+              boxShadow: '0 12px 30px -8px rgba(37, 99, 235, 0.3)',
             }}
           >
-            <Mail size={44} />
-            <div
-              style={{
-                position: 'absolute',
-                top: '-4px',
-                right: '-4px',
-                width: '26px',
-                height: '26px',
-                borderRadius: '50%',
-                backgroundColor: '#22c55e',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '3px solid #ffffff',
-              }}
-            >
-              <Check size={14} strokeWidth={3} />
-            </div>
+            <KeyRound size={38} />
           </div>
 
           <h2
             style={{
-              fontSize: '28px',
+              fontSize: '26px',
               fontWeight: 700,
               color: '#0f172a',
               fontFamily: `'Playfair Display', Georgia, serif`,
-              marginBottom: '10px',
+              marginBottom: '8px',
             }}
           >
-            Verifique a sua Caixa de Entrada
+            Introduza o Código de Verificação
           </h2>
 
-          <p style={{ fontSize: '14.5px', color: '#475569', lineHeight: 1.6, marginBottom: '18px' }}>
-            Enviámos uma mensagem com o botão oficial de confirmação para:
+          <p style={{ fontSize: '14px', color: '#64748b', lineHeight: 1.5, marginBottom: '18px' }}>
+            Enviámos um código numérico de <strong>6 dígitos</strong> para o e-mail:
           </p>
 
-          {/* Email Highlight Badge */}
+          {/* Email badge */}
           <div
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
-              padding: '10px 20px',
+              padding: '8px 18px',
               borderRadius: '12px',
               backgroundColor: '#f1f5f9',
-              border: '1px solid #cbd5e1',
+              border: '1px solid #e2e8f0',
               color: '#0f172a',
               fontWeight: 700,
-              fontSize: '14.5px',
-              marginBottom: '26px',
+              fontSize: '13.5px',
+              marginBottom: '30px',
             }}
           >
-            <Mail size={16} color="#2563eb" />
+            <Mail size={15} color="#2563eb" />
             <span>{pendingCompany?.owner_email || email}</span>
           </div>
 
-          {/* Instructions Box */}
-          <div
-            style={{
-              textAlign: 'left',
-              backgroundColor: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: '16px',
-              padding: '18px 20px',
-              marginBottom: '26px',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                color: '#2563eb',
-                letterSpacing: '0.8px',
-                textTransform: 'uppercase',
-                marginBottom: '10px',
-              }}
-            >
-              Passos para concluir a ativação:
-            </div>
-            <ol
-              style={{
-                margin: 0,
-                paddingLeft: '20px',
-                fontSize: '13px',
-                color: '#334155',
-                lineHeight: 1.7,
-              }}
-            >
-              <li>
-                Abra a sua aplicação ou caixa de correio eletrónico (<strong>{pendingCompany?.owner_email || email}</strong>).
-              </li>
-              <li>
-                Procure o e-mail enviado por <strong>Castello</strong> (se não encontrar na caixa de entrada, verifique a pasta de <em>Spam / Lixo</em>).
-              </li>
-              <li>
-                Clique no botão <strong>"Confirm your signup"</strong> ou <strong>"Verificar E-mail"</strong> contido na mensagem.
-              </li>
-              <li>
-                Assim que clicar, esta página detetará a confirmação e avançará automaticamente para o questionário da sua firma!
-              </li>
-            </ol>
-          </div>
-
-          {/* Webmail Shortcut Button */}
-          {isGmail && (
-            <a
-              href="https://mail.google.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                width: '100%',
-                padding: '13px 20px',
-                borderRadius: '12px',
-                backgroundColor: '#ffffff',
-                border: '1.5px solid #cbd5e1',
-                color: '#0f172a',
-                fontSize: '13.5px',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                textDecoration: 'none',
-                marginBottom: '14px',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
-                transition: 'background-color 0.2s',
-              }}
-            >
-              <Inbox size={18} color="#ea4335" />
-              <span>Abrir Caixa de Entrada no Gmail</span>
-              <ExternalLink size={14} color="#94a3b8" />
-            </a>
-          )}
-
-          {isOutlook && (
-            <a
-              href="https://outlook.live.com/mail/"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                width: '100%',
-                padding: '13px 20px',
-                borderRadius: '12px',
-                backgroundColor: '#ffffff',
-                border: '1.5px solid #cbd5e1',
-                color: '#0f172a',
-                fontSize: '13.5px',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                textDecoration: 'none',
-                marginBottom: '14px',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
-                transition: 'background-color 0.2s',
-              }}
-            >
-              <Inbox size={18} color="#0078d4" />
-              <span>Abrir Caixa de Entrada no Outlook</span>
-              <ExternalLink size={14} color="#94a3b8" />
-            </a>
-          )}
-
-          {/* Pulse Live Waiting Indicator */}
+          {/* 6 Individual Digit Boxes */}
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
               justifyContent: 'center',
               gap: '10px',
-              padding: '12px 18px',
-              borderRadius: '12px',
-              backgroundColor: '#f0fdf4',
-              border: '1px solid #bbf7d0',
-              color: '#166534',
-              fontSize: '13px',
-              fontWeight: 600,
-              marginBottom: '18px',
+              marginBottom: '24px',
             }}
+            onPaste={handleOtpPaste}
           >
-            <div
-              style={{
-                width: '10px',
-                height: '10px',
-                borderRadius: '50%',
-                backgroundColor: '#22c55e',
-                animation: 'pulse 1.8s infinite',
-              }}
-            />
-            <span>A aguardar que clique no botão do seu e-mail...</span>
+            {otpDigits.map((digit, idx) => (
+              <input
+                key={idx}
+                ref={(el) => (otpInputRefs.current[idx] = el)}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleOtpChange(idx, e.target.value)}
+                onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                style={{
+                  width: '52px',
+                  height: '60px',
+                  borderRadius: '14px',
+                  border: `2px solid ${
+                    codeError
+                      ? '#ef4444'
+                      : digit
+                      ? '#2563eb'
+                      : '#cbd5e1'
+                  }`,
+                  backgroundColor: digit ? '#f0f7ff' : '#f8fafc',
+                  textAlign: 'center',
+                  fontSize: '24px',
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  outline: 'none',
+                  transition: 'all 0.15s ease',
+                  boxShadow: digit ? '0 4px 12px -2px rgba(37, 99, 235, 0.2)' : 'none',
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#2563eb';
+                  e.target.style.backgroundColor = '#f0f7ff';
+                }}
+                onBlur={(e) => {
+                  if (!digit && !codeError) {
+                    e.target.style.borderColor = '#cbd5e1';
+                    e.target.style.backgroundColor = '#f8fafc';
+                  }
+                }}
+              />
+            ))}
           </div>
 
-          {/* Manual Check Status button (caso tenha clicado noutro dispositivo/aba) */}
-          <button
-            type="button"
-            onClick={handleCheckEmailStatusManual}
-            disabled={checkingStatus}
-            style={{
-              width: '100%',
-              padding: '11px 18px',
-              borderRadius: '10px',
-              backgroundColor: '#09090b',
-              color: '#ffffff',
-              fontSize: '13px',
-              fontWeight: 600,
-              border: 'none',
-              cursor: checkingStatus ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              marginBottom: '16px',
-            }}
-          >
-            <RefreshCw size={15} className={checkingStatus ? 'spin-slow' : ''} />
-            <span>{checkingStatus ? 'A consultar estado...' : 'Já cliquei no e-mail / Atualizar estado'}</span>
-          </button>
-
-          {manualCheckMsg && (
+          {/* Feedback Messages */}
+          {codeError && (
             <div
               style={{
                 padding: '10px 14px',
                 borderRadius: '10px',
-                backgroundColor: '#fffbeb',
-                border: '1px solid #fef3c7',
-                color: '#b45309',
-                fontSize: '12px',
-                marginBottom: '16px',
-                textAlign: 'left',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#dc2626',
+                fontSize: '12.5px',
+                fontWeight: 500,
+                marginBottom: '20px',
+                textAlign: 'center',
               }}
             >
-              {manualCheckMsg}
+              {codeError}
             </div>
           )}
 
-          {/* Resend Option */}
-          <div style={{ paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+          {codeSuccess && (
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: '10px',
+                backgroundColor: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                color: '#166534',
+                fontSize: '13px',
+                fontWeight: 600,
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+              }}
+            >
+              <CheckCircle2 size={18} color="#22c55e" />
+              <span>Código validado com sucesso! A carregar questionário...</span>
+            </div>
+          )}
+
+          {/* Action Button: "Verificar Código" */}
+          <button
+            type="button"
+            onClick={() => executeVerifyCode()}
+            disabled={!isFullCodeEntered || verifyingCode}
+            style={{
+              width: '100%',
+              padding: '13px 20px',
+              borderRadius: '12px',
+              backgroundColor: isFullCodeEntered ? '#09090b' : '#f1f5f9',
+              color: isFullCodeEntered ? '#ffffff' : '#94a3b8',
+              fontSize: '14px',
+              fontWeight: 600,
+              border: 'none',
+              cursor: isFullCodeEntered && !verifyingCode ? 'pointer' : 'not-allowed',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
+              marginBottom: '20px',
+              transition: 'all 0.2s',
+              boxShadow: isFullCodeEntered ? '0 8px 24px -6px rgba(0,0,0,0.4)' : 'none',
+            }}
+          >
+            {verifyingCode ? (
+              <>
+                <RefreshCw size={17} className="spin-slow" />
+                <span>A validar código...</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 size={18} color={isFullCodeEntered ? '#22c55e' : '#94a3b8'} />
+                <span>Verificar Código</span>
+              </>
+            )}
+          </button>
+
+          {/* Resend and Edit Email Controls */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingTop: '16px',
+              borderTop: '1px solid #f1f5f9',
+              fontSize: '12.5px',
+            }}
+          >
             <button
               type="button"
-              onClick={handleResendEmail}
+              onClick={() => {
+                setAuthStage('auth');
+                setMode('signup');
+              }}
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#2563eb',
-                fontSize: '12.5px',
-                fontWeight: 600,
+                color: '#64748b',
                 cursor: 'pointer',
-                textDecoration: 'underline',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: 0,
               }}
             >
-              Não recebeu o e-mail de confirmação? Reenviar mensagem
+              <ArrowLeft size={14} />
+              <span>Alterar e-mail</span>
             </button>
-            {resendStatus && (
-              <p
-                style={{
-                  fontSize: '12px',
-                  color: resendStatus.startsWith('✓') ? '#16a34a' : '#d97706',
-                  marginTop: '8px',
-                  fontWeight: 500,
-                }}
-              >
-                {resendStatus}
-              </p>
-            )}
+
+            <div>
+              {resendTimer > 0 ? (
+                <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Clock size={13} />
+                  <span>Reenviar código em {resendTimer}s</span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResendCode}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#2563eb',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    padding: 0,
+                  }}
+                >
+                  Reenviar código agora
+                </button>
+              )}
+            </div>
           </div>
+
+          {resendNotice && (
+            <p
+              style={{
+                fontSize: '12px',
+                color: resendNotice.startsWith('✓') ? '#16a34a' : '#d97706',
+                marginTop: '12px',
+                fontWeight: 500,
+              }}
+            >
+              {resendNotice}
+            </p>
+          )}
         </div>
       )}
 
@@ -1589,7 +1559,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                     </div>
                   </div>
 
-                  {/* Radio / Check Indicator */}
                   <div
                     style={{
                       width: '20px',
@@ -1694,7 +1663,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             maxHeight: '90vh',
           }}
         >
-          {/* Header */}
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
             <div
               style={{
@@ -1730,7 +1698,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             </p>
           </div>
 
-          {/* Terms Scrollable Summary Box */}
           <div
             style={{
               padding: '18px 20px',
@@ -1781,7 +1748,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             </p>
           </div>
 
-          {/* Acceptance Checkboxes */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '28px' }}>
             <label
               style={{
@@ -1846,7 +1812,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             </label>
           </div>
 
-          {/* Final Action Button: Bloqueado até aceitar os termos */}
+          {/* Botão Bloqueado até aceitar os termos */}
           {(!acceptTerms || !acceptPrivacy) && (
             <div
               style={{
@@ -1951,11 +1917,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         }
         .spin-slow {
           animation: spin 1s linear infinite;
-        }
-        @keyframes pulse {
-          0% { transform: scale(0.95); opacity: 0.7; }
-          50% { transform: scale(1.25); opacity: 1; }
-          100% { transform: scale(0.95); opacity: 0.7; }
         }
       `}</style>
     </div>

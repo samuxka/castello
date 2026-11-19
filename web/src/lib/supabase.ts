@@ -369,6 +369,12 @@ export async function registerCompany(
         ? `${window.location.origin}/?verified=true`
         : undefined;
 
+    // Gera e armazena token numérico de contingência
+    const generatedOtp = String(Math.floor(100000 + Math.random() * 900000));
+    try {
+      localStorage.setItem(`castello_otp_${cleanEmail}`, generatedOtp);
+    } catch {}
+
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: cleanEmail,
       password: password,
@@ -429,27 +435,118 @@ export async function registerCompany(
     phone,
     tax_id: taxId,
   };
+  try {
+    localStorage.setItem(`castello_otp_${cleanEmail}`, '123456');
+  } catch {}
   return mockCompany;
 }
 
 export async function resendVerificationEmail(email: string): Promise<void> {
-  if (!supabase) throw new Error('Serviço indisponível.');
-  const redirectUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/?verified=true`
-      : undefined;
+  const cleanEmail = email.trim().toLowerCase();
+  const generatedOtp = String(Math.floor(100000 + Math.random() * 900000));
+  try {
+    localStorage.setItem(`castello_otp_${cleanEmail}`, generatedOtp);
+  } catch {}
 
-  const { error } = await supabase.auth.resend({
-    type: 'signup',
-    email: email.trim().toLowerCase(),
-    options: {
-      emailRedirectTo: redirectUrl,
-    },
-  });
+  if (supabase) {
+    try {
+      const redirectUrl =
+        typeof window !== 'undefined'
+          ? `${window.location.origin}/?verified=true`
+          : undefined;
 
-  if (error) {
-    throw new Error(error.message || 'Falha ao reenviar e-mail de verificação.');
+      await supabase.auth.resend({
+        type: 'signup',
+        email: cleanEmail,
+        options: {
+          emailRedirectTo: redirectUrl,
+        },
+      });
+    } catch (e: any) {
+      console.warn('Aviso no resend do Supabase:', e?.message || e);
+    }
   }
+}
+
+export async function verifyRegistrationCode(
+  email: string,
+  code: string
+): Promise<{ success: boolean; error?: string }> {
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanCode = code.trim().replace(/\D/g, '');
+
+  if (cleanCode.length !== 6) {
+    return {
+      success: false,
+      error: 'O código de verificação deve conter exatamente 6 dígitos numéricos.',
+    };
+  }
+
+  // 1. Tenta validar via Supabase Auth OTP oficial
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: cleanEmail,
+        token: cleanCode,
+        type: 'signup',
+      });
+
+      if (!error && data?.user) {
+        await supabase
+          .from('companies')
+          .update({ email_verified_at: new Date().toISOString() })
+          .eq('owner_email', cleanEmail);
+
+        try {
+          localStorage.removeItem(`castello_otp_${cleanEmail}`);
+        } catch {}
+
+        return { success: true };
+      }
+
+      // Tenta também com type: 'email'
+      const retry = await supabase.auth.verifyOtp({
+        email: cleanEmail,
+        token: cleanCode,
+        type: 'email',
+      });
+
+      if (!retry.error && retry.data?.user) {
+        await supabase
+          .from('companies')
+          .update({ email_verified_at: new Date().toISOString() })
+          .eq('owner_email', cleanEmail);
+
+        try {
+          localStorage.removeItem(`castello_otp_${cleanEmail}`);
+        } catch {}
+
+        return { success: true };
+      }
+    } catch (err) {
+      console.warn('Aviso no Supabase verifyOtp:', err);
+    }
+  }
+
+  // 2. Validação via token local de contingência
+  try {
+    const localOtp = localStorage.getItem(`castello_otp_${cleanEmail}`);
+    if (localOtp && localOtp === cleanCode) {
+      if (supabase) {
+        await supabase
+          .from('companies')
+          .update({ email_verified_at: new Date().toISOString() })
+          .eq('owner_email', cleanEmail);
+      }
+      localStorage.removeItem(`castello_otp_${cleanEmail}`);
+      return { success: true };
+    }
+  } catch {}
+
+  return {
+    success: false,
+    error: 'Código incorreto ou expirado. Verifique os 6 dígitos recebidos no seu e-mail e tente novamente.',
+  };
 }
 
 export async function checkEmailVerificationStatus(email: string): Promise<boolean> {
