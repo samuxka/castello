@@ -403,7 +403,6 @@ export async function registerCompany(
         password_hash: hashedPassword,
         phone: phone?.trim() || null,
         tax_id: taxId?.trim() || null,
-        email_verified_at: authData?.user?.email_confirmed_at || null,
       })
       .select('*')
       .single();
@@ -492,12 +491,8 @@ export async function verifyRegistrationCode(
       });
 
       if (!error && data?.user) {
-        await supabase
-          .from('companies')
-          .update({ email_verified_at: new Date().toISOString() })
-          .eq('owner_email', cleanEmail);
-
         try {
+          localStorage.setItem(`castello_verified_${cleanEmail}`, 'true');
           localStorage.removeItem(`castello_otp_${cleanEmail}`);
         } catch {}
 
@@ -512,12 +507,8 @@ export async function verifyRegistrationCode(
       });
 
       if (!retry.error && retry.data?.user) {
-        await supabase
-          .from('companies')
-          .update({ email_verified_at: new Date().toISOString() })
-          .eq('owner_email', cleanEmail);
-
         try {
+          localStorage.setItem(`castello_verified_${cleanEmail}`, 'true');
           localStorage.removeItem(`castello_otp_${cleanEmail}`);
         } catch {}
 
@@ -532,12 +523,7 @@ export async function verifyRegistrationCode(
   try {
     const localOtp = localStorage.getItem(`castello_otp_${cleanEmail}`);
     if (localOtp && localOtp === cleanCode) {
-      if (supabase) {
-        await supabase
-          .from('companies')
-          .update({ email_verified_at: new Date().toISOString() })
-          .eq('owner_email', cleanEmail);
-      }
+      localStorage.setItem(`castello_verified_${cleanEmail}`, 'true');
       localStorage.removeItem(`castello_otp_${cleanEmail}`);
       return { success: true };
     }
@@ -550,20 +536,19 @@ export async function verifyRegistrationCode(
 }
 
 export async function checkEmailVerificationStatus(email: string): Promise<boolean> {
+  const cleanEmail = email.trim().toLowerCase();
+  try {
+    if (localStorage.getItem(`castello_verified_${cleanEmail}`) === 'true') {
+      return true;
+    }
+  } catch {}
+
   if (!supabase) return false;
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user && session.user.email?.toLowerCase() === email.toLowerCase()) {
+    if (session?.user && session.user.email?.toLowerCase() === cleanEmail) {
       return !!session.user.email_confirmed_at;
     }
-
-    const { data } = await supabase
-      .from('companies')
-      .select('email_verified_at')
-      .eq('owner_email', email.trim().toLowerCase())
-      .maybeSingle();
-
-    if (data?.email_verified_at) return true;
   } catch (e) {
     console.warn('Erro ao verificar status de e-mail:', e);
   }
