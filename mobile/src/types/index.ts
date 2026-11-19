@@ -64,6 +64,9 @@ export interface SiteWorkSession {
   hours_worked: number;
   man_hours?: number | null;
   member_ids_snapshot?: string[];
+  status?: 'pendente' | 'aprovado' | 'rejeitado';
+  validated_at?: string | null;
+  validation_notes?: string | null;
   description?: string | null;
   created_at?: string;
 }

@@ -392,6 +392,42 @@ export async function updateEmployeeAvatar(
   }
 }
 
+const TASK_META_REGEX_MOBILE = /\n?<!--CASTELLO_TASK_META:([\s\S]*?)-->/;
+
+export function stripTaskMetaMobile(desc?: string | null): string | null {
+  if (!desc) return null;
+  const cleaned = desc.replace(TASK_META_REGEX_MOBILE, '').trim();
+  return cleaned || null;
+}
+
+export function decodeTaskMobileRow(row: any): any {
+  if (!row) return row;
+  const rawDesc = typeof row.description === 'string' ? row.description : '';
+  let meta: any = {};
+  const match = rawDesc.match(TASK_META_REGEX_MOBILE);
+  if (match && match[1]) {
+    try {
+      meta = JSON.parse(match[1]);
+    } catch {}
+  }
+  const cleanDesc = stripTaskMetaMobile(rawDesc);
+  return {
+    ...row,
+    description: cleanDesc,
+    assigned_team_id: row.assigned_team_id || meta.assigned_team_id || null,
+    assigned_team_name: row.assigned_team_name || meta.assigned_team_name || null,
+    priority: row.priority || meta.priority || 'media',
+    start_date: row.start_date || meta.start_date || null,
+    progress: typeof row.progress === 'number' ? row.progress : (meta.progress || 0),
+    execution_status: row.execution_status || meta.execution_status || row.status || 'pendente',
+    planned_hours: row.planned_hours || meta.planned_hours || null,
+    service_quantity: row.service_quantity || meta.service_quantity || null,
+    service_unit: row.service_unit || meta.service_unit || null,
+    before_photos: row.before_photos || meta.before_photos || [],
+    observations: row.observations || meta.observations || null,
+  };
+}
+
 export async function fetchSiteTasks(siteId: string): Promise<any[]> {
   if (supabase) {
     try {
@@ -400,7 +436,9 @@ export async function fetchSiteTasks(siteId: string): Promise<any[]> {
         .select('*')
         .eq('site_id', siteId)
         .order('created_at', { ascending: false });
-      if (!error && data) return data;
+      if (!error && data) {
+        return (data as any[]).map(decodeTaskMobileRow);
+      }
     } catch (e) {
       console.warn('Erro ao carregar tarefas da obra:', e);
     }
@@ -1114,6 +1152,7 @@ function decodeSessionMobileRow(row: any): SiteWorkSession {
   const cleanDesc = stripSessionMetaMobile(rawDesc);
   const hoursWorked = Number(row?.hours_worked || 0);
   const workersCount = Number(row?.workers_count || 1);
+  const status = (meta?.status as 'pendente' | 'aprovado' | 'rejeitado') || (row?.status as string) || 'aprovado';
   return {
     id: String(row?.id || ''),
     company_id: (row?.company_id as string | null) || null,
@@ -1137,8 +1176,24 @@ function decodeSessionMobileRow(row: any): SiteWorkSession {
       : Array.isArray(meta?.member_ids_snapshot)
         ? meta.member_ids_snapshot
         : [],
+    status: status as 'pendente' | 'aprovado' | 'rejeitado',
+    validated_at: (meta?.validated_at as string | null) || null,
+    validation_notes: (meta?.validation_notes as string | null) || null,
     created_at: String(row?.created_at || new Date().toISOString()),
   };
+}
+
+function encodeSessionMobileDescription(sess: Partial<SiteWorkSession>): string {
+  const cleanDesc = stripSessionMetaMobile(sess.description) || '';
+  const meta = {
+    team_id: sess.team_id || null,
+    man_hours: typeof sess.man_hours === 'number' ? sess.man_hours : null,
+    member_ids_snapshot: Array.isArray(sess.member_ids_snapshot) ? sess.member_ids_snapshot : [],
+    status: sess.status || 'pendente',
+    validated_at: sess.validated_at || null,
+    validation_notes: sess.validation_notes || null,
+  };
+  return `${cleanDesc}\n<!--CASTELLO_SESS_META:${JSON.stringify(meta)}-->`;
 }
 
 export async function fetchSiteWorkSessionsMobile(siteId: string): Promise<SiteWorkSession[]> {
@@ -1177,6 +1232,7 @@ export async function saveSiteWorkSessionMobile(
   const localKey = `${SITE_SESSIONS_KEY}${session.site_id}`;
   const now = new Date().toISOString();
   const cleanDescription = stripSessionMetaMobile(session.description);
+  const status = session.status || 'pendente';
   const newSession: SiteWorkSession = {
     id: session.id || `sess-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     company_id: session.company_id || null,
@@ -1188,16 +1244,31 @@ export async function saveSiteWorkSessionMobile(
     workers_count: Number(session.workers_count || 1),
     work_date: session.work_date || now.slice(0, 10),
     hours_worked: Number(session.hours_worked || 0),
+    man_hours:
+      typeof session.man_hours === 'number'
+        ? session.man_hours
+        : Math.round(Number(session.hours_worked || 0) * Number(session.workers_count || 1) * 10) / 10,
+    member_ids_snapshot: session.member_ids_snapshot || [],
+    status,
     description: cleanDescription,
     created_at: session.created_at || now,
   };
 
   if (supabase) {
     try {
-      const { error } = await supabase.from('site_work_sessions').upsert(newSession, { onConflict: 'id' });
-      if (error && (error.code === 'PGRST204' || error.message?.includes('team_id'))) {
-        const fallbackPayload = { ...newSession } as Record<string, unknown>;
+      const dbPayload = {
+        ...newSession,
+        description: encodeSessionMobileDescription(newSession),
+      };
+      const { error } = await supabase.from('site_work_sessions').upsert(dbPayload, { onConflict: 'id' });
+      if (error && (error.code === 'PGRST204' || error.message?.includes('team_id') || error.message?.includes('column'))) {
+        const fallbackPayload = { ...dbPayload } as Record<string, unknown>;
         delete fallbackPayload.team_id;
+        delete fallbackPayload.man_hours;
+        delete fallbackPayload.member_ids_snapshot;
+        delete fallbackPayload.status;
+        delete fallbackPayload.validated_at;
+        delete fallbackPayload.validation_notes;
         await supabase.from('site_work_sessions').upsert(fallbackPayload, { onConflict: 'id' });
       }
     } catch (e) {

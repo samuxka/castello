@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, decodeTaskMobileRow } from './supabase';
 import { SiteTask } from '../types';
 
 export async function fetchSiteTasks(siteId: string): Promise<SiteTask[]> {
@@ -9,7 +9,9 @@ export async function fetchSiteTasks(siteId: string): Promise<SiteTask[]> {
         .select('*')
         .eq('site_id', siteId)
         .order('created_at', { ascending: false });
-      if (!error && data) return data as SiteTask[];
+      if (!error && data) {
+        return (data as any[]).map(decodeTaskMobileRow) as SiteTask[];
+      }
     } catch (e) {
       console.warn('Erro ao carregar tarefas da obra:', e);
     }

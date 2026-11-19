@@ -49,6 +49,7 @@ import {
   getAllCompanyTasks,
   getAllTimeEntries,
   getCompanyById,
+  getCompanyWorkSessions,
   getEmployees,
   getFinancialRecords,
   getSavedTheme,
@@ -62,6 +63,7 @@ import {
   setActiveCompanySession,
   updateAbsenceJustificationStatus,
   updateEntryStatus,
+  updateWorkSessionStatus,
 } from './lib/supabase';
 import {
   AbsenceJustification,
@@ -72,6 +74,7 @@ import {
   FinancialRecord,
   SiteStatus,
   SiteTask,
+  SiteWorkSession,
   Team,
   ThemeColor,
   ThemeMode,
@@ -219,7 +222,8 @@ export default function App() {
   const [employees, setEmployees] = useState<EmployeeProfile[]>([]);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [justifications, setJustifications] = useState<AbsenceJustification[]>([]);
-  const [validationTab, setValidationTab] = useState<'pontos' | 'faltas'>('pontos');
+  const [validationTab, setValidationTab] = useState<'pontos' | 'faltas' | 'equipas'>('pontos');
+  const [companyWorkSessions, setCompanyWorkSessions] = useState<SiteWorkSession[]>([]);
   const [justifPreviewPhoto, setJustifPreviewPhoto] = useState<string | null>(null);
   const [financialRecords, setFinancialRecords] = useState<FinancialRecord[]>([]);
   const [dashboardTasks, setDashboardTasks] = useState<SiteTask[]>([]);
@@ -317,13 +321,14 @@ export default function App() {
 
   const loadData = async (compId?: string) => {
     const targetCompId = compId || activeCompany?.id;
-    const [s, e, t, f, j, tm] = await Promise.all([
+    const [s, e, t, f, j, tm, ws] = await Promise.all([
       getSites(targetCompId),
       getEmployees(targetCompId),
       getAllTimeEntries(targetCompId),
       getFinancialRecords(targetCompId),
       getAbsenceJustifications(undefined, targetCompId),
       getTeams(targetCompId),
+      getCompanyWorkSessions(targetCompId),
     ]);
     setSites(s);
     setEmployees(e);
@@ -331,6 +336,7 @@ export default function App() {
     setFinancialRecords(f);
     setJustifications(j);
     setDashboardTeams(tm || []);
+    setCompanyWorkSessions(ws || []);
 
     try {
       // Otimização: Consulta em lote evitando N requisições por obra (resolução do problema N+1)
@@ -413,6 +419,16 @@ export default function App() {
       status === 'aprovada'
         ? 'Justificativa de falta aprovada com sucesso!'
         : 'Justificativa de falta rejeitada.'
+    );
+  };
+
+  const handleValidateWorkSession = async (sessionId: string, status: 'aprovado' | 'rejeitado') => {
+    await updateWorkSessionStatus(sessionId, status);
+    await loadData(activeCompany?.id);
+    showNotice(
+      status === 'aprovado'
+        ? 'Registo de horas da equipa aprovado com sucesso!'
+        : 'Registo de horas da equipa rejeitado.'
     );
   };
 
@@ -607,6 +623,7 @@ export default function App() {
 
   const pendingEntries = entries.filter((e) => e.status === 'pendente');
   const pendingJustifs = justifications.filter((j) => j.status === 'pendente');
+  const pendingWorkSessions = companyWorkSessions.filter((s) => s.status === 'pendente');
   const activeSites = sites.filter((s) => s.status === 'ativa');
 
   // Filtragem e ordenação de funcionários
@@ -1126,13 +1143,13 @@ export default function App() {
                       className="kpi-value"
                       style={{
                         color:
-                          (pendingEntries.length + pendingJustifs.length) > 0 ? 'var(--warning)' : 'var(--text-main)',
+                          (pendingEntries.length + pendingJustifs.length + pendingWorkSessions.length) > 0 ? 'var(--warning)' : 'var(--text-main)',
                       }}
                     >
-                      {pendingEntries.length + pendingJustifs.length}
+                      {pendingEntries.length + pendingJustifs.length + pendingWorkSessions.length}
                     </div>
                     <div className="kpi-detail">
-                      {pendingEntries.length} ponto{pendingEntries.length === 1 ? '' : 's'} • {pendingJustifs.length} falta{pendingJustifs.length === 1 ? '' : 's'}
+                      {pendingEntries.length} ponto{pendingEntries.length === 1 ? '' : 's'} • {pendingJustifs.length} falta{pendingJustifs.length === 1 ? '' : 's'} • {pendingWorkSessions.length} equipa{pendingWorkSessions.length === 1 ? '' : 's'}
                     </div>
                   </div>
 
@@ -1241,6 +1258,23 @@ export default function App() {
                           >
                             Faltas ({pendingJustifs.length})
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => setValidationTab('equipas')}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              border: 'none',
+                              cursor: 'pointer',
+                              backgroundColor: validationTab === 'equipas' ? 'var(--primary)' : 'var(--bg-card-subtle)',
+                              color: validationTab === 'equipas' ? '#ffffff' : 'var(--text-muted)',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            Equipas ({pendingWorkSessions.length})
+                          </button>
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1267,13 +1301,22 @@ export default function App() {
                           )}
                           <div
                             className={`badge-flat ${
-                              (validationTab === 'pontos' ? pendingEntries.length : pendingJustifs.length) > 0
+                              (validationTab === 'pontos'
+                                ? pendingEntries.length
+                                : validationTab === 'faltas'
+                                ? pendingJustifs.length
+                                : pendingWorkSessions.length) > 0
                                 ? 'warning'
                                 : 'primary'
                             }`}
                             style={{ fontSize: 10, padding: '2px 6px', flexShrink: 0 }}
                           >
-                            {validationTab === 'pontos' ? pendingEntries.length : pendingJustifs.length} pendente(s)
+                            {validationTab === 'pontos'
+                              ? pendingEntries.length
+                              : validationTab === 'faltas'
+                              ? pendingJustifs.length
+                              : pendingWorkSessions.length}{' '}
+                            pendente(s)
                           </div>
                         </div>
                       </div>
@@ -1421,7 +1464,7 @@ export default function App() {
                               })
                           )}
                         </div>
-                      ) : (
+                      ) : validationTab === 'faltas' ? (
                         /* ABA DE JUSTIFICATIVAS DE FALTA */
                         <div
                           className="custom-scroll"
@@ -1567,6 +1610,138 @@ export default function App() {
                                             style={{ padding: '3px 6px', fontSize: 10 }}
                                             onClick={() => handleValidateJustification(j.id, 'rejeitada')}
                                             title="Rejeitar Justificativa"
+                                          >
+                                            <X size={11} />
+                                            Rejeitar
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                          Processada
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                          )}
+                        </div>
+                      ) : (
+                        /* ABA DE HORAS DE EQUIPA */
+                        <div
+                          className="custom-scroll"
+                          style={{
+                            flex: 1,
+                            minHeight: 0,
+                            overflowY: 'auto',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 8,
+                            paddingRight: 6,
+                            paddingBottom: 4,
+                          }}
+                        >
+                          {companyWorkSessions.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '36px 12px', color: 'var(--text-muted)', fontSize: 12 }}>
+                              Nenhum registo de horas de equipa submetido.
+                            </div>
+                          ) : (
+                            [...companyWorkSessions]
+                              .sort((a, b) => {
+                                if (a.status === 'pendente' && b.status !== 'pendente') return -1;
+                                if (a.status !== 'pendente' && b.status === 'pendente') return 1;
+                                return new Date(b.created_at || b.work_date).getTime() - new Date(a.created_at || a.work_date).getTime();
+                              })
+                              .slice(0, 25)
+                              .map((sess) => {
+                                const site = sites.find((x) => x.id === sess.site_id);
+                                const isPending = sess.status === 'pendente';
+
+                                return (
+                                  <div
+                                    key={sess.id}
+                                    style={{
+                                      border: isPending ? '1px solid var(--warning)' : '1px solid var(--border-color)',
+                                      borderRadius: 6,
+                                      padding: '8px 10px',
+                                      backgroundColor: isPending ? 'rgba(245, 158, 11, 0.08)' : 'var(--bg-card-subtle)',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: 6,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+                                      <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <div
+                                          style={{
+                                            width: 28,
+                                            height: 28,
+                                            borderRadius: '50%',
+                                            backgroundColor: 'var(--primary)',
+                                            color: '#fff',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: 12,
+                                            fontWeight: 700,
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          <Users size={14} />
+                                        </div>
+                                        <div style={{ minWidth: 0 }}>
+                                          <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {sess.team_name} ({sess.workers_count} trab.)
+                                          </div>
+                                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+                                            {sess.work_date.split('-').reverse().join('/')} • Por {sess.leader_name} • {site ? site.name : 'Obra'}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <span
+                                        className={`badge-flat ${
+                                          sess.status === 'aprovado'
+                                            ? 'success'
+                                            : sess.status === 'rejeitado'
+                                            ? 'danger'
+                                            : 'warning'
+                                        }`}
+                                        style={{ fontSize: 9, padding: '2px 5px', flexShrink: 0 }}
+                                      >
+                                        {(sess.status || 'pendente').toUpperCase()}
+                                      </span>
+                                    </div>
+
+                                    <div style={{ fontSize: 11, color: 'var(--text-main)', lineHeight: 1.3, backgroundColor: 'var(--bg-main)', padding: '4px 6px', borderRadius: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      <span>
+                                        Horas: <strong>{sess.hours_worked}h</strong> {sess.man_hours ? `(${sess.man_hours}h-homem)` : ''}
+                                      </span>
+                                      {sess.description && (
+                                        <span style={{ fontSize: 10, color: 'var(--text-muted)', maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                          {sess.description}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 4, borderTop: '1px solid var(--border-color)' }}>
+                                      {isPending ? (
+                                        <div style={{ display: 'flex', gap: 4 }}>
+                                          <button
+                                            className="btn-flat-success"
+                                            style={{ padding: '3px 6px', fontSize: 10 }}
+                                            onClick={() => handleValidateWorkSession(sess.id, 'aprovado')}
+                                            title="Aprovar Horas da Equipa"
+                                          >
+                                            <Check size={11} />
+                                            Aprovar
+                                          </button>
+                                          <button
+                                            className="btn-flat-danger"
+                                            style={{ padding: '3px 6px', fontSize: 10 }}
+                                            onClick={() => handleValidateWorkSession(sess.id, 'rejeitado')}
+                                            title="Rejeitar Horas da Equipa"
                                           >
                                             <X size={11} />
                                             Rejeitar

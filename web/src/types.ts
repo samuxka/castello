@@ -195,6 +195,9 @@ export interface SiteWorkSession {
   hours_worked: number; // Duração da sessão (horas da equipa)
   man_hours?: number | null; // Horas-homem efetivamente apuradas no turno
   member_ids_snapshot?: string[]; // Snapshot dos membros presentes no turno
+  status?: 'pendente' | 'aprovado' | 'rejeitado'; // Status de validação pela administração
+  validated_at?: string | null;
+  validation_notes?: string | null;
   description?: string | null;
   created_at?: string;
 }

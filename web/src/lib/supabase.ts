@@ -707,6 +707,9 @@ function encodeSessionDescription(sess: SiteWorkSession): string | null {
     team_id: sess.team_id || null,
     man_hours: typeof sess.man_hours === 'number' ? sess.man_hours : null,
     member_ids_snapshot: Array.isArray(sess.member_ids_snapshot) ? sess.member_ids_snapshot : [],
+    status: sess.status || 'aprovado',
+    validated_at: sess.validated_at || null,
+    validation_notes: sess.validation_notes || null,
   };
   return `${cleanDesc}\n<!--CASTELLO_SESS_META:${JSON.stringify(meta)}-->`;
 }
@@ -725,6 +728,7 @@ function decodeSessionRow(row: Record<string, unknown>): SiteWorkSession {
   const cleanDesc = stripSessionMeta(rawDesc);
   const hoursWorked = Number(row.hours_worked || 0);
   const workersCount = Number(row.workers_count || 1);
+  const status = (meta.status as 'pendente' | 'aprovado' | 'rejeitado') || (row.status as string) || 'aprovado';
   return {
     id: String(row.id || ''),
     company_id: (row.company_id as string | null) || null,
@@ -747,6 +751,9 @@ function decodeSessionRow(row: Record<string, unknown>): SiteWorkSession {
       : Array.isArray(meta.member_ids_snapshot)
       ? (meta.member_ids_snapshot as string[])
       : [],
+    status: status as 'pendente' | 'aprovado' | 'rejeitado',
+    validated_at: (meta.validated_at as string | null) || null,
+    validation_notes: (meta.validation_notes as string | null) || null,
     description: cleanDesc,
     created_at: (row.created_at as string | undefined) || undefined,
   };
@@ -961,6 +968,59 @@ export async function deleteSiteWorkSession(siteId: string, sessionId: string): 
   const current = await getSiteWorkSessions(siteId);
   const updated = current.filter((s) => s.id !== sessionId);
   localStorage.setItem(localKey, JSON.stringify(updated));
+}
+
+export async function getCompanyWorkSessions(companyId?: string): Promise<SiteWorkSession[]> {
+  if (supabase) {
+    try {
+      let query = supabase
+        .from('site_work_sessions')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (companyId) {
+        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+      }
+      const { data, error } = await query;
+      if (!error && data) {
+        return (data as Record<string, unknown>[]).map(decodeSessionRow);
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar sessões de trabalho da empresa:', e);
+    }
+  }
+  return [];
+}
+
+export async function updateWorkSessionStatus(
+  sessionId: string,
+  status: 'aprovado' | 'rejeitado',
+  notes?: string
+): Promise<void> {
+  if (supabase) {
+    try {
+      const { data } = await supabase.from('site_work_sessions').select('*').eq('id', sessionId).maybeSingle();
+      if (data) {
+        const decoded = decodeSessionRow(data);
+        decoded.status = status;
+        decoded.validated_at = new Date().toISOString();
+        decoded.validation_notes = notes || null;
+
+        const dbPayload: Record<string, unknown> = {
+          ...decoded,
+          description: encodeSessionDescription(decoded),
+        };
+        const { error } = await supabase.from('site_work_sessions').upsert(dbPayload, { onConflict: 'id' });
+        if (error && (error.code === 'PGRST204' || error.message?.includes('column'))) {
+          delete dbPayload.team_id;
+          delete dbPayload.man_hours;
+          delete dbPayload.member_ids_snapshot;
+          await supabase.from('site_work_sessions').upsert(dbPayload, { onConflict: 'id' });
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao atualizar status da sessão de trabalho:', e);
+    }
+  }
 }
 
 // ----------------------------------------------------------------------------

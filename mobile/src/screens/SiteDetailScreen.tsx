@@ -35,6 +35,7 @@ import {
   saveSiteAccidentMobile,
   saveSiteWorkSessionMobile,
   stripSessionMetaMobile,
+  stripTaskMetaMobile,
 } from '../lib/supabase';
 import { uploadImageToCloudinary } from '../services/cloudinary';
 
@@ -134,7 +135,29 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
     }
   };
 
+  // Apenas quem é Líder de uma equipa alocada à obra, Gestor direto da Obra ou Patrão pode registar horas da equipa
+  const isPatrao = employee.role === 'patrao';
+  const isSiteManager =
+    (Boolean(site.manager_id) && site.manager_id === employee.id) ||
+    (Boolean(site.manager_name) && site.manager_name?.trim().toLowerCase() === employee.full_name.trim().toLowerCase());
+
+  // Equipas desta obra onde o utilizador logado é o LÍDER DESIGNADO
+  const myLedTeams = siteTeams.filter(
+    (t) =>
+      !t.is_archived &&
+      (t.leader_id === employee.id ||
+        (t.leader_name && t.leader_name.trim().toLowerCase() === employee.full_name.trim().toLowerCase()))
+  );
+
+  const isAssignedTeamLeader = myLedTeams.length > 0;
+  const canRegisterTeamHours = isPatrao || isSiteManager || isAssignedTeamLeader;
+
   const handleSaveTeamSession = async () => {
+    if (!canRegisterTeamHours) {
+      showCustomAlert('Acesso Restrito', 'Apenas o líder designado da equipa, o encarregado da obra ou a administração têm permissão para registar horas e trabalhadores da equipa.');
+      return;
+    }
+
     const hoursNum = parseFloat(hoursWorked.replace(',', '.'));
     const workersNum = parseInt(workersCount, 10);
     if (isNaN(hoursNum) || hoursNum <= 0) {
@@ -142,28 +165,44 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
       return;
     }
 
+    // Identifica a equipa do líder ou selecionada
+    const targetTeam = myLedTeams[0] || siteTeams.find((t) => t.name.trim().toLowerCase() === teamName.trim().toLowerCase());
+    const finalTeamName = targetTeam?.name || teamName.trim() || 'Equipa 1';
+    const isAutoApproved = isPatrao || isSiteManager;
+    const sessionStatus: 'pendente' | 'aprovado' = isAutoApproved ? 'aprovado' : 'pendente';
+
     setSavingSession(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
       const newSession = await saveSiteWorkSessionMobile({
         site_id: site.id,
         company_id: site.company_id || employee.company_id || null,
-        team_name: teamName.trim() || 'Equipa 1',
+        team_id: targetTeam?.id || null,
+        team_name: finalTeamName,
         leader_id: employee.id,
         leader_name: employee.full_name,
         workers_count: isNaN(workersNum) || workersNum < 1 ? 1 : workersNum,
         work_date: today,
         hours_worked: hoursNum,
+        status: sessionStatus,
         description: sessionDesc.trim() || undefined,
       });
 
       setTeamSessions((prev) => [newSession, ...prev]);
       setTeamModalOpen(false);
       setSessionDesc('');
-      showCustomAlert(
-        'Sucesso',
-        `Foram registadas ${hoursNum}h da ${teamName} nesta obra! As horas já estão visíveis no portal do cliente.`
-      );
+
+      if (isAutoApproved) {
+        showCustomAlert(
+          'Sucesso',
+          `Foram registadas ${hoursNum}h da ${finalTeamName} nesta obra!`
+        );
+      } else {
+        showCustomAlert(
+          'Enviado para Aprovação',
+          `Registo de ${hoursNum}h da equipa "${finalTeamName}" enviado com sucesso!\n\nFoi encaminhado para validação e aprovação pelo encarregado/administração no painel.`
+        );
+      }
     } catch {
       showCustomAlert('Erro', 'Não foi possível gravar o registo de horas da equipa.');
     } finally {
@@ -181,7 +220,7 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
     employee.role === 'patrao' ||
     (Boolean(site.manager_id) && site.manager_id === employee.id) ||
     (Boolean(site.manager_name) && site.manager_name?.trim().toLowerCase() === employee.full_name.trim().toLowerCase()) ||
-    (Boolean(employee.job_title) && /(encarregado|chefe|mestre|gestor|supervisor|engenheiro)/i.test(employee.job_title));
+    (Boolean(employee.job_title) && /(encarregado|chefe|mestre|gestor|supervisor)/i.test(employee.job_title));
 
   const visibleTasks = tasks.filter((t) => {
     // Encarregado da obra vê todas as tarefas (mesmo as específicas de outros colaboradores)
@@ -600,7 +639,7 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
       </View>
 
       {/* Seção Exclusiva Encarregado / Líder: Registar Horas da Equipa na Obra (Portal do Cliente) */}
-      {isSiteEncarregado && (
+      {canRegisterTeamHours && (
         <View
           style={[
             styles.card,
@@ -663,9 +702,21 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
                     }}
                   >
                     <View style={{ flex: 1, marginRight: 8 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textMain }}>
-                        {sess.team_name} ({sess.workers_count} trab.)
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textMain }}>
+                          {sess.team_name} ({sess.workers_count} trab.)
+                        </Text>
+                        {sess.status === 'pendente' && (
+                          <View style={{ backgroundColor: 'rgba(234, 179, 8, 0.15)', borderColor: '#EAB308', borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                            <Text style={{ fontSize: 9, fontWeight: '700', color: '#EAB308' }}>Pendente Aprovação</Text>
+                          </View>
+                        )}
+                        {sess.status === 'rejeitado' && (
+                          <View style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: '#EF4444', borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                            <Text style={{ fontSize: 9, fontWeight: '700', color: '#EF4444' }}>Rejeitado</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2, lineHeight: 16 }}>
                         {sess.work_date.split('-').reverse().join('/')} • Por {sess.leader_name}
                         {cleanedDesc ? ` • ${cleanedDesc}` : ''}
@@ -957,9 +1008,9 @@ export const SiteDetailScreen: React.FC<SiteDetailScreenProps> = ({
                   )}
                 </View>
 
-                {task.description ? (
+                {stripTaskMetaMobile(task.description) ? (
                   <Text style={[styles.taskDesc, { color: colors.textMuted }]}>
-                    {task.description}
+                    {stripTaskMetaMobile(task.description)}
                   </Text>
                 ) : null}
 
