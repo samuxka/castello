@@ -82,9 +82,8 @@ import {
   TimeEntry,
   Vehicle,
 } from './types';
-import { AuthModal } from './components/AuthModal';
-
-// Code-Splitting: Carregamento dinâmico (lazy) de páginas pesadas sob demanda
+// Code-Splitting: Carregamento dinâmico (lazy) de páginas, modais e gráficos pesados sob demanda
+const AuthModal = React.lazy(() => import('./components/AuthModal').then((m) => ({ default: m.AuthModal })));
 const SiteDetailPage = React.lazy(() => import('./pages/SiteDetailPage').then((m) => ({ default: m.SiteDetailPage })));
 const TeamsPage = React.lazy(() => import('./pages/TeamsPage').then((m) => ({ default: m.TeamsPage })));
 const ClientPortalPage = React.lazy(() => import('./pages/ClientPortalPage').then((m) => ({ default: m.ClientPortalPage })));
@@ -95,6 +94,10 @@ const VehiclesPage = React.lazy(() => import('./pages/VehiclesPage').then((m) =>
 const VehicleDetailPage = React.lazy(() => import('./pages/VehicleDetailPage').then((m) => ({ default: m.VehicleDetailPage })));
 const CalendarPage = React.lazy(() => import('./pages/CalendarPage').then((m) => ({ default: m.CalendarPage })));
 const EmployeeDetailPage = React.lazy(() => import('./pages/EmployeeDetailPage').then((m) => ({ default: m.EmployeeDetailPage })));
+const AttendanceChart = React.lazy(() => import('./components/AttendanceChart').then((m) => ({ default: m.AttendanceChart })));
+const DashboardCalendarCard = React.lazy(() => import('./components/DashboardCalendarCard').then((m) => ({ default: m.DashboardCalendarCard })));
+const SiteProgressLineChart = React.lazy(() => import('./components/SiteProgressLineChart').then((m) => ({ default: m.SiteProgressLineChart })));
+const SiteStatusDonutChart = React.lazy(() => import('./components/SiteStatusDonutChart').then((m) => ({ default: m.SiteStatusDonutChart })));
 
 const PageLoadingFallback = () => (
   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 340, gap: 12, color: 'var(--text-muted)' }}>
@@ -102,12 +105,8 @@ const PageLoadingFallback = () => (
     <span style={{ fontSize: 13, fontWeight: 500 }}>A carregar módulo...</span>
   </div>
 );
-import { AttendanceChart } from './components/AttendanceChart';
-import { DashboardCalendarCard } from './components/DashboardCalendarCard';
 import { EmployeeAutocompleteSelect } from './components/EmployeeAutocompleteSelect';
 import { JobTitleAutocompleteSelect } from './components/JobTitleAutocompleteSelect';
-import { SiteProgressLineChart } from './components/SiteProgressLineChart';
-import { SiteStatusDonutChart } from './components/SiteStatusDonutChart';
 import { customConfirm, customAlert } from './context/DialogContext';
 import { getEffectivePaidAmount, roundCents } from './lib/financialCalculations';
 
@@ -632,19 +631,21 @@ export default function App() {
 
   if (!activeCompany) {
     return (
-      <AuthModal
-        onSuccess={(company) => {
-          setActiveCompany(company);
-          setActiveCompanySession(company);
-          if (company.theme_color) {
-            setThemeColor(company.theme_color as ThemeColor);
-          }
-          if (company.theme_mode) {
-            setTheme(company.theme_mode as ThemeMode);
-          }
-          applyTheme((company.theme_color as ThemeColor) || 'azul', (company.theme_mode as ThemeMode) || 'dark');
-        }}
-      />
+      <React.Suspense fallback={<PageLoadingFallback />}>
+        <AuthModal
+          onSuccess={(company) => {
+            setActiveCompany(company);
+            setActiveCompanySession(company);
+            if (company.theme_color) {
+              setThemeColor(company.theme_color as ThemeColor);
+            }
+            if (company.theme_mode) {
+              setTheme(company.theme_mode as ThemeMode);
+            }
+            applyTheme((company.theme_color as ThemeColor) || 'azul', (company.theme_mode as ThemeMode) || 'dark');
+          }}
+        />
+      </React.Suspense>
     );
   }
 
@@ -1200,19 +1201,21 @@ export default function App() {
                 {/* ================================================================== */}
                 {/* 3 NOVOS GRÁFICOS DO DASHBOARD CONFORME HIERARQUIA SOLICITADA       */}
                 {/* ================================================================== */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 24 }}>
-                  {/* 1. GRÁFICO PRINCIPAL EM DESTAQUE: EVOLUÇÃO DAS OBRAS (LINE CHART) */}
-                  <SiteProgressLineChart sites={sites} tasks={dashboardTasks} />
+                <React.Suspense fallback={<div className="content-panel" style={{ minHeight: 260 }} />}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 24 }}>
+                    {/* 1. GRÁFICO PRINCIPAL EM DESTAQUE: EVOLUÇÃO DAS OBRAS (LINE CHART) */}
+                    <SiteProgressLineChart sites={sites} tasks={dashboardTasks} />
 
-                  {/* 2. GRÁFICO SECUNDÁRIO: DISTRIBUIÇÃO DAS OBRAS POR ESTADO */}
-                  <SiteStatusDonutChart
-                    sites={sites}
-                    onSelectSite={(site) => {
-                      setSelectedSiteForDetail(site);
-                      setCurrentPage('obras');
-                    }}
-                  />
-                </div>
+                    {/* 2. GRÁFICO SECUNDÁRIO: DISTRIBUIÇÃO DAS OBRAS POR ESTADO */}
+                    <SiteStatusDonutChart
+                      sites={sites}
+                      onSelectSite={(site) => {
+                        setSelectedSiteForDetail(site);
+                        setCurrentPage('obras');
+                      }}
+                    />
+                  </div>
+                </React.Suspense>
 
                 {/* PAINEL OPERACIONAL: ASSIDUIDADE + VALIDAÇÃO DE PONTOS + AGENDA (SEM BURACOS) */}
                 <div
@@ -1224,7 +1227,9 @@ export default function App() {
                   }}
                 >
                   {/* 1. Assiduidade da Equipa */}
-                  <AttendanceChart employees={employees} entries={entries} />
+                  <React.Suspense fallback={<div className="content-panel" style={{ margin: 0, height: 275 }} />}>
+                    <AttendanceChart employees={employees} entries={entries} />
+                  </React.Suspense>
 
                   {/* 2. Card Compacto de Validação de Pontos & Justificativas de Falta */}
                   <div
@@ -1791,12 +1796,14 @@ export default function App() {
                     </div>
 
                     {/* 3. Card do Calendário de Próximos Eventos */}
-                    <DashboardCalendarCard
-                      companyId={activeCompany.id}
-                      sites={sites}
-                      employees={employees}
-                      onOpenCalendar={() => setCurrentPage('calendario')}
-                    />
+                    <React.Suspense fallback={<div className="content-panel" style={{ margin: 0, height: 275 }} />}>
+                      <DashboardCalendarCard
+                        companyId={activeCompany.id}
+                        sites={sites}
+                        employees={employees}
+                        onOpenCalendar={() => setCurrentPage('calendario')}
+                      />
+                    </React.Suspense>
                 </div>
               </>
             )}
