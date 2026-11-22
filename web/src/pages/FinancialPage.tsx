@@ -59,11 +59,11 @@ import {
 import {
   deleteFinancialRecord,
   deleteSiteMeasurement,
+  getCompanyVehicleMaintenanceRecords,
+  getCompanyWorkSessions,
   getInventoryItems,
   getSiteFinancialConfigs,
   getSiteMeasurements,
-  getSiteWorkSessions,
-  getVehicleMaintenanceRecords,
   getVehicles,
   registerPartialPayment,
   saveFinancialRecord,
@@ -200,20 +200,19 @@ export function FinancialPage({
 
   const loadAuxiliaryFinancialData = async () => {
     try {
-      const [meas, inv, vehs] = await Promise.all([
+      const [meas, inv, vehs, companySessions] = await Promise.all([
         getSiteMeasurements(company.id),
         getInventoryItems(company.id),
         getVehicles(company.id),
+        getCompanyWorkSessions(company.id),
       ]);
       setMeasurements(meas);
       setInventoryItems(inv);
       setSiteConfigs(getSiteFinancialConfigs(company.id));
+      setWorkSessions(companySessions);
 
-      const sessLists = await Promise.all(sites.map((s) => getSiteWorkSessions(s.id)));
-      setWorkSessions(sessLists.flat());
-
-      const maintLists = await Promise.all(vehs.map((v) => getVehicleMaintenanceRecords(v.id)));
-      setMaintenanceRecords(maintLists.flat());
+      const maintRecords = await getCompanyVehicleMaintenanceRecords(vehs.map((v) => v.id));
+      setMaintenanceRecords(maintRecords);
     } catch (err) {
       console.warn('Aviso ao carregar dados auxiliares financeiros:', err);
     }

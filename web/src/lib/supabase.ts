@@ -3372,16 +3372,21 @@ export async function getVehicles(companyId?: string, forceRefresh = false): Pro
         }
         const { data, error } = await query;
         if (!error && data) {
-          // Se houver viaturas no localStorage que ainda não estão no Supabase, sincroniza para o Supabase
+          // Se houver viaturas no localStorage que ainda não estão no Supabase, sincroniza em lote (evita N+1)
           const stored = localStorage.getItem(localKey);
           if (stored) {
             try {
               const localList = JSON.parse(stored) as Vehicle[];
-              for (const lv of localList) {
-                if (!data.some((sv: any) => sv.id === lv.id || (sv.license_plate && sv.license_plate === lv.license_plate))) {
-                  await supabase.from('vehicles').upsert(lv, { onConflict: 'id' });
-                  data.push(lv);
-                }
+              const missingVehicles = localList.filter(
+                (lv) =>
+                  !data.some(
+                    (sv: any) =>
+                      sv.id === lv.id || (sv.license_plate && sv.license_plate === lv.license_plate)
+                  )
+              );
+              if (missingVehicles.length > 0) {
+                await supabase.from('vehicles').upsert(missingVehicles, { onConflict: 'id' });
+                data.push(...missingVehicles);
               }
             } catch {}
           }
@@ -3869,6 +3874,46 @@ export async function getVehicleMaintenanceRecords(
 
   const stored = localStorage.getItem(localKey);
   return stored ? JSON.parse(stored) : [];
+}
+
+export async function getCompanyVehicleMaintenanceRecords(
+  vehicleIds: string[]
+): Promise<VehicleMaintenanceRecord[]> {
+  if (!vehicleIds || vehicleIds.length === 0) return [];
+  const cacheKey = `company_vehicle_maint_${vehicleIds.slice().sort().join(',')}`;
+  const cached = getCached<VehicleMaintenanceRecord[]>(cacheKey, 20000);
+  if (cached) return cached;
+
+  return fetchWithDedupe(cacheKey, async () => {
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('vehicle_maintenance_records')
+          .select(
+            'id, vehicle_id, company_id, item_type, title, description, performed_at, performed_km, next_due_date, next_due_km, cost, service_provider, created_at'
+          )
+          .in('vehicle_id', vehicleIds)
+          .order('performed_at', { ascending: false });
+
+        if (!error && data) {
+          const list = data as unknown as VehicleMaintenanceRecord[];
+          setCached(cacheKey, list);
+          return list;
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar manutenções em lote:', e);
+      }
+    }
+
+    const fallback: VehicleMaintenanceRecord[] = [];
+    for (const vId of vehicleIds) {
+      try {
+        const raw = localStorage.getItem(getMaintStorageKey(vId));
+        if (raw) fallback.push(...(JSON.parse(raw) as VehicleMaintenanceRecord[]));
+      } catch {}
+    }
+    return fallback;
+  });
 }
 
 export async function addVehicleMaintenanceRecord(
