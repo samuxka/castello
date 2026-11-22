@@ -388,7 +388,7 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
               }}
             >
               <img
-                src={company?.logo_url || '/logo.png'}
+                src={company?.logo_url || '/logo.webp'}
                 alt={company?.name || 'Castello'}
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}
               />

@@ -730,8 +730,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 }}
               >
                 <img
-                  src="/logo.png"
+                  src="/logo.webp"
                   alt="Castello"
+                  width={18}
+                  height={18}
                   style={{ width: '18px', height: '18px', objectFit: 'contain' }}
                   onError={(e) => {
                     (e.target as HTMLElement).style.display = 'none';

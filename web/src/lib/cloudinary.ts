@@ -47,6 +47,21 @@ async function getSecureUploadParams(folder: string): Promise<CloudinarySignResp
 }
 
 /**
+ * Aplica transformações automáticas do Cloudinary (f_auto,q_auto) para servir
+ * WebP/AVIF comprimido e redimensionado sem alterar a URL original se não for Cloudinary.
+ */
+export function optimizeCloudinaryUrl(url: string, maxWidth?: number): string {
+  if (!url || !url.includes('res.cloudinary.com') || !url.includes('/image/upload/')) {
+    return url;
+  }
+  if (url.includes('/image/upload/f_auto')) {
+    return url;
+  }
+  const transforms = maxWidth ? `f_auto,q_auto,w_${maxWidth},c_limit` : 'f_auto,q_auto';
+  return url.replace('/image/upload/', `/image/upload/${transforms}/`);
+}
+
+/**
  * Realiza upload seguro de imagem para o Cloudinary através de parâmetros assinados no servidor.
  */
 export async function uploadImageToCloudinary(
@@ -72,7 +87,7 @@ export async function uploadImageToCloudinary(
 
   const data = await response.json();
   if (data.secure_url) {
-    return data.secure_url;
+    return optimizeCloudinaryUrl(data.secure_url, 1200);
   }
 
   console.error('Falha no upload Cloudinary:', data);

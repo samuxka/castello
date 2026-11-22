@@ -819,8 +819,10 @@ export default function App() {
                   />
                 ) : (
                   <img
-                    src="/logo.png"
+                    src="/logo.webp"
                     alt="Logo Castello"
+                    width={36}
+                    height={36}
                     style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                   />
                 )}
