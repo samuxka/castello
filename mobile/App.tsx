@@ -216,23 +216,25 @@ function MainApp() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      await setupAlarmNotifications();
-      const [loadedSites, activeEmp, bioCreds] = await Promise.all([
-        fetchSites(),
+      // Configura notificações em segundo plano sem bloquear o arranque do ecrã inicial
+      setupAlarmNotifications().catch(() => {});
+
+      const [activeEmp, bioCreds] = await Promise.all([
         getActiveEmployee(),
         getSavedBiometricCredentials(),
       ]);
-      setSites(loadedSites);
       setCurrentEmployee(activeEmp);
       setHasBiometricsSaved(Boolean(bioCreds));
 
       if (activeEmp) {
-        const [empEntries, loadedNotifs, veh, comp] = await Promise.all([
+        const [loadedSites, empEntries, loadedNotifs, veh, comp] = await Promise.all([
+          fetchSites(),
           fetchEmployeeTimeEntries(activeEmp.id),
           fetchCompanyNotifications(activeEmp.company_id),
           fetchAssignedVehicle(activeEmp.id, activeEmp.full_name, activeEmp.company_id),
           fetchCompanyMobile(activeEmp.company_id),
         ]);
+        setSites(loadedSites);
         setEntries(empEntries);
         setNotifications(loadedNotifs);
         setAssignedVehicle(veh);
@@ -242,8 +244,12 @@ function MainApp() {
             setTheme(comp.theme_mode === 'light' ? 'light' : 'dark');
           }
         }
-        await checkUnexcusedAbsences(activeEmp, empEntries);
+        checkUnexcusedAbsences(activeEmp, empEntries).catch(() => {});
+      } else {
+        setSites([]);
       }
+    } catch (err) {
+      console.warn('Erro ao inicializar dados do Castello Mobile:', err);
     } finally {
       setLoading(false);
     }
@@ -259,12 +265,16 @@ function MainApp() {
     if (!emp) return false;
     setCurrentEmployee(emp);
     setHasBiometricsSaved(true);
-    const [empEntries, veh, comp] = await Promise.all([
+    const [loadedSites, empEntries, loadedNotifs, veh, comp] = await Promise.all([
+      fetchSites(true),
       fetchEmployeeTimeEntries(emp.id),
+      fetchCompanyNotifications(emp.company_id),
       fetchAssignedVehicle(emp.id, emp.full_name, emp.company_id),
       fetchCompanyMobile(emp.company_id),
     ]);
+    setSites(loadedSites);
     setEntries(empEntries);
+    setNotifications(loadedNotifs);
     setAssignedVehicle(veh);
     if (comp) {
       setCompany(comp);
@@ -346,11 +356,17 @@ function MainApp() {
 
       setCurrentEmployee(emp);
       setHasBiometricsSaved(true);
-      const [empEntries, comp] = await Promise.all([
+      const [loadedSites, empEntries, loadedNotifs, veh, comp] = await Promise.all([
+        fetchSites(true),
         fetchEmployeeTimeEntries(emp.id),
+        fetchCompanyNotifications(emp.company_id),
+        fetchAssignedVehicle(emp.id, emp.full_name, emp.company_id),
         fetchCompanyMobile(emp.company_id),
       ]);
+      setSites(loadedSites);
       setEntries(empEntries);
+      setNotifications(loadedNotifs);
+      setAssignedVehicle(veh);
       if (comp) {
         setCompany(comp);
         if (comp.theme_mode) {

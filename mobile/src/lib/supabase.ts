@@ -144,18 +144,52 @@ export async function fetchEmployees(forceRefresh = false): Promise<EmployeeProf
 export async function getActiveEmployee(): Promise<EmployeeProfile | null> {
   const savedId = await AsyncStorage.getItem(CURRENT_EMPLOYEE_ID_KEY);
   if (!savedId) return null;
+
   if (supabase) {
     try {
+      // Verifica se existe uma sessão JWT válida no Supabase Auth antes de consultar RLS
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session || !session.user) {
+        // Sessão antiga (pré-JWT) ou expirada: limpa ID local para redirecionar ao ecrã de Login
+        await AsyncStorage.removeItem(CURRENT_EMPLOYEE_ID_KEY);
+        return null;
+      }
+
       const { data } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, company_id, auth_user_id, full_name, email, role, job_title, phone, hourly_rate, monthly_target_hours, avatar_url, admission_date, is_active, created_at')
         .eq('id', savedId)
         .maybeSingle();
-      if (data) return data as EmployeeProfile;
-    } catch {}
+      if (data) {
+        await AsyncStorage.setItem(`@castello:profile_${savedId}`, JSON.stringify(data));
+        return data as EmployeeProfile;
+      }
+
+      // Se o ID salvo não pertence ao utilizador autenticado, tenta pelo auth_user_id
+      const { data: byAuth } = await supabase
+        .from('profiles')
+        .select('id, company_id, auth_user_id, full_name, email, role, job_title, phone, hourly_rate, monthly_target_hours, avatar_url, admission_date, is_active, created_at')
+        .eq('auth_user_id', session.user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (byAuth) {
+        await setActiveEmployeeId(byAuth.id);
+        await AsyncStorage.setItem(`@castello:profile_${byAuth.id}`, JSON.stringify(byAuth));
+        return byAuth as EmployeeProfile;
+      }
+    } catch {
+      // Fallback offline: usa o perfil em cache local (nunca chama fetchEmployees para evitar recursão)
+      try {
+        const cached = await AsyncStorage.getItem(`@castello:profile_${savedId}`);
+        if (cached) return JSON.parse(cached) as EmployeeProfile;
+      } catch {}
+    }
   }
-  const emps = await fetchEmployees();
-  return emps.find((e) => e.id === savedId) || null;
+
+  return null;
 }
 
 export async function setActiveEmployeeId(employeeId: string): Promise<void> {
