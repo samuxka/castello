@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { CalendarSkeleton } from '../components/Skeletons';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -1869,9 +1870,7 @@ export function CalendarPage({
       {/* 4. ÁREA PRINCIPAL DE VISUALIZAÇÃO                                    */}
       {/* ==================================================================== */}
       {loading ? (
-        <div className="content-panel" style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>
-          A carregar e sincronizar cronograma da empresa...
-        </div>
+        <CalendarSkeleton />
       ) : (
         <>
           {/* ================================================================ */}

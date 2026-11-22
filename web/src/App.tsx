@@ -99,12 +99,9 @@ const DashboardCalendarCard = React.lazy(() => import('./components/DashboardCal
 const SiteProgressLineChart = React.lazy(() => import('./components/SiteProgressLineChart').then((m) => ({ default: m.SiteProgressLineChart })));
 const SiteStatusDonutChart = React.lazy(() => import('./components/SiteStatusDonutChart').then((m) => ({ default: m.SiteStatusDonutChart })));
 
-const PageLoadingFallback = () => (
-  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 340, gap: 12, color: 'var(--text-muted)' }}>
-    <div style={{ width: 28, height: 28, border: '3px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-    <span style={{ fontSize: 13, fontWeight: 500 }}>A carregar módulo...</span>
-  </div>
-);
+import { DashboardSkeleton, PageModuleSkeleton } from './components/Skeletons';
+
+const PageLoadingFallback = () => <PageModuleSkeleton />;
 import { EmployeeAutocompleteSelect } from './components/EmployeeAutocompleteSelect';
 import { JobTitleAutocompleteSelect } from './components/JobTitleAutocompleteSelect';
 import { customConfirm, customAlert } from './context/DialogContext';
@@ -243,6 +240,7 @@ export default function App() {
   const [financialRecords, setFinancialRecords] = useState<FinancialRecord[]>([]);
   const [dashboardTasks, setDashboardTasks] = useState<SiteTask[]>([]);
   const [dashboardTeams, setDashboardTeams] = useState<Team[]>([]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [hideCashBalance, setHideCashBalance] = useState<boolean>(() => {
     try {
       return localStorage.getItem('castello_hide_cash_balance') === 'true';
@@ -357,6 +355,7 @@ export default function App() {
     setDashboardTeams(tm || []);
     setCompanyWorkSessions(ws || []);
     setDashboardTasks(allTasks);
+    setIsInitialLoading(false);
 
     if (selectedSiteForDetail) {
       const refreshed = s.find((x) => x.id === selectedSiteForDetail.id);
@@ -1130,6 +1129,10 @@ export default function App() {
                   </div>
                 </div>
 
+                {isInitialLoading ? (
+                  <DashboardSkeleton />
+                ) : (
+                  <>
                 <div className="kpi-row">
                   {/* CARD DE VALOR EM CAIXA DA EMPRESA COM BOTÃO DE OCULTAR */}
                   <div className="kpi-box" style={{ position: 'relative' }}>
@@ -1796,7 +1799,7 @@ export default function App() {
                     </div>
 
                     {/* 3. Card do Calendário de Próximos Eventos */}
-                    <React.Suspense fallback={<div className="content-panel" style={{ margin: 0, height: 275 }} />}>
+                    <React.Suspense fallback={<div className="content-panel skeleton-block" style={{ margin: 0, height: 275 }} />}>
                       <DashboardCalendarCard
                         companyId={activeCompany.id}
                         sites={sites}
@@ -1805,6 +1808,8 @@ export default function App() {
                       />
                     </React.Suspense>
                 </div>
+                  </>
+                )}
               </>
             )}
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { CardsGridSkeleton } from '../components/Skeletons';
 import {
   Users,
   Search,
@@ -1726,9 +1727,7 @@ export function TeamsPage({
       {/* ================================================================== */}
       {viewMode !== 'planner' &&
         (loading ? (
-          <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
-            A carregar equipas...
-          </div>
+          <CardsGridSkeleton count={6} />
         ) : filteredAndSortedTeams.length === 0 ? (
           <div
             className="content-panel"

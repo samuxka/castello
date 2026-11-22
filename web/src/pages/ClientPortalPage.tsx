@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { ClientPortalSkeleton } from '../components/Skeletons';
 import {
   Building2,
   Calendar,
@@ -202,12 +203,7 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
   };
 
   if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-page)', color: 'var(--text-main)', gap: 12 }}>
-        <div style={{ width: 40, height: 40, border: '3px solid var(--border-color)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>A carregar o progresso da obra em tempo real...</p>
-      </div>
-    );
+    return <ClientPortalSkeleton />;
   }
 
   if (errorMsg || !site) {

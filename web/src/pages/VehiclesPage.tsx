@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { CardsGridSkeleton, TableRowsSkeleton } from '../components/Skeletons';
 import {
   Truck,
   Search,
@@ -555,11 +556,7 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
               </thead>
               <tbody>
                 {loading ? (
-                  <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
-                      Carregando frota de carrinhas...
-                    </td>
-                  </tr>
+                  <TableRowsSkeleton rows={5} cols={8} />
                 ) : filteredAndSortedVehicles.length === 0 ? (
                   <tr>
                     <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
@@ -767,9 +764,7 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
           }}
         >
           {loading ? (
-            <div className="content-panel" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
-              Carregando frota de carrinhas...
-            </div>
+            <CardsGridSkeleton count={6} />
           ) : filteredAndSortedVehicles.length === 0 ? (
             <div className="content-panel" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
               Nenhuma carrinha cadastrada com os filtros selecionados.

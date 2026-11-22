@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { CardsGridSkeleton, TableRowsSkeleton } from '../components/Skeletons';
 import {
   Boxes,
   Search,
@@ -511,11 +512,7 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
               </thead>
               <tbody>
                 {loading ? (
-                  <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
-                      Carregando inventário...
-                    </td>
-                  </tr>
+                  <TableRowsSkeleton rows={5} cols={6} />
                 ) : filteredAndSortedItems.length === 0 ? (
                   <tr>
                     <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
@@ -638,9 +635,7 @@ export function InventoryPage({ companyId, sites, showNotice }: InventoryPagePro
           }}
         >
           {loading ? (
-            <div className="content-panel" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
-              Carregando inventário...
-            </div>
+            <CardsGridSkeleton count={6} />
           ) : filteredAndSortedItems.length === 0 ? (
             <div className="content-panel" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
               Nenhum item cadastrado no inventário com os filtros selecionados.
