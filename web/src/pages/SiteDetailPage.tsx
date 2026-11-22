@@ -60,6 +60,7 @@ import {
   getEffectiveRemainingAmount,
 } from '../lib/financialCalculations';
 import { uploadImageToCloudinary } from '../lib/cloudinary';
+import { DOCUMENT_MIME_TYPES, toSafeExternalUrl, validateUploadFile } from '../lib/urlSafety';
 import { customConfirm, customAlert } from '../context/DialogContext';
 
 interface SiteDetailPageProps {
@@ -170,6 +171,18 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
   const handleDocFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const check = validateUploadFile(file, {
+      maxSizeMb: 10,
+      allowedMimeTypes: DOCUMENT_MIME_TYPES,
+    });
+    if (!check.valid) {
+      await customAlert({
+        title: 'Ficheiro Inválido',
+        message: check.error,
+        type: 'warning',
+      });
+      return;
+    }
     setUploadingDoc(true);
     try {
       const sizeStr = file.size > 1024 * 1024
@@ -186,9 +199,12 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
           if (!docName.trim()) {
             setDocName(file.name.replace(/\.[^/.]+$/, ''));
           }
-        } catch {
-          // Fallback para link local/base64
-          setDocFileUrl(base64);
+        } catch (err: any) {
+          await customAlert({
+            title: 'Erro no Upload',
+            message: err?.message || 'Não foi possível enviar o documento para a nuvem.',
+            type: 'error',
+          });
         } finally {
           setUploadingDoc(false);
         }
@@ -927,9 +943,9 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
 
                       <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                         <div style={{ display: 'inline-flex', gap: 6 }}>
-                          {doc.file_url ? (
+                          {toSafeExternalUrl(doc.file_url) ? (
                             <a
-                              href={doc.file_url}
+                              href={toSafeExternalUrl(doc.file_url)!}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="btn-flat-secondary"

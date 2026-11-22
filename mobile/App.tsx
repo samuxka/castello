@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import {
+  authenticateBiometricSession,
   authenticateEmployee,
   clearActiveEmployee,
   fetchEmployees,
@@ -229,7 +230,7 @@ function MainApp() {
         const [empEntries, loadedNotifs, veh, comp] = await Promise.all([
           fetchEmployeeTimeEntries(activeEmp.id),
           fetchCompanyNotifications(activeEmp.company_id),
-          fetchAssignedVehicle(activeEmp.id, activeEmp.full_name),
+          fetchAssignedVehicle(activeEmp.id, activeEmp.full_name, activeEmp.company_id),
           fetchCompanyMobile(activeEmp.company_id),
         ]);
         setEntries(empEntries);
@@ -260,7 +261,7 @@ function MainApp() {
     setHasBiometricsSaved(true);
     const [empEntries, veh, comp] = await Promise.all([
       fetchEmployeeTimeEntries(emp.id),
-      fetchAssignedVehicle(emp.id, emp.full_name),
+      fetchAssignedVehicle(emp.id, emp.full_name, emp.company_id),
       fetchCompanyMobile(emp.company_id),
     ]);
     setEntries(empEntries);
@@ -331,8 +332,8 @@ function MainApp() {
         return false;
       }
 
-      // Autentica usando as credenciais preservadas com segurança
-      const emp = await authenticateEmployee(creds.email, creds.code);
+      // Autentica validando a sessão JWT segura do Supabase Auth (sem PIN em texto claro no AsyncStorage)
+      const emp = await authenticateBiometricSession();
       if (!emp) {
         showCustomAlert(
           'Credenciais Inválidas',

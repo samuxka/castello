@@ -103,6 +103,7 @@ import {
 import { CashFlowChart } from '../components/CashFlowChart';
 import { FinancialOverviewCharts } from '../components/FinancialOverviewCharts';
 import { uploadImageToCloudinary } from '../lib/cloudinary';
+import { DOCUMENT_MIME_TYPES, toSafeExternalUrl, validateUploadFile } from '../lib/urlSafety';
 import { customAlert, customConfirm } from '../context/DialogContext';
 
 export interface FinancialPageProps {
@@ -581,6 +582,18 @@ export function FinancialPage({
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const check = validateUploadFile(file, {
+      maxSizeMb: 10,
+      allowedMimeTypes: DOCUMENT_MIME_TYPES,
+    });
+    if (!check.valid) {
+      await customAlert({
+        title: 'Ficheiro Inválido',
+        message: check.error,
+        type: 'warning',
+      });
+      return;
+    }
     setUploadingReceipt(true);
     try {
       const reader = new FileReader();
@@ -590,9 +603,12 @@ export function FinancialPage({
           const url = await uploadImageToCloudinary(base64, 'castello_receipts');
           onSuccessUrl(url);
           showNotice('Comprovativo anexado com sucesso!');
-        } catch {
-          onSuccessUrl(base64);
-          showNotice('Comprovativo anexado localmente!');
+        } catch (err: any) {
+          await customAlert({
+            title: 'Erro no Upload',
+            message: err?.message || 'Não foi possível enviar o comprovativo para a nuvem.',
+            type: 'error',
+          });
         } finally {
           setUploadingReceipt(false);
         }
@@ -2341,11 +2357,11 @@ export function FinancialPage({
                                 {rec.description}
                               </div>
                             )}
-                            {rec.receipt_url && (
+                            {toSafeExternalUrl(rec.receipt_url) && (
                               <a
-                                href={rec.receipt_url}
+                                href={toSafeExternalUrl(rec.receipt_url)!}
                                 target="_blank"
-                                rel="noreferrer"
+                                rel="noopener noreferrer"
                                 style={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -3667,11 +3683,11 @@ export function FinancialPage({
                     }}
                   >
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      {formReceiptUrl ? (
+                      {toSafeExternalUrl(formReceiptUrl) ? (
                         <a
-                          href={formReceiptUrl}
+                          href={toSafeExternalUrl(formReceiptUrl)!}
                           target="_blank"
-                          rel="noreferrer"
+                          rel="noopener noreferrer"
                           style={{ color: 'var(--primary)', fontWeight: 700 }}
                         >
                           Comprovativo carregado (Clique para visualizar)

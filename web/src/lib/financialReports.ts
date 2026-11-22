@@ -42,9 +42,21 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
+function neutralizeSpreadsheetFormula(raw: string): string {
+  // Evita CSV/Excel Formula Injection (DDE) para células iniciadas por =, +, -, @, TAB ou CR,
+  // preservando números negativos puros (ex: -120.50 ou -120,50).
+  if (/^[\t\r=@+]/.test(raw)) {
+    return `'${raw}`;
+  }
+  if (raw.startsWith('-') && !/^-\d+([.,]\d+)?%?$/.test(raw.trim())) {
+    return `'${raw}`;
+  }
+  return raw;
+}
+
 function escapeCsvCell(val: string | number): string {
-  const s = String(val ?? '');
-  if (s.includes(';') || s.includes('"') || s.includes('\n')) {
+  const s = typeof val === 'number' ? String(val) : neutralizeSpreadsheetFormula(String(val ?? ''));
+  if (s.includes(';') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
     return `"${s.replace(/"/g, '""')}"`;
   }
   return s;
@@ -358,12 +370,12 @@ export function exportFinancialReport(
 
   if (format === 'csv') {
     const metaLines = [
-      `"Empresa:";"${ctx.company.name}"`,
-      `"NIF:";"${ctx.company.tax_id || 'N/D'}"`,
-      `"Relatório:";"${title}"`,
-      `"Período:";"${ctx.periodLabel}"`,
-      `"Filtro de Obra:";"${ctx.siteFilterLabel}"`,
-      `"Gerado em:";"${generatedAt}"`,
+      `${escapeCsvCell('Empresa:')};${escapeCsvCell(ctx.company.name)}`,
+      `${escapeCsvCell('NIF:')};${escapeCsvCell(ctx.company.tax_id || 'N/D')}`,
+      `${escapeCsvCell('Relatório:')};${escapeCsvCell(title)}`,
+      `${escapeCsvCell('Período:')};${escapeCsvCell(ctx.periodLabel)}`,
+      `${escapeCsvCell('Filtro de Obra:')};${escapeCsvCell(ctx.siteFilterLabel)}`,
+      `${escapeCsvCell('Gerado em:')};${escapeCsvCell(generatedAt)}`,
       '',
     ];
     const headerLine = headers.map(escapeCsvCell).join(';');

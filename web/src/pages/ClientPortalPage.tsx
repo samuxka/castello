@@ -28,22 +28,12 @@ import {
 } from 'lucide-react';
 import {
   applyTheme,
-  getCalendarEvents,
-  getCompanyById,
-  getFinancialRecords,
-  getSiteByShareCode,
-  getSiteAccidents,
-  getSiteDailyLogs,
-  getSiteDocuments,
-  getSiteTasks,
-  getSiteWorkSessions,
-  syncSiteMilestonesWithCalendar,
+  getPublicSitePortal,
 } from '../lib/supabase';
 import {
   CalendarEvent,
   Company,
   ConstructionSite,
-  FinancialRecord,
   SiteDailyLog,
   SiteDocument,
   SiteTask,
@@ -61,11 +51,11 @@ type ClientTab = 'geral' | 'tarefas' | 'galeria' | 'documentos';
 
 export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode }) => {
   const [site, setSite] = useState<ConstructionSite | null>(null);
-  const [company, setCompany] = useState<Company | null>(null);
+  const [company, setCompany] = useState<Partial<Company> | null>(null);
   const [tasks, setTasks] = useState<SiteTask[]>([]);
   const [dailyLogs, setDailyLogs] = useState<SiteDailyLog[]>([]);
   const [workSessions, setWorkSessions] = useState<SiteWorkSession[]>([]);
-  const [financials, setFinancials] = useState<FinancialRecord[]>([]);
+  const [paidRevenuesTotal, setPaidRevenuesTotal] = useState<number>(0);
   const [documents, setDocuments] = useState<SiteDocument[]>([]);
   const [clientMilestones, setClientMilestones] = useState<CalendarEvent[]>([]);
 
@@ -97,29 +87,30 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
     (async () => {
       setLoading(true);
       try {
-        const foundSite = await getSiteByShareCode(shareCode);
-        if (!foundSite) {
+        // Consulta escopada exclusivamente via RPC get_public_site_portal (nunca expõe finanças/agenda de outras obras)
+        const portal = await getPublicSitePortal(shareCode);
+        if (!portal || !portal.site) {
           setErrorMsg('Obra não encontrada. Verifique o código de acompanhamento.');
           return;
         }
-        setSite(foundSite);
 
-        // Carrega empresa, tarefas, diários, sessões, finanças, documentos, calendário e acidentes em paralelo (sem waterfall)
-        syncSiteMilestonesWithCalendar(foundSite, foundSite.company_id).catch(() => {});
-        const [comp, t, l, ws, fin, docs, calEvts, accs] = await Promise.all([
-          getCompanyById(foundSite.company_id),
-          getSiteTasks(foundSite.id),
-          getSiteDailyLogs(foundSite.id),
-          getSiteWorkSessions(foundSite.id),
-          getFinancialRecords(foundSite.company_id || undefined),
-          getSiteDocuments(foundSite.id),
-          getCalendarEvents(foundSite.company_id || undefined),
-          getSiteAccidents(foundSite.id, foundSite.company_id),
-        ]);
+        const {
+          site: foundSite,
+          company: comp,
+          tasks: t,
+          daily_logs: l,
+          work_sessions: ws,
+          documents: docs,
+          accidents: accs,
+          milestones: calEvts,
+          paid_revenues_total: paidTotal,
+        } = portal;
+
+        setSite(foundSite);
 
         if (comp) {
           setCompany(comp);
-          const firmColor: ThemeColor = comp.theme_color || 'azul';
+          const firmColor: ThemeColor = (comp.theme_color as ThemeColor) || 'azul';
           applyTheme(firmColor, clientTheme);
         } else {
           applyTheme('azul', clientTheme);
@@ -159,11 +150,11 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
         setTasks(t);
         setDailyLogs(cleanLogs);
         setWorkSessions(ws);
-        setFinancials(fin.filter((r) => r.site_id === foundSite.id));
+        setPaidRevenuesTotal(Number(paidTotal || 0));
         setDocuments(docs);
         setAccidents(finalAccidents);
         setClientMilestones(
-          calEvts
+          (calEvts || [])
             .filter(
               (ev) =>
                 ev.site_id === foundSite.id &&
@@ -310,11 +301,9 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
     }
   });
 
-  // Cálculos Financeiros
+  // Cálculos Financeiros (recebe apenas total consolidado desta obra via RPC escopada)
   const totalBudget = Number(site.budget || 0);
-  const paidRevenues = financials
-    .filter((f) => f.type === 'receita' && f.status === 'pago')
-    .reduce((sum, f) => sum + Number(f.amount || 0), 0);
+  const paidRevenues = paidRevenuesTotal;
   const remainingBudget = Math.max(0, totalBudget - paidRevenues);
   const financialProgress = totalBudget > 0 ? Math.min(100, Math.round((paidRevenues / totalBudget) * 100)) : 0;
 

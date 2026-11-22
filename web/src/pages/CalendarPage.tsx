@@ -308,7 +308,17 @@ export function CalendarPage({
   }>(() => {
     try {
       const saved = localStorage.getItem(gcalStorageKey);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Nunca carregar access token persistido em localStorage (segurança contra XSS)
+        return {
+          autoSyncOnSave: Boolean(parsed.autoSyncOnSave ?? true),
+          autoOpenGcalTab: Boolean(parsed.autoOpenGcalTab ?? true),
+          googleAccessToken: '',
+          managerEmail: String(parsed.managerEmail || ''),
+          defaultReminderMinutes: Number(parsed.defaultReminderMinutes || 60),
+        };
+      }
     } catch {}
     return {
       autoSyncOnSave: true,
@@ -322,7 +332,9 @@ export function CalendarPage({
   const saveGcalConfig = (next: typeof gcalConfig) => {
     setGcalConfig(next);
     try {
-      localStorage.setItem(gcalStorageKey, JSON.stringify(next));
+      // Mantém googleAccessToken apenas em memória durante a sessão (não grava em localStorage)
+      const { googleAccessToken: _ephemeralToken, ...safeToPersist } = next;
+      localStorage.setItem(gcalStorageKey, JSON.stringify(safeToPersist));
     } catch {}
   };
 

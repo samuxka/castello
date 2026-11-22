@@ -51,13 +51,18 @@ import {
   vehicleSchema,
 } from './validation';
 
-const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL ||
-  'https://kkygvorgxehkadaqfqrx.supabase.co';
-const SUPABASE_ANON_KEY =
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const SUPABASE_ANON_KEY = (
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  'sb_publishable_JwCC3MlUbGCfgWFWSbkxmw_zBHdsKFX';
+  ''
+).trim();
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error(
+    '[Castello Security] Variáveis VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY são obrigatórias no ambiente.'
+  );
+}
 
 export const isSupabaseConfigured =
   Boolean(SUPABASE_URL && SUPABASE_ANON_KEY) &&
@@ -83,146 +88,71 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
 const CURRENT_COMPANY_KEY = 'castello_active_company_session';
 
 // ============================================================================
-// CRIPTOGRAFIA DE SENHAS E PINS (SHA-256 + SALT — COMPATÍVEL WEB E MOBILE)
+// SESSÃO DA FIRMA / PATRÃO (VALIDADA VIA SUPABASE AUTH JWT)
 // ============================================================================
-const HASH_PREFIX = 'sha256$';
-const CREDENTIAL_SALT = 'castello_sec_salt_v1:';
-const SHA256_K = [
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-];
-const SHA256_W = new Int32Array(64);
-
-function sha256HexSync(asciiInput: string): string {
-  const utf8 = unescape(encodeURIComponent(asciiInput));
-  let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
-  let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
-
-  const msgLen = utf8.length;
-  const wordCount = (((msgLen + 8) >> 6) + 1) << 4;
-  const words = new Int32Array(wordCount);
-
-  for (let i = 0; i < msgLen; i++) {
-    words[i >> 2] |= utf8.charCodeAt(i) << (24 - (i % 4) * 8);
-  }
-  words[msgLen >> 2] |= 0x80 << (24 - (msgLen % 4) * 8);
-  words[wordCount - 1] = msgLen * 8;
-
-  for (let i = 0; i < wordCount; i += 16) {
-    for (let t = 0; t < 16; t++) SHA256_W[t] = words[i + t];
-    for (let t = 16; t < 64; t++) {
-      const w15 = SHA256_W[t - 15];
-      const w2 = SHA256_W[t - 2];
-      const s0 = ((w15 >>> 7) | (w15 << 25)) ^ ((w15 >>> 18) | (w15 << 14)) ^ (w15 >>> 3);
-      const s1 = ((w2 >>> 17) | (w2 << 15)) ^ ((w2 >>> 19) | (w2 << 13)) ^ (w2 >>> 10);
-      SHA256_W[t] = (SHA256_W[t - 16] + s0 + SHA256_W[t - 7] + s1) | 0;
-    }
-
-    let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
-    for (let t = 0; t < 64; t++) {
-      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
-      const ch = (e & f) ^ (~e & g);
-      const temp1 = (h + S1 + ch + SHA256_K[t] + SHA256_W[t]) | 0;
-      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
-      const maj = (a & b) ^ (a & c) ^ (b & c);
-      const temp2 = (S0 + maj) | 0;
-
-      h = g;
-      g = f;
-      f = e;
-      e = (d + temp1) | 0;
-      d = c;
-      c = b;
-      b = a;
-      a = (temp1 + temp2) | 0;
-    }
-
-    h0 = (h0 + a) | 0;
-    h1 = (h1 + b) | 0;
-    h2 = (h2 + c) | 0;
-    h3 = (h3 + d) | 0;
-    h4 = (h4 + e) | 0;
-    h5 = (h5 + f) | 0;
-    h6 = (h6 + g) | 0;
-    h7 = (h7 + h) | 0;
-  }
-
-  return [h0, h1, h2, h3, h4, h5, h6, h7].map((v) => (v >>> 0).toString(16).padStart(8, '0')).join('');
+function stripSensitiveCompanyFields(company: Company): Company {
+  const { password_hash: _removed, ...safe } = company as Company & { password_hash?: string };
+  return safe as Company;
 }
 
-export function isHashedCredential(value?: string | null): boolean {
-  return Boolean(value && value.startsWith(HASH_PREFIX) && value.length === HASH_PREFIX.length + 64);
-}
-
-export function hashCredential(plainText: string): string {
-  const clean = (plainText || '').trim();
-  if (isHashedCredential(clean)) return clean;
-  return `${HASH_PREFIX}${sha256HexSync(`${CREDENTIAL_SALT}${clean}`)}`;
-}
-
-// Recupera automaticamente qualquer PIN de funcionário que tenha sido convertido para sha256$
-function recoverHashedEmployeePins(employees: EmployeeProfile[]): EmployeeProfile[] {
-  const hashedTargets = new Set<string>();
-  for (const emp of employees) {
-    if (isHashedCredential(emp.access_code)) {
-      hashedTargets.add(emp.access_code);
-    }
-  }
-  if (hashedTargets.size === 0) return employees;
-
-  const resolved = new Map<string, string>();
-  const tryCandidate = (pin: string) => {
-    const h = `${HASH_PREFIX}${sha256HexSync(`${CREDENTIAL_SALT}${pin}`)}`;
-    if (hashedTargets.has(h) && !resolved.has(h)) {
-      resolved.set(h, pin);
-    }
-  };
-
-  // Testa PINs comuns de 4 dígitos (0000-9999) e 6 dígitos (000000-999999)
-  for (let i = 0; i <= 9999 && resolved.size < hashedTargets.size; i++) {
-    tryCandidate(String(i));
-    tryCandidate(String(i).padStart(4, '0'));
-  }
-  for (let i = 0; i <= 999999 && resolved.size < hashedTargets.size; i++) {
-    tryCandidate(String(i).padStart(6, '0'));
-  }
-
-  return employees.map((emp) => {
-    if (isHashedCredential(emp.access_code)) {
-      const recovered = resolved.get(emp.access_code) || '123456';
-      if (supabase) {
-        supabase.from('profiles').update({ access_code: recovered }).eq('id', emp.id).then(() => {});
-      }
-      return { ...emp, access_code: recovered };
-    }
-    return emp;
-  });
-}
-
-// ============================================================================
-// SESSÃO DA FIRMA / PATRÃO
-// ============================================================================
 export function getActiveCompanySession(): Company | null {
   const raw = localStorage.getItem(CURRENT_COMPANY_KEY);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Company;
-    // Se a sessão ativa ainda tinha password_hash em texto simples, migra silenciosamente no Supabase
-    if (parsed && parsed.id && parsed.password_hash && !isHashedCredential(parsed.password_hash)) {
-      const hashed = hashCredential(parsed.password_hash);
-      parsed.password_hash = hashed;
-      localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(parsed));
-      if (supabase) {
-        supabase.from('companies').update({ password_hash: hashed }).eq('id', parsed.id).then(() => {});
-      }
+    if (!parsed || !parsed.id) return null;
+    return stripSensitiveCompanyFields(parsed);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Valida no boot se existe realmente uma sessão JWT ativa no Supabase Auth.
+ * Impede bypass de autenticação via edição manual de localStorage.
+ */
+export async function restoreVerifiedCompanySession(): Promise<Company | null> {
+  if (!supabase) return null;
+  try {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+
+    if (error || !session || !session.user) {
+      localStorage.removeItem(CURRENT_COMPANY_KEY);
+      invalidateCache();
+      return null;
     }
-    return parsed;
+
+    const { data: comp } = await supabase
+      .from('companies')
+      .select(COMPANY_SAFE_COLS)
+      .eq('owner_auth_id', session.user.id)
+      .maybeSingle();
+
+    if (comp) {
+      const safe = stripSensitiveCompanyFields(comp as unknown as Company);
+      const cloudSettings = await fetchCompanyCloudSettings(safe.id);
+      if (cloudSettings) {
+        if (cloudSettings.logo_url && !safe.logo_url) safe.logo_url = cloudSettings.logo_url;
+        if (cloudSettings.theme_color && !safe.theme_color) safe.theme_color = cloudSettings.theme_color;
+        if (cloudSettings.theme_mode && !safe.theme_mode) safe.theme_mode = cloudSettings.theme_mode;
+      }
+      localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(safe));
+      return safe;
+    }
+
+    // Tenta vincular firma legada cujo owner_email coincide com o email autenticado no JWT
+    const { data: claimed } = await supabase.rpc('claim_legacy_company_by_email');
+    if (claimed && typeof claimed === 'object' && (claimed as any).id) {
+      const safe = stripSensitiveCompanyFields(claimed as Company);
+      localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(safe));
+      return safe;
+    }
+
+    localStorage.removeItem(CURRENT_COMPANY_KEY);
+    return null;
   } catch {
     return null;
   }
@@ -300,9 +230,12 @@ export async function fetchWithDedupe<T>(key: string, fetcher: () => Promise<T>)
 export function setActiveCompanySession(company: Company | null) {
   invalidateCache(); // Limpa cache imediatamente na troca de sessão/logout (isolamento multi-tenant)
   if (company) {
-    localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(company));
+    localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(stripSensitiveCompanyFields(company)));
   } else {
     localStorage.removeItem(CURRENT_COMPANY_KEY);
+    if (supabase) {
+      supabase.auth.signOut().catch(() => {});
+    }
   }
 }
 
@@ -377,61 +310,79 @@ export async function registerCompany(
   }
 
   const cleanEmail = ownerEmail.trim().toLowerCase();
-  const hashedPassword = hashCredential(password);
 
-  if (supabase) {
-    const { data: existing } = await supabase
-      .from('companies')
-      .select('id')
-      .eq('owner_email', cleanEmail)
-      .maybeSingle();
-
-    if (existing) {
-      throw new Error('Já existe uma firma registada com este e-mail.');
-    }
-
-    const { data, error } = await supabase
-      .from('companies')
-      .insert({
-        name: name.trim(),
-        owner_email: cleanEmail,
-        password_hash: hashedPassword,
-        phone: phone?.trim() || null,
-        tax_id: taxId?.trim() || null,
-      })
-      .select(COMPANY_SAFE_COLS)
-      .single();
-
-    if (error || !data) {
-      throw new Error(error?.message || 'Falha ao criar firma.');
-    }
-
-    const createdCompany = data as unknown as Company;
-
-    // Carrega configurações da nuvem (logo_url, theme_color, theme_mode)
-    const cloudSettings = await fetchCompanyCloudSettings(createdCompany.id);
-    if (cloudSettings) {
-      if (cloudSettings.logo_url && !createdCompany.logo_url) createdCompany.logo_url = cloudSettings.logo_url;
-      if (cloudSettings.theme_color && !createdCompany.theme_color) createdCompany.theme_color = cloudSettings.theme_color;
-      if (cloudSettings.theme_mode && !createdCompany.theme_mode) createdCompany.theme_mode = cloudSettings.theme_mode;
-    }
-
-    if (createdCompany.theme_color || createdCompany.theme_mode) {
-      saveTheme((createdCompany.theme_color as ThemeColor) || 'azul', (createdCompany.theme_mode as ThemeMode) || 'dark');
-    }
-
-    return createdCompany;
+  if (!supabase) {
+    throw new Error('Serviço Supabase não configurado no ambiente.');
   }
 
-  const mockCompany: Company = {
-    id: crypto.randomUUID(),
-    name,
+  // 1. Cria credencial real no Supabase Auth (bcrypt/scrypt no servidor + sessão JWT)
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email: cleanEmail,
+    password,
+    options: {
+      data: { company_name: name.trim() },
+    },
+  });
+
+  if (authError) {
+    if (authError.message?.toLowerCase().includes('already registered')) {
+      throw new Error('Já existe uma conta registada com este e-mail.');
+    }
+    throw new Error(authError.message || 'Falha ao registar conta de autenticação.');
+  }
+
+  const authUser = authData.user;
+  if (!authUser) {
+    throw new Error('Não foi possível criar a sessão de autenticação.');
+  }
+
+  // 2. Cria registo da empresa vinculado ao auth.uid() via owner_auth_id
+  const insertPayload: Record<string, unknown> = {
+    name: name.trim(),
     owner_email: cleanEmail,
-    password_hash: hashedPassword,
-    phone,
-    tax_id: taxId,
+    owner_auth_id: authUser.id,
+    password_hash: 'supabase_auth_managed',
+    phone: phone?.trim() || null,
+    tax_id: taxId?.trim() || null,
   };
-  return mockCompany;
+
+  let { data, error } = await supabase
+    .from('companies')
+    .insert(insertPayload)
+    .select(COMPANY_SAFE_COLS)
+    .single();
+
+  // Fallback temporário caso a coluna owner_auth_id ainda não tenha sido aplicada no banco
+  if (error && (error.code === 'PGRST204' || error.message?.includes('owner_auth_id'))) {
+    delete insertPayload.owner_auth_id;
+    const retry = await supabase
+      .from('companies')
+      .insert(insertPayload)
+      .select(COMPANY_SAFE_COLS)
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Falha ao criar firma.');
+  }
+
+  const createdCompany = stripSensitiveCompanyFields(data as unknown as Company);
+
+  const cloudSettings = await fetchCompanyCloudSettings(createdCompany.id);
+  if (cloudSettings) {
+    if (cloudSettings.logo_url && !createdCompany.logo_url) createdCompany.logo_url = cloudSettings.logo_url;
+    if (cloudSettings.theme_color && !createdCompany.theme_color) createdCompany.theme_color = cloudSettings.theme_color;
+    if (cloudSettings.theme_mode && !createdCompany.theme_mode) createdCompany.theme_mode = cloudSettings.theme_mode;
+  }
+
+  if (createdCompany.theme_color || createdCompany.theme_mode) {
+    saveTheme((createdCompany.theme_color as ThemeColor) || 'azul', (createdCompany.theme_mode as ThemeMode) || 'dark');
+  }
+
+  setActiveCompanySession(createdCompany);
+  return createdCompany;
 }
 
 export async function getCompanyByEmail(email: string): Promise<Company | null> {
@@ -442,7 +393,7 @@ export async function getCompanyByEmail(email: string): Promise<Company | null> 
       .select(COMPANY_SAFE_COLS)
       .eq('owner_email', email.trim().toLowerCase())
       .maybeSingle();
-    return (data as unknown as Company) || null;
+    return data ? stripSensitiveCompanyFields(data as unknown as Company) : null;
   } catch {
     return null;
   }
@@ -461,51 +412,57 @@ export async function loginCompany(
   }
 
   const cleanEmail = ownerEmail.trim().toLowerCase();
-  const hashedInput = hashCredential(password);
 
-  if (supabase) {
-    const { data, error } = await supabase
-      .from('companies')
-      .select('*')
-      .eq('owner_email', cleanEmail)
-      .maybeSingle();
-
-    if (error || !data) {
-      throw new Error('E-mail ou senha da firma incorretos.');
-    }
-
-    const storedHash = String(data.password_hash || '');
-    const isMatch = storedHash === hashedInput || storedHash === password.trim();
-
-    if (!isMatch) {
-      throw new Error('E-mail ou senha da firma incorretos.');
-    }
-
-    // Se ainda estava em texto simples na base de dados, criptografa automaticamente agora
-    if (!isHashedCredential(storedHash)) {
-      await supabase
-        .from('companies')
-        .update({ password_hash: hashedInput })
-        .eq('id', data.id);
-      data.password_hash = hashedInput;
-    }
-
-    // Carrega configurações da nuvem (logo_url, theme_color, theme_mode)
-    const cloudSettings = await fetchCompanyCloudSettings(data.id);
-    if (cloudSettings) {
-      if (cloudSettings.logo_url && !data.logo_url) data.logo_url = cloudSettings.logo_url;
-      if (cloudSettings.theme_color && !data.theme_color) data.theme_color = cloudSettings.theme_color;
-      if (cloudSettings.theme_mode && !data.theme_mode) data.theme_mode = cloudSettings.theme_mode;
-    }
-
-    if (data.theme_color || data.theme_mode) {
-      saveTheme((data.theme_color as ThemeColor) || 'azul', (data.theme_mode as ThemeMode) || 'dark');
-    }
-
-    setActiveCompanySession(data as Company);
-    return data as Company;
+  if (!supabase) {
+    throw new Error('Serviço indisponível.');
   }
-  throw new Error('Serviço indisponível.');
+
+  // 1. Autenticação real no servidor via Supabase Auth (JWT)
+  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+    email: cleanEmail,
+    password,
+  });
+
+  if (authError || !authData.user) {
+    throw new Error('E-mail ou senha da firma incorretos.');
+  }
+
+  // 2. Busca firma vinculada ao auth.uid() (sem nunca ler password_hash)
+  let companyData: Company | null = null;
+  const { data: byOwner } = await supabase
+    .from('companies')
+    .select(COMPANY_SAFE_COLS)
+    .eq('owner_auth_id', authData.user.id)
+    .maybeSingle();
+
+  if (byOwner) {
+    companyData = stripSensitiveCompanyFields(byOwner as unknown as Company);
+  } else {
+    // Migração segura de firma legada via RPC autenticada
+    const { data: claimed } = await supabase.rpc('claim_legacy_company_by_email');
+    if (claimed && typeof claimed === 'object' && (claimed as any).id) {
+      companyData = stripSensitiveCompanyFields(claimed as Company);
+    }
+  }
+
+  if (!companyData) {
+    throw new Error('Nenhuma firma associada a esta conta foi encontrada.');
+  }
+
+  // Carrega configurações da nuvem (logo_url, theme_color, theme_mode)
+  const cloudSettings = await fetchCompanyCloudSettings(companyData.id);
+  if (cloudSettings) {
+    if (cloudSettings.logo_url && !companyData.logo_url) companyData.logo_url = cloudSettings.logo_url;
+    if (cloudSettings.theme_color && !companyData.theme_color) companyData.theme_color = cloudSettings.theme_color;
+    if (cloudSettings.theme_mode && !companyData.theme_mode) companyData.theme_mode = cloudSettings.theme_mode;
+  }
+
+  if (companyData.theme_color || companyData.theme_mode) {
+    saveTheme((companyData.theme_color as ThemeColor) || 'azul', (companyData.theme_mode as ThemeMode) || 'dark');
+  }
+
+  setActiveCompanySession(companyData);
+  return companyData;
 }
 
 export async function loginWithGoogle(): Promise<void> {
@@ -535,46 +492,48 @@ export async function handleGoogleAuthRedirect(): Promise<Company | null> {
       return null;
     }
     const user = session.user;
-    const userEmail = user.email;
+    const userEmail = user.email?.toLowerCase().trim();
     if (!userEmail) return null;
 
-    // Procura se já existe uma firma associada a este e-mail
-    const { data: existingCompany } = await supabase
+    // 1. Procura firma já vinculada ao auth.uid() ou reivindica firma legada por owner_email
+    const { data: existingByAuth } = await supabase
       .from('companies')
-      .select('*')
-      .eq('admin_email', userEmail.toLowerCase().trim())
+      .select(COMPANY_SAFE_COLS)
+      .eq('owner_auth_id', user.id)
       .maybeSingle();
 
-    if (existingCompany) {
-      setActiveCompanySession(existingCompany as Company);
-      return existingCompany as Company;
+    if (existingByAuth) {
+      const safe = stripSensitiveCompanyFields(existingByAuth as unknown as Company);
+      setActiveCompanySession(safe);
+      return safe;
     }
 
-    // Se é a primeira vez que entra via Google, regista a firma automaticamente
+    const { data: claimed } = await supabase.rpc('claim_legacy_company_by_email');
+    if (claimed && typeof claimed === 'object' && (claimed as any).id) {
+      const safe = stripSensitiveCompanyFields(claimed as Company);
+      setActiveCompanySession(safe);
+      return safe;
+    }
+
+    // 2. Primeira vez que entra via Google: cria a firma com owner_email e owner_auth_id corretos
     const companyName =
       user.user_metadata?.full_name ||
       user.user_metadata?.name ||
       userEmail.split('@')[0] ||
       'Firma Castello';
 
-    const newCompanyId =
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : 'comp_' + Math.random().toString(36).substring(2, 11);
-
-    const newCompany: any = {
-      id: newCompanyId,
+    const newCompany: Record<string, unknown> = {
       name: companyName,
-      admin_email: userEmail.toLowerCase().trim(),
-      password_hash: hashCredential(newCompanyId),
-      phone: user.phone || '',
-      created_at: new Date().toISOString(),
+      owner_email: userEmail,
+      owner_auth_id: user.id,
+      password_hash: 'supabase_auth_managed',
+      phone: user.phone || null,
     };
 
     const { data: created, error: insertError } = await supabase
       .from('companies')
       .insert([newCompany])
-      .select('*')
+      .select(COMPANY_SAFE_COLS)
       .maybeSingle();
 
     if (insertError) {
@@ -583,8 +542,9 @@ export async function handleGoogleAuthRedirect(): Promise<Company | null> {
     }
 
     if (created) {
-      setActiveCompanySession(created as Company);
-      return created as Company;
+      const safe = stripSensitiveCompanyFields(created as unknown as Company);
+      setActiveCompanySession(safe);
+      return safe;
     }
   } catch (err) {
     console.warn('Erro ao processar sessão Google:', err);
@@ -659,36 +619,40 @@ export async function updateCompanyProfile(
 }
 
 export async function changeCompanyPassword(
-  companyId: string,
+  _companyId: string,
   currentPassword: string,
   newPassword: string
 ): Promise<void> {
-  const current = getActiveCompanySession();
-  const hashedCurrent = hashCredential(currentPassword);
-  const hashedNew = hashCredential(newPassword);
+  if (!supabase) {
+    throw new Error('Serviço indisponível.');
+  }
 
-  if (
-    current &&
-    current.password_hash !== hashedCurrent &&
-    current.password_hash !== currentPassword.trim()
-  ) {
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user || !user.email) {
+    throw new Error('Sessão inválida. Inicie sessão novamente antes de alterar a senha.');
+  }
+
+  // Reautentica no servidor para validar a senha atual com segurança
+  const { error: verifyErr } = await supabase.auth.signInWithPassword({
+    email: user.email,
+    password: currentPassword,
+  });
+
+  if (verifyErr) {
     throw new Error('A senha atual fornecida está incorreta.');
   }
 
-  if (supabase) {
-    const { error } = await supabase
-      .from('companies')
-      .update({ password_hash: hashedNew })
-      .eq('id', companyId);
+  // Atualiza a senha diretamente no Supabase Auth (bcrypt/scrypt no servidor)
+  const { error: updateErr } = await supabase.auth.updateUser({
+    password: newPassword,
+  });
 
-    if (error) {
-      throw new Error('Falha ao atualizar senha: ' + error.message);
-    }
-  }
-
-  if (current) {
-    current.password_hash = hashedNew;
-    setActiveCompanySession(current);
+  if (updateErr) {
+    throw new Error('Falha ao atualizar senha: ' + updateErr.message);
   }
 }
 
@@ -715,12 +679,15 @@ export async function deleteCompanyAccount(companyId: string): Promise<void> {
 // OBRAS
 // ============================================================================
 function generateShareCode(): string {
+  // 12 caracteres alfanuméricos gerados via CSPRNG (~60 bits de entropia, sem ambiguidade visual)
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let result = 'CST-';
-  for (let i = 0; i < 4; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  let raw = '';
+  for (let i = 0; i < bytes.length; i++) {
+    raw += chars.charAt(bytes[i] % chars.length);
   }
-  return result;
+  return `CST-${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`;
 }
 
 const LOCAL_SITE_DATES_KEY = 'castello_site_dates_cache';
@@ -760,7 +727,7 @@ export async function getSites(companyId?: string, forceRefresh = false): Promis
           .select(SITES_COLS)
           .order('created_at', { ascending: false });
         if (companyId) {
-          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+          query = query.eq('company_id', companyId);
         }
         const { data, error } = await query;
         if (!error && data) {
@@ -784,10 +751,14 @@ export async function getSites(companyId?: string, forceRefresh = false): Promis
 export async function getSiteByShareCode(shareCode: string): Promise<ConstructionSite | null> {
   if (supabase) {
     try {
+      const normalized = shareCode.trim().toUpperCase();
+      if (!normalized || normalized.length < 4 || /[%_]/.test(normalized)) {
+        return null;
+      }
       const { data, error } = await supabase
         .from('construction_sites')
         .select(SITES_COLS)
-        .ilike('share_code', shareCode.trim())
+        .eq('share_code', normalized)
         .maybeSingle();
       if (!error && data) {
         const localDates = getLocalSiteDates();
@@ -801,6 +772,57 @@ export async function getSiteByShareCode(shareCode: string): Promise<Constructio
     } catch (e) {
       console.warn('Erro ao buscar obra por código:', e);
     }
+  }
+  return null;
+}
+
+export interface PublicSitePortalPayload {
+  site: ConstructionSite;
+  company: Partial<Company> | null;
+  tasks: SiteTask[];
+  daily_logs: SiteDailyLog[];
+  work_sessions: SiteWorkSession[];
+  documents: SiteDocument[];
+  accidents: SiteAccident[];
+  milestones: CalendarEvent[];
+  paid_revenues_total: number;
+}
+
+/**
+ * Carrega de forma estritamente escopada os dados públicos de UMA única obra
+ * via RPC get_public_site_portal (nunca expõe finanças ou eventos de outras obras).
+ */
+export async function getPublicSitePortal(
+  shareCode: string
+): Promise<PublicSitePortalPayload | null> {
+  if (!supabase) return null;
+  const normalized = shareCode.trim().toUpperCase();
+  if (!normalized || normalized.length < 4 || /[%_]/.test(normalized)) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('get_public_site_portal', {
+      p_share_code: normalized,
+    });
+    if (!error && data && typeof data === 'object' && (data as any).site) {
+      const raw = data as any;
+      return {
+        site: raw.site as ConstructionSite,
+        company: (raw.company as Partial<Company>) || null,
+        tasks: Array.isArray(raw.tasks) ? raw.tasks.map(decodeTaskRow) : [],
+        daily_logs: Array.isArray(raw.daily_logs) ? (raw.daily_logs as SiteDailyLog[]) : [],
+        work_sessions: Array.isArray(raw.work_sessions)
+          ? raw.work_sessions.map(decodeSessionRow)
+          : [],
+        documents: Array.isArray(raw.documents) ? (raw.documents as SiteDocument[]) : [],
+        accidents: Array.isArray(raw.accidents) ? (raw.accidents as SiteAccident[]) : [],
+        milestones: Array.isArray(raw.milestones) ? raw.milestones.map(decodeCalendarRow) : [],
+        paid_revenues_total: Number(raw.paid_revenues_total || 0),
+      };
+    }
+  } catch (e) {
+    console.warn('Erro ao consultar RPC get_public_site_portal:', e);
   }
   return null;
 }
@@ -983,7 +1005,7 @@ export async function getTeamWorkSessions(params: {
       if (companyId && siteIds.length > 0) {
         query = query.or(`company_id.eq.${companyId},site_id.in.(${siteIds.join(',')})`);
       } else if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        query = query.eq('company_id', companyId);
       } else if (siteIds.length > 0) {
         query = query.in('site_id', siteIds);
       }
@@ -1139,7 +1161,7 @@ export async function getCompanyWorkSessions(companyId?: string): Promise<SiteWo
           .select(WORK_SESSIONS_COLS)
           .order('created_at', { ascending: false });
         if (companyId) {
-          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+          query = query.eq('company_id', companyId);
         }
         const { data, error } = await query;
         if (!error && data) {
@@ -1539,7 +1561,10 @@ export async function saveSite(
 
 export async function deleteSite(id: string): Promise<void> {
   if (supabase) {
-    await supabase.from('construction_sites').delete().eq('id', id);
+    const activeCompanyId = getActiveCompanySession()?.id;
+    let q = supabase.from('construction_sites').delete().eq('id', id);
+    if (activeCompanyId) q = q.eq('company_id', activeCompanyId);
+    await q;
   }
   invalidateCache('sites');
   try {
@@ -1589,7 +1614,7 @@ export async function getEmployees(companyId?: string, forceRefresh = false): Pr
           .select(PROFILES_COLS)
           .order('created_at', { ascending: false });
         if (companyId) {
-          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+          query = query.eq('company_id', companyId);
         }
         const { data, error } = await query;
         if (!error && data) {
@@ -1598,9 +1623,8 @@ export async function getEmployees(companyId?: string, forceRefresh = false): Pr
             ...emp,
             avatar_url: emp.avatar_url || localAvatars[emp.id] || null,
           }));
-          const recovered = recoverHashedEmployeePins(mapped);
-          setCached(cacheKey, recovered);
-          return recovered;
+          setCached(cacheKey, mapped);
+          return mapped;
         }
       } catch (e) {
         console.warn('Erro ao carregar colaboradores:', e);
@@ -1705,7 +1729,10 @@ export async function saveEmployee(
 
 export async function deleteEmployee(id: string): Promise<void> {
   if (supabase) {
-    await supabase.from('profiles').delete().eq('id', id);
+    const activeCompanyId = getActiveCompanySession()?.id;
+    let q = supabase.from('profiles').delete().eq('id', id);
+    if (activeCompanyId) q = q.eq('company_id', activeCompanyId);
+    await q;
   }
   invalidateCache('employees');
 }
@@ -1875,7 +1902,7 @@ export async function getAllCompanyTasks(
         if (companyId && siteIds.length > 0) {
           query = query.or(`company_id.eq.${companyId},site_id.in.(${siteIds.join(',')})`);
         } else if (companyId) {
-          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+          query = query.eq('company_id', companyId);
         } else if (siteIds.length > 0) {
           query = query.in('site_id', siteIds);
         }
@@ -2285,7 +2312,7 @@ export async function getAllTimeEntries(
           .order('recorded_at', { ascending: false });
 
         if (companyId) {
-          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+          query = query.eq('company_id', companyId);
         }
 
         if (options?.beforeCursor) {
@@ -2392,10 +2419,13 @@ export async function updateEntryStatus(
   status: EntryStatus
 ): Promise<void> {
   if (supabase) {
-    await supabase
+    const activeCompanyId = getActiveCompanySession()?.id;
+    let q = supabase
       .from('time_entries')
       .update({ status, validated_at: new Date().toISOString() })
       .eq('id', id);
+    if (activeCompanyId) q = q.eq('company_id', activeCompanyId);
+    await q;
   }
 
   // Atualiza também no local se existir
@@ -2506,7 +2536,7 @@ export async function getFinancialRecords(
           .order('due_date', { ascending: false });
 
         if (companyId) {
-          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+          query = query.eq('company_id', companyId);
         }
 
         if (options?.beforeCursor) {
@@ -2850,7 +2880,10 @@ export async function deleteFinancialRecord(
 
   if (supabase) {
     try {
-      await supabase.from('financial_transactions').delete().eq('id', recordId);
+      const scopedCompanyId = companyId || getActiveCompanySession()?.id;
+      let q = supabase.from('financial_transactions').delete().eq('id', recordId);
+      if (scopedCompanyId) q = q.eq('company_id', scopedCompanyId);
+      await q;
     } catch (err) {
       console.warn('Erro ao remover no Supabase:', err);
     }
@@ -2916,7 +2949,7 @@ export async function getSiteMeasurements(companyId?: string, siteId?: string): 
   if (supabase) {
     try {
       let query = supabase.from('site_measurements').select('*').order('measurement_number', { ascending: true });
-      if (companyId) query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+      if (companyId) query = query.eq('company_id', companyId);
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
         const remoteIds = new Set(data.map((d: any) => d.id));
@@ -3141,7 +3174,7 @@ export async function getInventoryItems(companyId?: string, forceRefresh = false
       try {
         let query = supabase.from('inventory_items').select(INVENTORY_COLS).order('name', { ascending: true });
         if (companyId) {
-          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+          query = query.eq('company_id', companyId);
         }
         const { data, error } = await query;
         if (!error && data) {
@@ -3237,7 +3270,10 @@ export async function deleteInventoryItem(
   const localKey = getInvStorageKey(companyId);
   if (supabase) {
     try {
-      await supabase.from('inventory_items').delete().eq('id', itemId);
+      const scopedCompanyId = companyId || getActiveCompanySession()?.id;
+      let q = supabase.from('inventory_items').delete().eq('id', itemId);
+      if (scopedCompanyId) q = q.eq('company_id', scopedCompanyId);
+      await q;
     } catch (err) {
       console.warn('Erro ao remover item no Supabase:', err);
     }
@@ -3268,7 +3304,7 @@ export async function getVehicles(companyId?: string, forceRefresh = false): Pro
       try {
         let query = supabase.from('vehicles').select(VEHICLES_COLS).order('brand', { ascending: true });
         if (companyId) {
-          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+          query = query.eq('company_id', companyId);
         }
         const { data, error } = await query;
         if (!error && data) {
@@ -3386,7 +3422,10 @@ export async function deleteVehicle(
   const localKey = getVehiclesStorageKey(companyId);
   if (supabase) {
     try {
-      await supabase.from('vehicles').delete().eq('id', vehicleId);
+      const scopedCompanyId = companyId || getActiveCompanySession()?.id;
+      let q = supabase.from('vehicles').delete().eq('id', vehicleId);
+      if (scopedCompanyId) q = q.eq('company_id', scopedCompanyId);
+      await q;
     } catch (err) {
       console.warn('Erro ao remover carrinha no Supabase:', err);
     }
@@ -3991,7 +4030,7 @@ export async function getCalendarEvents(companyId?: string): Promise<CalendarEve
     try {
       let query = supabase.from('calendar_events').select('*').order('event_date', { ascending: true });
       if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        query = query.eq('company_id', companyId);
       }
       const { data, error } = await query;
       if (!error && data) {
@@ -4193,7 +4232,10 @@ export async function deleteCalendarEvent(
   const localKey = getCalendarStorageKey(companyId);
   if (supabase) {
     try {
-      await supabase.from('calendar_events').delete().eq('id', eventId);
+      const scopedCompanyId = companyId || getActiveCompanySession()?.id;
+      let q = supabase.from('calendar_events').delete().eq('id', eventId);
+      if (scopedCompanyId) q = q.eq('company_id', scopedCompanyId);
+      await q;
     } catch (err) {
       console.warn('Erro ao remover evento no Supabase:', err);
     }
@@ -4727,7 +4769,7 @@ export async function getAbsenceJustifications(
           query = query.eq('employee_id', employeeId);
         }
         if (companyId) {
-          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+          query = query.eq('company_id', companyId);
         }
         const { data, error } = await query;
         if (!error && data) {
@@ -4753,7 +4795,7 @@ export async function getAbsenceJustifications(
           teQuery = teQuery.eq('employee_id', employeeId);
         }
         if (companyId) {
-          teQuery = teQuery.or(`company_id.eq.${companyId},company_id.is.null`);
+          teQuery = teQuery.eq('company_id', companyId);
         }
         const { data: teData } = await teQuery;
         if (teData) {
@@ -4785,34 +4827,31 @@ export async function updateAbsenceJustificationStatus(
   id: string,
   status: 'aprovada' | 'rejeitada' | 'pendente'
 ): Promise<void> {
+  const activeCompanyId = getActiveCompanySession()?.id;
   if (supabase) {
-    // 1. Tenta atualizar na tabela absence_justifications
+    // 1. Atualiza na tabela dedicada absence_justifications com escopo de company_id
     if (hasWebAbsenceTable !== false) {
       try {
-        const { error } = await supabase
-          .from('absence_justifications')
-          .update({ status })
-          .eq('id', id);
+        let q = supabase.from('absence_justifications').update({ status }).eq('id', id);
+        if (activeCompanyId) q = q.eq('company_id', activeCompanyId);
+        const { error } = await q;
         if (!error) {
           hasWebAbsenceTable = true;
         }
       } catch {}
     }
 
-    // 2. Atualiza também em time_entries se foi gravado lá
+    // 2. Atualiza em time_entries SOMENTE se id for chave primária numérica válida (sem .like wildcard)
     try {
       const dbStatus = status === 'aprovada' ? 'aprovado' : status === 'rejeitada' ? 'rejeitado' : 'pendente';
       const numId = Number(id);
-      if (!isNaN(numId)) {
-        await supabase
+      if (Number.isInteger(numId) && numId > 0) {
+        let teQ = supabase
           .from('time_entries')
           .update({ status: dbStatus, validated_at: new Date().toISOString() })
           .eq('id', numId);
-      } else {
-        await supabase
-          .from('time_entries')
-          .update({ status: dbStatus, validated_at: new Date().toISOString() })
-          .like('notes', `%${id}%`);
+        if (activeCompanyId) teQ = teQ.eq('company_id', activeCompanyId);
+        await teQ;
       }
     } catch {}
   }
@@ -5056,7 +5095,7 @@ export async function getTeams(companyId?: string, forceRefresh = false): Promis
       try {
         let query = supabase.from('teams').select(TEAMS_COLS).order('name', { ascending: true });
         if (companyId) {
-          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+          query = query.eq('company_id', companyId);
         }
         const { data, error } = await query;
         if (!error && data) {
@@ -5675,7 +5714,10 @@ export async function deleteTeam(teamId: string, companyId?: string): Promise<vo
   const localKey = getTeamsStorageKey(companyId);
   if (supabase) {
     try {
-      await supabase.from('teams').delete().eq('id', teamId);
+      const scopedCompanyId = companyId || getActiveCompanySession()?.id;
+      let q = supabase.from('teams').delete().eq('id', teamId);
+      if (scopedCompanyId) q = q.eq('company_id', scopedCompanyId);
+      await q;
     } catch (e) {
       console.warn('Erro ao eliminar equipa no Supabase:', e);
     }

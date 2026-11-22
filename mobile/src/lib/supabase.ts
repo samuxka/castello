@@ -20,13 +20,18 @@ import {
 } from '../types';
 import { getLocalDateString } from '../utils/timeCalculations';
 
-const SUPABASE_URL =
-  process.env.EXPO_PUBLIC_SUPABASE_URL ||
-  'https://kkygvorgxehkadaqfqrx.supabase.co';
-const SUPABASE_ANON_KEY =
+const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
+const SUPABASE_ANON_KEY = (
   process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  'sb_publishable_JwCC3MlUbGCfgWFWSbkxmw_zBHdsKFX';
+  ''
+).trim();
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error(
+    '[Castello Mobile Security] Variáveis EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY são obrigatórias.'
+  );
+}
 
 export const isSupabaseConfigured =
   Boolean(SUPABASE_URL && SUPABASE_ANON_KEY) &&
@@ -94,7 +99,7 @@ export async function fetchSites(forceRefresh = false): Promise<ConstructionSite
         .select('*')
         .order('created_at', { ascending: false });
       if (emp && emp.company_id) {
-        query = query.or(`company_id.eq.${emp.company_id},company_id.is.null`);
+        query = query.eq('company_id', emp.company_id);
       }
       const { data, error } = await query;
       if (!error && data) {
@@ -110,7 +115,10 @@ export async function fetchSites(forceRefresh = false): Promise<ConstructionSite
 }
 
 export async function fetchEmployees(forceRefresh = false): Promise<EmployeeProfile[]> {
-  const cacheKey = 'employees_active';
+  const emp = await getActiveEmployee();
+  if (!emp?.company_id) return [];
+
+  const cacheKey = `employees_active_${emp.company_id}`;
   if (!forceRefresh) {
     const cached = getMobileCached<EmployeeProfile[]>(cacheKey, 30000);
     if (cached) return cached;
@@ -120,7 +128,8 @@ export async function fetchEmployees(forceRefresh = false): Promise<EmployeeProf
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, company_id, full_name, email, role, job_title, phone, avatar_url, admission_date, is_active, created_at')
+        .eq('company_id', emp.company_id)
         .eq('is_active', true)
         .order('full_name', { ascending: true });
       if (!error && data) {
@@ -157,7 +166,11 @@ export async function setActiveEmployeeId(employeeId: string): Promise<void> {
 }
 
 export async function clearActiveEmployee(): Promise<void> {
+  clearMobileCache();
   await AsyncStorage.removeItem(CURRENT_EMPLOYEE_ID_KEY);
+  if (supabase) {
+    await supabase.auth.signOut().catch(() => {});
+  }
 }
 
 export async function fetchCompanyMobile(companyId?: string | null): Promise<Company | null> {
@@ -198,53 +211,87 @@ export async function authenticateEmployee(
 
   if (supabase) {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .ilike('email', cleanEmail)
-        .eq('access_code', cleanCode)
-        .maybeSingle();
+      // 1. Autentica via Supabase Auth (JWT real no servidor)
+      const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: cleanCode,
+      });
 
-      if (!error && data) {
-        await setActiveEmployeeId(data.id);
-        await AsyncStorage.setItem(
-          BIOMETRIC_SAVED_CREDS_KEY,
-          JSON.stringify({ email: cleanEmail, code: cleanCode, id: data.id })
-        );
-        await AsyncStorage.setItem(`@castello:profile_${data.id}`, JSON.stringify(data));
-        return data as EmployeeProfile;
+      if (!authErr && authData?.user) {
+        const { data: profileByAuth } = await supabase
+          .from('profiles')
+          .select('id, company_id, auth_user_id, full_name, email, role, job_title, phone, hourly_rate, monthly_target_hours, avatar_url, admission_date, is_active, created_at')
+          .or(`auth_user_id.eq.${authData.user.id},email.ilike.${cleanEmail}`)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (profileByAuth) {
+          await setActiveEmployeeId(profileByAuth.id);
+          // Guarda apenas metadados não sensíveis (nunca grava senha/PIN em texto puro no AsyncStorage)
+          await AsyncStorage.setItem(
+            BIOMETRIC_SAVED_CREDS_KEY,
+            JSON.stringify({ email: cleanEmail, id: profileByAuth.id })
+          );
+          await AsyncStorage.setItem(`@castello:profile_${profileByAuth.id}`, JSON.stringify(profileByAuth));
+          return profileByAuth as EmployeeProfile;
+        }
       }
     } catch (e) {
       console.warn('Erro ao autenticar no Supabase', e);
     }
   }
 
-  // Fallback offline / cache local se as credenciais corresponderem às salvas
+  return null;
+}
+
+/**
+ * Restaura sessão biométrica validando o refresh token JWT ativo no Supabase Auth
+ * (sem armazenar nem retransmitir PIN em texto claro no AsyncStorage).
+ */
+export async function authenticateBiometricSession(): Promise<EmployeeProfile | null> {
+  if (!supabase) return null;
   try {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+
+    if (error || !session || !session.user) {
+      return null;
+    }
+
     const saved = await getSavedBiometricCredentials();
-    if (saved && saved.email.toLowerCase() === cleanEmail && saved.code === cleanCode) {
-      const cached = await AsyncStorage.getItem(`@castello:profile_${saved.id}`);
-      if (cached) {
-        await setActiveEmployeeId(saved.id);
-        return JSON.parse(cached) as EmployeeProfile;
-      }
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, company_id, auth_user_id, full_name, email, role, job_title, phone, hourly_rate, monthly_target_hours, avatar_url, admission_date, is_active, created_at')
+      .eq('is_active', true)
+      .or(
+        saved?.id
+          ? `auth_user_id.eq.${session.user.id},id.eq.${saved.id}`
+          : `auth_user_id.eq.${session.user.id}`
+      )
+      .maybeSingle();
+
+    if (profile) {
+      await setActiveEmployeeId(profile.id);
+      return profile as EmployeeProfile;
     }
   } catch (err) {
-    console.warn('Erro ao verificar cache offline de autenticação:', err);
+    console.warn('Erro ao restaurar sessão biométrica:', err);
   }
-
   return null;
 }
 
 export async function getSavedBiometricCredentials(): Promise<{
   email: string;
-  code: string;
   id: string;
 } | null> {
   try {
     const raw = await AsyncStorage.getItem(BIOMETRIC_SAVED_CREDS_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!parsed?.email || !parsed?.id) return null;
+    return { email: String(parsed.email), id: String(parsed.id) };
   } catch {
     return null;
   }
@@ -721,7 +768,7 @@ export async function fetchCompanyNotifications(
     try {
       let query = supabase.from('company_notifications').select('*').order('created_at', { ascending: false });
       if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        query = query.eq('company_id', companyId);
       }
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
@@ -791,24 +838,33 @@ const VEHICLE_INV_KEY = '@castello:vehicle_inv_';
 const VEHICLE_REPORTS_KEY = '@castello:vehicle_reports_';
 const MOVEMENTS_KEY = '@castello:inventory_movements';
 
-export async function fetchAssignedVehicle(employeeId: string, employeeName?: string): Promise<Vehicle | null> {
-  if (supabase) {
+export async function fetchAssignedVehicle(
+  employeeId: string,
+  employeeName?: string,
+  companyId?: string | null
+): Promise<Vehicle | null> {
+  const activeEmp = companyId ? null : await getActiveEmployee();
+  const scopedCompanyId = companyId || activeEmp?.company_id || null;
+
+  if (supabase && scopedCompanyId) {
     try {
-      // 1. Procura por ID do motorista
+      // 1. Procura por ID do motorista dentro da mesma empresa
       const { data, error } = await supabase
         .from('vehicles')
         .select('*')
+        .eq('company_id', scopedCompanyId)
         .eq('assigned_driver_id', employeeId)
         .limit(1);
       if (!error && data && data.length > 0) {
         return data[0] as Vehicle;
       }
 
-      // 2. Procura por nome do motorista caso tenha sido cadastrado com nome
+      // 2. Procura por nome do motorista dentro da mesma empresa
       if (employeeName) {
         const { data: nameData } = await supabase
           .from('vehicles')
           .select('*')
+          .eq('company_id', scopedCompanyId)
           .ilike('assigned_driver_name', `%${employeeName.trim()}%`)
           .limit(1);
         if (nameData && nameData.length > 0) {
@@ -816,13 +872,14 @@ export async function fetchAssignedVehicle(employeeId: string, employeeName?: st
         }
       }
 
-      // 3. Fallback: Se existir carrinha cadastrada no sistema, retorna a carrinha ativa
-      const { data: anyData } = await supabase
+      // 3. Fallback estritamente escopado à empresa do colaborador (nunca vaza veículo de outra empresa)
+      const { data: companyVehData } = await supabase
         .from('vehicles')
         .select('*')
+        .eq('company_id', scopedCompanyId)
         .limit(1);
-      if (anyData && anyData.length > 0) {
-        return anyData[0] as Vehicle;
+      if (companyVehData && companyVehData.length > 0) {
+        return companyVehData[0] as Vehicle;
       }
     } catch (e) {
       console.warn('Erro ao buscar carrinha do funcionário no Supabase:', e);
@@ -870,7 +927,7 @@ export async function fetchAvailableStock(companyId?: string): Promise<Inventory
     try {
       let query = supabase.from('inventory_items').select('*').order('name', { ascending: true });
       if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        query = query.eq('company_id', companyId);
       }
       const { data, error } = await query;
       if (!error && data) return data as InventoryItem[];
@@ -1482,7 +1539,7 @@ export async function fetchTeamsMobile(companyId?: string): Promise<Team[]> {
     try {
       let query = supabase.from('teams').select('*').order('name', { ascending: true });
       if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        query = query.eq('company_id', companyId);
       }
       const { data, error } = await query;
       if (!error && data) {

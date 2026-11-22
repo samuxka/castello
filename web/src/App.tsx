@@ -58,6 +58,7 @@ import {
   getTeams,
   handleGoogleAuthRedirect,
   isSupabaseConfigured,
+  restoreVerifiedCompanySession,
   saveEmployee,
   saveSite,
   saveTheme,
@@ -155,39 +156,29 @@ export default function App() {
     applyTheme(themeColor, theme);
   }, [themeColor, theme]);
 
-  // Processa retorno de autenticação via Google OAuth se aplicável
+  // Valida sessão JWT no Supabase Auth no boot (evita bypass via edição de localStorage)
   useEffect(() => {
-    handleGoogleAuthRedirect().then((company) => {
-      if (company) {
-        setActiveCompany(company);
-        if (company.theme_color) {
-          setThemeColor(company.theme_color as ThemeColor);
+    let mounted = true;
+    (async () => {
+      const oauthCompany = await handleGoogleAuthRedirect();
+      const verified = oauthCompany || (await restoreVerifiedCompanySession());
+      if (!mounted) return;
+      if (verified) {
+        setActiveCompany(verified);
+        if (verified.theme_color) {
+          setThemeColor(verified.theme_color as ThemeColor);
         }
-        if (company.theme_mode) {
-          setTheme(company.theme_mode as ThemeMode);
+        if (verified.theme_mode) {
+          setTheme(verified.theme_mode as ThemeMode);
         }
+        applyTheme((verified.theme_color as ThemeColor) || 'azul', (verified.theme_mode as ThemeMode) || 'dark');
+      } else {
+        setActiveCompany(null);
       }
-    });
-  }, []);
-
-  // Sincroniza dados da firma e personalizações da nuvem (logo, cores e tema)
-  useEffect(() => {
-    const session = getActiveCompanySession();
-    if (session?.id) {
-      getCompanyById(session.id).then((fresh) => {
-        if (fresh) {
-          setActiveCompany(fresh);
-          setActiveCompanySession(fresh);
-          if (fresh.theme_color) {
-            setThemeColor(fresh.theme_color as ThemeColor);
-          }
-          if (fresh.theme_mode) {
-            setTheme(fresh.theme_mode as ThemeMode);
-          }
-          applyTheme((fresh.theme_color as ThemeColor) || 'azul', (fresh.theme_mode as ThemeMode) || 'dark');
-        }
-      });
-    }
+    })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // Atualização em tempo real quando as propriedades da firma mudarem

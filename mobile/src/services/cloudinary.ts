@@ -6,44 +6,54 @@ interface CloudinarySignResponse {
   api_key: string;
   cloud_name: string;
   folder: string;
+  allowed_formats?: string;
 }
 
+const SIGN_API_BASE =
+  process.env.EXPO_PUBLIC_API_URL || 'https://castello-ponto.vercel.app';
+
 /**
- * Obtém parâmetros e assinatura criptográfica segura gerados no backend/banco de dados,
- * garantindo que nenhuma chave secreta (API Secret) seja exposta no aplicativo móvel.
+ * Obtém parâmetros e assinatura criptográfica segura gerados no backend serverless,
+ * enviando o JWT da sessão autenticada do colaborador no Supabase Auth.
  */
 async function getSecureUploadParams(folder: string): Promise<CloudinarySignResponse> {
-  // 1. Supabase RPC seguro (sem expor segredos no APK)
+  let accessToken: string | null = null;
   if (supabase) {
     try {
-      const { data, error } = await supabase.rpc('sign_cloudinary_upload', {
-        folder,
-      });
-      if (!error && data?.signature && data?.timestamp) {
-        return data as CloudinarySignResponse;
-      }
-      if (error) {
-        console.warn('Supabase RPC sign_cloudinary_upload não disponível:', error.message);
-      }
-    } catch (err) {
-      console.warn('Erro ao chamar sign_cloudinary_upload via RPC:', err);
+      const { data } = await supabase.auth.getSession();
+      accessToken = data?.session?.access_token || null;
+    } catch {
+      accessToken = null;
     }
   }
 
-  // 2. Fallback via API serverless da web
-  try {
-    const res = await fetch(`https://castello-ponto.vercel.app/api/sign-cloudinary?folder=${encodeURIComponent(folder)}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.signature && data.timestamp && data.api_key && data.cloud_name) {
-        return data as CloudinarySignResponse;
-      }
-    }
-  } catch (err) {
-    console.warn('Endpoint /api/sign-cloudinary remoto indisponível:', err);
+  if (!accessToken) {
+    throw new Error('Sessão inválida. Inicie sessão novamente para enviar imagens.');
   }
 
-  throw new Error('Falha ao gerar credencial segura para envio de imagem.');
+  const res = await fetch(
+    `${SIGN_API_BASE}/api/sign-cloudinary?folder=${encodeURIComponent(folder)}`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  if (res.status === 401) {
+    throw new Error('Autenticação obrigatória para enviar imagens.');
+  }
+  if (!res.ok) {
+    throw new Error('Falha ao gerar credencial segura para envio de imagem.');
+  }
+
+  const data = await res.json();
+  if (data.signature && data.timestamp && data.api_key && data.cloud_name) {
+    return data as CloudinarySignResponse;
+  }
+
+  throw new Error('Resposta inválida do servidor de upload.');
 }
 
 /**
@@ -89,6 +99,9 @@ export async function uploadImageToCloudinary(
   formData.append('api_key', params.api_key);
   formData.append('timestamp', String(params.timestamp));
   formData.append('folder', params.folder);
+  if (params.allowed_formats) {
+    formData.append('allowed_formats', params.allowed_formats);
+  }
   formData.append('signature', params.signature);
 
   const response = await fetch(

@@ -25,6 +25,7 @@ import {
   updateCompanyProfile,
 } from '../lib/supabase';
 import { uploadImageToCloudinary } from '../lib/cloudinary';
+import { IMAGE_MIME_TYPES, validateUploadFile } from '../lib/urlSafety';
 
 interface SettingsPageProps {
   company: Company;
@@ -104,8 +105,12 @@ export function SettingsPage({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert('A imagem é muito pesada. Escolha uma foto de até 5MB.');
+    const check = validateUploadFile(file, {
+      maxSizeMb: 5,
+      allowedMimeTypes: IMAGE_MIME_TYPES,
+    });
+    if (!check.valid) {
+      alert(check.error);
       return;
     }
 
@@ -130,15 +135,7 @@ export function SettingsPage({
           onCompanyUpdated(updated);
           showNotice('Logotipo atualizado e sincronizado na nuvem com sucesso!');
         } catch (uploadErr: any) {
-          console.warn('Aviso no upload Cloudinary, aplicando fallback seguro:', uploadErr);
-          setLogoUrl(base64);
-          const updated = await updateCompanyProfile(company.id, {
-            logo_url: base64,
-            theme_color: themeColor,
-            theme_mode: themeMode,
-          });
-          onCompanyUpdated(updated);
-          showNotice('Logotipo salvo na firma!');
+          alert(uploadErr?.message || 'Não foi possível enviar o logotipo para a nuvem.');
         } finally {
           setUploadingLogo(false);
         }
