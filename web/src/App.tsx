@@ -486,13 +486,25 @@ export default function App() {
   };
 
   const handleValidateEntry = async (entryId: number, newStatus: EntryStatus) => {
-    await updateEntryStatus(entryId, newStatus);
-    await loadData(activeCompany?.id);
+    const previousEntries = entries;
+    setEntries((prev) =>
+      prev.map((item) => (item.id === entryId ? { ...item, status: newStatus } : item))
+    );
     showNotice(
       newStatus === 'aprovado'
         ? `Registo #${entryId} validado com sucesso.`
         : `Registo #${entryId} rejeitado.`
     );
+    try {
+      await updateEntryStatus(entryId, newStatus);
+    } catch (err: any) {
+      setEntries(previousEntries);
+      customAlert({
+        title: 'Falha ao Validar Registo',
+        message: 'Não foi possível guardar a alteração. O estado anterior foi restaurado: ' + (err?.message || 'Erro de rede.'),
+        type: 'error',
+      });
+    }
   };
 
   const handleValidateAllEntries = async () => {
@@ -506,37 +518,68 @@ export default function App() {
     });
     if (!confirmed) return;
 
+    const toApprove = [...pendingEntries];
+    const previousEntries = entries;
+    const approveIds = new Set(toApprove.map((e) => e.id));
+    setEntries((prev) =>
+      prev.map((item) => (approveIds.has(item.id) ? { ...item, status: 'aprovado' } : item))
+    );
+    showNotice(`${toApprove.length} registos de ponto aprovados com sucesso.`);
+
     try {
-      await Promise.all(pendingEntries.map((e) => updateEntryStatus(e.id, 'aprovado')));
-      await loadData(activeCompany?.id);
-      showNotice(`${pendingEntries.length} registos de ponto aprovados com sucesso.`);
+      await Promise.all(toApprove.map((e) => updateEntryStatus(e.id, 'aprovado')));
     } catch (err: any) {
+      setEntries(previousEntries);
       customAlert({
         title: 'Erro na Validação',
-        message: 'Ocorreu um erro ao validar os pontos: ' + (err.message || 'Tente novamente.'),
+        message: 'Ocorreu um erro ao validar os pontos (estado restaurado): ' + (err.message || 'Tente novamente.'),
         type: 'error',
       });
     }
   };
 
   const handleValidateJustification = async (justifId: string, status: 'aprovada' | 'rejeitada') => {
-    await updateAbsenceJustificationStatus(justifId, status);
-    await loadData(activeCompany?.id);
+    const previousJustifs = justifications;
+    setJustifications((prev) =>
+      prev.map((item) => (item.id === justifId ? { ...item, status } : item))
+    );
     showNotice(
       status === 'aprovada'
         ? 'Justificativa de falta aprovada com sucesso!'
         : 'Justificativa de falta rejeitada.'
     );
+    try {
+      await updateAbsenceJustificationStatus(justifId, status);
+    } catch (err: any) {
+      setJustifications(previousJustifs);
+      customAlert({
+        title: 'Erro ao Atualizar Justificativa',
+        message: 'Alteração revertida por falha de ligação: ' + (err?.message || 'Tente novamente.'),
+        type: 'error',
+      });
+    }
   };
 
   const handleValidateWorkSession = async (sessionId: string, status: 'aprovado' | 'rejeitado') => {
-    await updateWorkSessionStatus(sessionId, status);
-    await loadData(activeCompany?.id);
+    const previousSessions = companyWorkSessions;
+    setCompanyWorkSessions((prev) =>
+      prev.map((item) => (item.id === sessionId ? { ...item, status } : item))
+    );
     showNotice(
       status === 'aprovado'
         ? 'Registo de horas da equipa aprovado com sucesso!'
         : 'Registo de horas da equipa rejeitado.'
     );
+    try {
+      await updateWorkSessionStatus(sessionId, status);
+    } catch (err: any) {
+      setCompanyWorkSessions(previousSessions);
+      customAlert({
+        title: 'Erro ao Validar Sessão',
+        message: 'Alteração revertida por falha de ligação: ' + (err?.message || 'Tente novamente.'),
+        type: 'error',
+      });
+    }
   };
 
   // CRUD Funcionários (Sem obra)
