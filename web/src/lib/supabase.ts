@@ -1248,24 +1248,32 @@ export async function deleteSiteWorkSession(siteId: string, sessionId: string): 
 }
 
 export async function getCompanyWorkSessions(companyId?: string): Promise<SiteWorkSession[]> {
-  if (supabase) {
-    try {
-      let query = supabase
-        .from('site_work_sessions')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+  const cacheKey = `work_sessions_${companyId || 'all'}`;
+  const cached = getCached<SiteWorkSession[]>(cacheKey, 15000);
+  if (cached) return cached;
+
+  return fetchWithDedupe(cacheKey, async () => {
+    if (supabase) {
+      try {
+        let query = supabase
+          .from('site_work_sessions')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (companyId) {
+          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          const decoded = (data as Record<string, unknown>[]).map(decodeSessionRow);
+          setCached(cacheKey, decoded);
+          return decoded;
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar sessões de trabalho da empresa:', e);
       }
-      const { data, error } = await query;
-      if (!error && data) {
-        return (data as Record<string, unknown>[]).map(decodeSessionRow);
-      }
-    } catch (e) {
-      console.warn('Erro ao carregar sessões de trabalho da empresa:', e);
     }
-  }
-  return [];
+    return [];
+  });
 }
 
 export async function updateWorkSessionStatus(
@@ -1273,6 +1281,7 @@ export async function updateWorkSessionStatus(
   status: 'aprovado' | 'rejeitado',
   notes?: string
 ): Promise<void> {
+  invalidateCache('work_sessions');
   if (supabase) {
     try {
       const { data } = await supabase.from('site_work_sessions').select('*').eq('id', sessionId).maybeSingle();
@@ -1975,45 +1984,52 @@ export async function getAllCompanyTasks(
   companyId?: string,
   siteIds: string[] = []
 ): Promise<SiteTask[]> {
-  let remoteTasks: SiteTask[] = [];
-  if (supabase) {
-    try {
-      let query = supabase.from('site_tasks').select('*').order('created_at', { ascending: false });
-      if (companyId && siteIds.length > 0) {
-        query = query.or(`company_id.eq.${companyId},site_id.in.(${siteIds.join(',')})`);
-      } else if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
-      } else if (siteIds.length > 0) {
-        query = query.in('site_id', siteIds);
-      }
-      const { data, error } = await query;
-      if (!error && data) {
-        remoteTasks = (data as Record<string, unknown>[]).map(decodeTaskRow);
-      }
-    } catch (e) {
-      console.warn('Erro ao consultar tarefas da empresa em lote:', e);
-    }
-  }
+  const cacheKey = `company_tasks_${companyId || 'all'}_${siteIds.length}`;
+  const cached = getCached<SiteTask[]>(cacheKey, 15000);
+  if (cached) return cached;
 
-  const seenIds = new Set(remoteTasks.map((t) => t.id));
-  for (const sId of siteIds) {
-    try {
-      const raw = localStorage.getItem(getTasksStorageKey(sId));
-      if (raw) {
-        const localList = (JSON.parse(raw) as Record<string, unknown>[]).map(decodeTaskRow);
-        for (const item of localList) {
-          if (!seenIds.has(item.id)) {
-            seenIds.add(item.id);
-            remoteTasks.push(item);
+  return fetchWithDedupe(cacheKey, async () => {
+    let remoteTasks: SiteTask[] = [];
+    if (supabase) {
+      try {
+        let query = supabase.from('site_tasks').select('*').order('created_at', { ascending: false });
+        if (companyId && siteIds.length > 0) {
+          query = query.or(`company_id.eq.${companyId},site_id.in.(${siteIds.join(',')})`);
+        } else if (companyId) {
+          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        } else if (siteIds.length > 0) {
+          query = query.in('site_id', siteIds);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          remoteTasks = (data as Record<string, unknown>[]).map(decodeTaskRow);
+        }
+      } catch (e) {
+        console.warn('Erro ao consultar tarefas da empresa em lote:', e);
+      }
+    }
+
+    const seenIds = new Set(remoteTasks.map((t) => t.id));
+    for (const sId of siteIds) {
+      try {
+        const raw = localStorage.getItem(getTasksStorageKey(sId));
+        if (raw) {
+          const localList = (JSON.parse(raw) as Record<string, unknown>[]).map(decodeTaskRow);
+          for (const item of localList) {
+            if (!seenIds.has(item.id)) {
+              seenIds.add(item.id);
+              remoteTasks.push(item);
+            }
           }
         }
+      } catch (err) {
+        console.warn('Aviso ao ler cache local de tarefas:', err);
       }
-    } catch (err) {
-      console.warn('Aviso ao ler cache local de tarefas:', err);
     }
-  }
 
-  return remoteTasks;
+    setCached(cacheKey, remoteTasks);
+    return remoteTasks;
+  });
 }
 
 export async function createSiteTask(
@@ -2026,6 +2042,7 @@ export async function createSiteTask(
   assignedToId?: string,
   extra?: Partial<SiteTask>
 ): Promise<SiteTask> {
+  invalidateCache('company_tasks');
   const validation = validateWithZod(siteTaskSchema, {
     title,
     site_id: siteId,
@@ -2375,54 +2392,57 @@ export async function getAllTimeEntries(
   companyId?: string,
   options?: PaginationOptions
 ): Promise<TimeEntry[]> {
-  let entries: TimeEntry[] = [];
+  const dedupeKey = `time_entries_${companyId || 'all'}_${options?.limit || 500}_${options?.offset || 0}`;
+  return fetchWithDedupe(dedupeKey, async () => {
+    let entries: TimeEntry[] = [];
 
-  // 1. Tenta carregar do Supabase com projeção explícita e paginação segura
-  if (supabase) {
+    // 1. Tenta carregar do Supabase com projeção explícita e paginação segura
+    if (supabase) {
+      try {
+        let query = supabase
+          .from('time_entries')
+          .select('*')
+          .order('recorded_at', { ascending: false });
+
+        if (companyId) {
+          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        }
+
+        if (options?.limit) {
+          const offset = options.offset || 0;
+          query = query.range(offset, offset + options.limit - 1);
+        } else {
+          // Limite padrão seguro de 500 registos para preservar banda de rede e performance
+          query = query.limit(500);
+        }
+
+        const { data, error } = await query;
+        if (!error && data) {
+          entries = data
+            .filter((d: any) => !d.notes || !d.notes.startsWith('[JUSTIFICATIVA_FALTA]'))
+            .map((d: any) => ({
+              ...d,
+              status: d.status || 'pendente',
+            })) as TimeEntry[];
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar picagens:', e);
+      }
+    }
+
+    // 2. Mescla com entradas manuais locais para garantir persistência offline
     try {
-      let query = supabase
-        .from('time_entries')
-        .select('*')
-        .order('recorded_at', { ascending: false });
-
-      if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+      const rawManual = localStorage.getItem('castello_time_entries_manual');
+      if (rawManual) {
+        const manualList: TimeEntry[] = JSON.parse(rawManual);
+        const existingIds = new Set(entries.map((e) => e.id));
+        const notInRemote = manualList.filter((m) => !existingIds.has(m.id));
+        entries = [...notInRemote, ...entries];
       }
+    } catch {}
 
-      if (options?.limit) {
-        const offset = options.offset || 0;
-        query = query.range(offset, offset + options.limit - 1);
-      } else {
-        // Limite padrão seguro de 500 registos para preservar banda de rede e performance
-        query = query.limit(500);
-      }
-
-      const { data, error } = await query;
-      if (!error && data) {
-        entries = data
-          .filter((d: any) => !d.notes || !d.notes.startsWith('[JUSTIFICATIVA_FALTA]'))
-          .map((d: any) => ({
-            ...d,
-            status: d.status || 'pendente',
-          })) as TimeEntry[];
-      }
-    } catch (e) {
-      console.warn('Erro ao carregar picagens:', e);
-    }
-  }
-
-  // 2. Mescla com entradas manuais locais para garantir persistência offline
-  try {
-    const rawManual = localStorage.getItem('castello_time_entries_manual');
-    if (rawManual) {
-      const manualList: TimeEntry[] = JSON.parse(rawManual);
-      const existingIds = new Set(entries.map((e) => e.id));
-      const notInRemote = manualList.filter((m) => !existingIds.has(m.id));
-      entries = [...notInRemote, ...entries];
-    }
-  } catch {}
-
-  return entries;
+    return entries;
+  });
 }
 
 export async function createManualTimeEntry(entry: {
@@ -2708,24 +2728,19 @@ export async function getFinancialRecords(
 
         const recordsToPush = [...recordsNeedingMetaSync, ...unSyncedNormalized];
         if (recordsToPush.length > 0 && supabase) {
-          Promise.all(
-            recordsToPush.map((rec) => {
-              const encodedDescription = encodeFinancialDescription(rec.title, rec);
-              return supabase!.from('financial_transactions').upsert(
-                {
-                  id: rec.id,
-                  company_id: rec.company_id || companyId || null,
-                  description: encodedDescription,
-                  amount: rec.amount,
-                  type: rec.type === 'receita' ? 'income' : 'expense',
-                  category: rec.category,
-                  due_date: rec.due_date,
-                  paid: rec.status === 'pago',
-                  payment_date: rec.payment_date,
-                },
-                { onConflict: 'id' }
-              );
-            })
+          const batchPayload = recordsToPush.map((rec) => ({
+            id: rec.id,
+            company_id: rec.company_id || companyId || null,
+            description: encodeFinancialDescription(rec.title, rec),
+            amount: rec.amount,
+            type: rec.type === 'receita' ? 'income' : 'expense',
+            category: rec.category,
+            due_date: rec.due_date,
+            paid: rec.status === 'pago',
+            payment_date: rec.payment_date,
+          }));
+          Promise.resolve(
+            supabase.from('financial_transactions').upsert(batchPayload, { onConflict: 'id' })
           ).catch(() => {});
         }
 

@@ -103,19 +103,10 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
         }
         setSite(foundSite);
 
-        // Busca dados da firma (Nome, Logo e Cor Temática)
-        const comp = await getCompanyById(foundSite.company_id);
-        if (comp) {
-          setCompany(comp);
-          const firmColor: ThemeColor = comp.theme_color || 'azul';
-          applyTheme(firmColor, clientTheme);
-        } else {
-          applyTheme('azul', clientTheme);
-        }
-
-        // Carrega tarefas, diários, sessões de equipa, finanças, documentos e marcos do calendário
-        await syncSiteMilestonesWithCalendar(foundSite, foundSite.company_id);
-        const [t, l, ws, fin, docs, calEvts, accs] = await Promise.all([
+        // Carrega empresa, tarefas, diários, sessões, finanças, documentos, calendário e acidentes em paralelo (sem waterfall)
+        syncSiteMilestonesWithCalendar(foundSite, foundSite.company_id).catch(() => {});
+        const [comp, t, l, ws, fin, docs, calEvts, accs] = await Promise.all([
+          getCompanyById(foundSite.company_id),
           getSiteTasks(foundSite.id),
           getSiteDailyLogs(foundSite.id),
           getSiteWorkSessions(foundSite.id),
@@ -124,6 +115,14 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
           getCalendarEvents(foundSite.company_id || undefined),
           getSiteAccidents(foundSite.id, foundSite.company_id),
         ]);
+
+        if (comp) {
+          setCompany(comp);
+          const firmColor: ThemeColor = comp.theme_color || 'azul';
+          applyTheme(firmColor, clientTheme);
+        } else {
+          applyTheme('azul', clientTheme);
+        }
 
         // Extrai acidentes que possam estar sincronizados em site_daily_logs e limpa diários
         const extractedAccidents: SiteAccident[] = [];

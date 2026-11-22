@@ -337,7 +337,7 @@ export default function App() {
 
   const loadData = async (compId?: string) => {
     const targetCompId = compId || activeCompany?.id;
-    const [s, e, t, f, j, tm, ws] = await Promise.all([
+    const [s, e, t, f, j, tm, ws, allTasks] = await Promise.all([
       getSites(targetCompId),
       getEmployees(targetCompId),
       getAllTimeEntries(targetCompId),
@@ -345,6 +345,10 @@ export default function App() {
       getAbsenceJustifications(undefined, targetCompId),
       getTeams(targetCompId),
       getCompanyWorkSessions(targetCompId),
+      getAllCompanyTasks(targetCompId).catch((err) => {
+        console.warn('Erro ao carregar tarefas para gráficos do dashboard:', err);
+        return [] as SiteTask[];
+      }),
     ]);
     setSites(s);
     setEmployees(e);
@@ -353,14 +357,7 @@ export default function App() {
     setJustifications(j);
     setDashboardTeams(tm || []);
     setCompanyWorkSessions(ws || []);
-
-    try {
-      // Otimização: Consulta em lote evitando N requisições por obra (resolução do problema N+1)
-      const allTasks = await getAllCompanyTasks(targetCompId, s.map((site) => site.id));
-      setDashboardTasks(allTasks);
-    } catch (err) {
-      console.warn('Erro ao carregar tarefas para gráficos do dashboard:', err);
-    }
+    setDashboardTasks(allTasks);
 
     if (selectedSiteForDetail) {
       const refreshed = s.find((x) => x.id === selectedSiteForDetail.id);
@@ -373,14 +370,28 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (activeCompany) {
-      loadData(activeCompany.id);
-      const timer = setInterval(() => {
+    if (!activeCompany) return;
+    loadData(activeCompany.id);
+
+    // Polling inteligente: 30s apenas quando a aba está visível + refresh ao regressar à aba
+    const timer = setInterval(() => {
+      if (typeof document === 'undefined' || !document.hidden) {
         loadData(activeCompany.id);
-      }, 5000);
-      return () => clearInterval(timer);
-    }
-  }, [activeCompany]);
+      }
+    }, 30000);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        loadData(activeCompany.id);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [activeCompany?.id]);
 
   const showNotice = (msg: string) => {
     setNotification(msg);
