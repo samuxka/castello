@@ -224,6 +224,28 @@ export function getActiveCompanySession(): Company | null {
 }
 
 // ============================================================================
+// PROJEÇÕES EXPLÍCITAS DE COLUNAS (EVITA SELECT * E TRAFEGO DESNECESSÁRIO)
+// ============================================================================
+const COMPANY_SAFE_COLS =
+  'id, name, tax_id, owner_email, phone, logo_url, theme_color, theme_mode, created_at';
+const SITES_COLS =
+  'id, company_id, name, share_code, address, manager_name, manager_id, status, budget, description, client_name, client_phone, start_date, expected_end_date, created_at';
+const PROFILES_COLS =
+  'id, company_id, full_name, email, access_code, role, job_title, phone, hourly_rate, monthly_target_hours, avatar_url, admission_date, is_active, created_at';
+const TIME_ENTRIES_COLS =
+  'id, company_id, employee_id, site_id, entry_type, status, validated_at, validation_notes, recorded_at, work_date, notes, created_at';
+const DAILY_LOGS_COLS =
+  'id, site_id, log_date, summary, weather, workers_count, notes, created_at';
+const WORK_SESSIONS_COLS =
+  'id, company_id, site_id, team_name, leader_id, leader_name, workers_count, work_date, hours_worked, description, created_at';
+const INVENTORY_COLS =
+  'id, company_id, name, category, serial_number, total_quantity, allocated_quantity, available_quantity, allocated_site_id, allocated_site_name, condition, unit_price, supplier, location, photo_url, notes, created_at, updated_at';
+const VEHICLES_COLS =
+  'id, company_id, license_plate, brand, model, year, vehicle_type, current_km, assigned_driver_id, assigned_driver_name, assigned_site_id, assigned_site_name, next_inspection_date, next_maintenance_km, insurance_expiry_date, status, fuel_type, photo_url, notes, last_oil_change_date, last_oil_change_km, next_oil_change_km, last_tire_change_date, last_tire_change_km, next_tire_change_km, last_brakes_check_date, next_brakes_check_km, created_at, updated_at';
+const TEAMS_COLS =
+  'id, company_id, name, leader_id, leader_name, leader_phone, member_ids, member_names, current_site_id, current_site_name, allocated_at, notes, created_at';
+
+// ============================================================================
 // CACHE INTELIGENTE EM MEMÓRIA & DEDUPLICAÇÃO DE REQUISIÇÕES (SRE / PERFORMANCE)
 // ============================================================================
 interface CacheEntry<T> {
@@ -355,7 +377,7 @@ export async function registerCompany(
   if (supabase) {
     const { data: existing } = await supabase
       .from('companies')
-      .select('*')
+      .select('id')
       .eq('owner_email', cleanEmail)
       .maybeSingle();
 
@@ -560,10 +582,10 @@ export async function getCompanyByEmail(email: string): Promise<Company | null> 
   try {
     const { data } = await supabase
       .from('companies')
-      .select('*')
+      .select(COMPANY_SAFE_COLS)
       .eq('owner_email', email.trim().toLowerCase())
       .maybeSingle();
-    return (data as Company) || null;
+    return (data as unknown as Company) || null;
   } catch {
     return null;
   }
@@ -878,7 +900,7 @@ export async function getSites(companyId?: string, forceRefresh = false): Promis
       try {
         let query = supabase
           .from('construction_sites')
-          .select('*')
+          .select(SITES_COLS)
           .order('created_at', { ascending: false });
         if (companyId) {
           query = query.or(`company_id.eq.${companyId},company_id.is.null`);
@@ -907,7 +929,7 @@ export async function getSiteByShareCode(shareCode: string): Promise<Constructio
     try {
       const { data, error } = await supabase
         .from('construction_sites')
-        .select('*')
+        .select(SITES_COLS)
         .ilike('share_code', shareCode.trim())
         .maybeSingle();
       if (!error && data) {
@@ -934,11 +956,11 @@ export async function getCompanyById(companyId?: string | null): Promise<Company
     try {
       const { data, error } = await supabase
         .from('companies')
-        .select('*')
+        .select(COMPANY_SAFE_COLS)
         .eq('id', companyId)
         .maybeSingle();
       if (!error && data) {
-        const comp = data as Company;
+        const comp = data as unknown as Company;
         const cloudSettings = await fetchCompanyCloudSettings(companyId);
         if (cloudSettings) {
           if (cloudSettings.logo_url && !comp.logo_url) comp.logo_url = cloudSettings.logo_url;
@@ -1097,7 +1119,7 @@ export async function getTeamWorkSessions(params: {
       const toIdx = fromIdx + pageSize - 1;
       let query = supabase
         .from('site_work_sessions')
-        .select('*')
+        .select(WORK_SESSIONS_COLS)
         .order('work_date', { ascending: false })
         .range(fromIdx, toIdx);
 
@@ -1257,7 +1279,7 @@ export async function getCompanyWorkSessions(companyId?: string): Promise<SiteWo
       try {
         let query = supabase
           .from('site_work_sessions')
-          .select('*')
+          .select(WORK_SESSIONS_COLS)
           .order('created_at', { ascending: false });
         if (companyId) {
           query = query.or(`company_id.eq.${companyId},company_id.is.null`);
@@ -1707,7 +1729,7 @@ export async function getEmployees(companyId?: string, forceRefresh = false): Pr
       try {
         let query = supabase
           .from('profiles')
-          .select('*')
+          .select(PROFILES_COLS)
           .order('created_at', { ascending: false });
         if (companyId) {
           query = query.or(`company_id.eq.${companyId},company_id.is.null`);
@@ -2344,7 +2366,7 @@ export async function getSiteDailyLogs(siteId: string): Promise<SiteDailyLog[]> 
     try {
       const { data, error } = await supabase
         .from('site_daily_logs')
-        .select('*')
+        .select(DAILY_LOGS_COLS)
         .eq('site_id', siteId)
         .order('log_date', { ascending: false });
       if (!error && data) return data as SiteDailyLog[];
@@ -2401,7 +2423,7 @@ export async function getAllTimeEntries(
       try {
         let query = supabase
           .from('time_entries')
-          .select('*')
+          .select(TIME_ENTRIES_COLS)
           .order('recorded_at', { ascending: false });
 
         if (companyId) {
@@ -3254,7 +3276,7 @@ export async function getInventoryItems(companyId?: string, forceRefresh = false
     const localKey = getInvStorageKey(companyId);
     if (supabase) {
       try {
-        let query = supabase.from('inventory_items').select('*').order('name', { ascending: true });
+        let query = supabase.from('inventory_items').select(INVENTORY_COLS).order('name', { ascending: true });
         if (companyId) {
           query = query.or(`company_id.eq.${companyId},company_id.is.null`);
         }
@@ -3381,7 +3403,7 @@ export async function getVehicles(companyId?: string, forceRefresh = false): Pro
     const localKey = getVehiclesStorageKey(companyId);
     if (supabase) {
       try {
-        let query = supabase.from('vehicles').select('*').order('brand', { ascending: true });
+        let query = supabase.from('vehicles').select(VEHICLES_COLS).order('brand', { ascending: true });
         if (companyId) {
           query = query.or(`company_id.eq.${companyId},company_id.is.null`);
         }
@@ -3401,7 +3423,7 @@ export async function getVehicles(companyId?: string, forceRefresh = false): Pro
               );
               if (missingVehicles.length > 0) {
                 await supabase.from('vehicles').upsert(missingVehicles, { onConflict: 'id' });
-                data.push(...missingVehicles);
+                (data as unknown as Vehicle[]).push(...missingVehicles);
               }
             } catch {}
           }
@@ -5168,7 +5190,7 @@ export async function getTeams(companyId?: string, forceRefresh = false): Promis
     const localKey = getTeamsStorageKey(companyId);
     if (supabase) {
       try {
-        let query = supabase.from('teams').select('*').order('name', { ascending: true });
+        let query = supabase.from('teams').select(TEAMS_COLS).order('name', { ascending: true });
         if (companyId) {
           query = query.or(`company_id.eq.${companyId},company_id.is.null`);
         }
