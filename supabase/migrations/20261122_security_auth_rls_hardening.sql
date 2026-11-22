@@ -87,8 +87,8 @@ AS $$
   LIMIT 1;
 $$;
 
--- Auxiliar para tabelas ligadas via site_id (ex: site_daily_logs, site_documents)
-CREATE OR REPLACE FUNCTION private.is_site_in_company(p_site_id uuid)
+-- Auxiliar para tabelas ligadas via site_id (compatível com site_id uuid ou text)
+CREATE OR REPLACE FUNCTION private.is_site_in_company(p_site_id text)
 RETURNS boolean
 LANGUAGE sql
 STABLE
@@ -97,9 +97,19 @@ SET search_path = ''
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.construction_sites s
-    WHERE s.id = p_site_id
+    WHERE s.id::text = p_site_id
       AND s.company_id = (SELECT private.current_company_id())
   );
+$$;
+
+CREATE OR REPLACE FUNCTION private.is_site_in_company(p_site_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT private.is_site_in_company(p_site_id::text);
 $$;
 
 -- Auxiliar para tabelas ligadas via vehicle_id (ex: vehicle_inventory_items)
@@ -112,7 +122,7 @@ SET search_path = ''
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.vehicles v
-    WHERE v.id = p_vehicle_id
+    WHERE v.id::text = p_vehicle_id
       AND v.company_id = (SELECT private.current_company_id())
   );
 $$;
@@ -120,12 +130,14 @@ $$;
 REVOKE ALL ON FUNCTION private.current_company_id() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION private.is_company_admin() FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION private.current_employee_id() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION private.is_site_in_company(text) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION private.is_site_in_company(uuid) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION private.is_vehicle_in_company(text) FROM PUBLIC, anon;
 
 GRANT EXECUTE ON FUNCTION private.current_company_id() TO authenticated;
 GRANT EXECUTE ON FUNCTION private.is_company_admin() TO authenticated;
 GRANT EXECUTE ON FUNCTION private.current_employee_id() TO authenticated;
+GRANT EXECUTE ON FUNCTION private.is_site_in_company(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION private.is_site_in_company(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION private.is_vehicle_in_company(text) TO authenticated;
 
@@ -273,13 +285,13 @@ CREATE POLICY "site_tasks_select_tenant" ON public.site_tasks
   FOR SELECT TO authenticated
   USING (
     company_id = (SELECT private.current_company_id())
-    OR (SELECT private.is_site_in_company(site_id))
+    OR (SELECT private.is_site_in_company(site_id::text))
   );
 
 CREATE POLICY "site_tasks_insert_admin" ON public.site_tasks
   FOR INSERT TO authenticated
   WITH CHECK (
-    (company_id = (SELECT private.current_company_id()) OR (SELECT private.is_site_in_company(site_id)))
+    (company_id = (SELECT private.current_company_id()) OR (SELECT private.is_site_in_company(site_id::text)))
     AND (SELECT private.is_company_admin())
   );
 
@@ -287,10 +299,10 @@ CREATE POLICY "site_tasks_update_tenant" ON public.site_tasks
   FOR UPDATE TO authenticated
   USING (
     company_id = (SELECT private.current_company_id())
-    OR (SELECT private.is_site_in_company(site_id))
+    OR (SELECT private.is_site_in_company(site_id::text))
   )
   WITH CHECK (
-    (company_id = (SELECT private.current_company_id()) OR (SELECT private.is_site_in_company(site_id)))
+    (company_id = (SELECT private.current_company_id()) OR (SELECT private.is_site_in_company(site_id::text)))
     AND (
       (SELECT private.is_company_admin())
       OR status <> 'confirmada_chefe'
@@ -300,7 +312,7 @@ CREATE POLICY "site_tasks_update_tenant" ON public.site_tasks
 CREATE POLICY "site_tasks_delete_admin" ON public.site_tasks
   FOR DELETE TO authenticated
   USING (
-    (company_id = (SELECT private.current_company_id()) OR (SELECT private.is_site_in_company(site_id)))
+    (company_id = (SELECT private.current_company_id()) OR (SELECT private.is_site_in_company(site_id::text)))
     AND (SELECT private.is_company_admin())
   );
 
@@ -308,20 +320,20 @@ CREATE POLICY "site_tasks_delete_admin" ON public.site_tasks
 ALTER TABLE public.site_daily_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "site_daily_logs_select_tenant" ON public.site_daily_logs
   FOR SELECT TO authenticated
-  USING ((SELECT private.is_site_in_company(site_id)));
+  USING ((SELECT private.is_site_in_company(site_id::text)));
 
 CREATE POLICY "site_daily_logs_insert_tenant" ON public.site_daily_logs
   FOR INSERT TO authenticated
-  WITH CHECK ((SELECT private.is_site_in_company(site_id)));
+  WITH CHECK ((SELECT private.is_site_in_company(site_id::text)));
 
 CREATE POLICY "site_daily_logs_update_admin" ON public.site_daily_logs
   FOR UPDATE TO authenticated
-  USING ((SELECT private.is_site_in_company(site_id)) AND (SELECT private.is_company_admin()))
-  WITH CHECK ((SELECT private.is_site_in_company(site_id)));
+  USING ((SELECT private.is_site_in_company(site_id::text)) AND (SELECT private.is_company_admin()))
+  WITH CHECK ((SELECT private.is_site_in_company(site_id::text)));
 
 CREATE POLICY "site_daily_logs_delete_admin" ON public.site_daily_logs
   FOR DELETE TO authenticated
-  USING ((SELECT private.is_site_in_company(site_id)) AND (SELECT private.is_company_admin()));
+  USING ((SELECT private.is_site_in_company(site_id::text)) AND (SELECT private.is_company_admin()));
 
 -- F. time_entries (colaborador só insere ponto pendente próprio; só admin aprova/altera/apaga)
 ALTER TABLE public.time_entries ENABLE ROW LEVEL SECURITY;
@@ -402,7 +414,7 @@ CREATE POLICY "work_sessions_insert_leader_or_admin" ON public.site_work_session
     company_id = (SELECT private.current_company_id())
     AND (
       (SELECT private.is_company_admin())
-      OR leader_id = (SELECT private.current_employee_id())::text
+      OR leader_id::text = (SELECT private.current_employee_id())::text
     )
   );
 
@@ -419,12 +431,12 @@ CREATE POLICY "work_sessions_delete_admin" ON public.site_work_sessions
 ALTER TABLE public.site_documents ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "site_documents_select_tenant" ON public.site_documents
   FOR SELECT TO authenticated
-  USING ((SELECT private.is_site_in_company(site_id)));
+  USING ((SELECT private.is_site_in_company(site_id::text)));
 
 CREATE POLICY "site_documents_write_admin" ON public.site_documents
   FOR ALL TO authenticated
-  USING ((SELECT private.is_site_in_company(site_id)) AND (SELECT private.is_company_admin()))
-  WITH CHECK ((SELECT private.is_site_in_company(site_id)) AND (SELECT private.is_company_admin()));
+  USING ((SELECT private.is_site_in_company(site_id::text)) AND (SELECT private.is_company_admin()))
+  WITH CHECK ((SELECT private.is_site_in_company(site_id::text)) AND (SELECT private.is_company_admin()));
 
 -- J. site_accidents
 DO $$
@@ -463,7 +475,7 @@ CREATE POLICY "teams_update_admin_or_leader" ON public.teams
     company_id = (SELECT private.current_company_id())
     AND (
       (SELECT private.is_company_admin())
-      OR leader_id = (SELECT private.current_employee_id())::text
+      OR leader_id::text = (SELECT private.current_employee_id())::text
     )
   )
   WITH CHECK (company_id = (SELECT private.current_company_id()));
@@ -511,8 +523,8 @@ CREATE POLICY "vehicle_assign_write_admin" ON public.vehicle_weekly_assignments
 ALTER TABLE public.vehicle_inventory_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "vehicle_inv_tenant" ON public.vehicle_inventory_items
   FOR ALL TO authenticated
-  USING ((SELECT private.is_vehicle_in_company(vehicle_id)))
-  WITH CHECK ((SELECT private.is_vehicle_in_company(vehicle_id)));
+  USING ((SELECT private.is_vehicle_in_company(vehicle_id::text)))
+  WITH CHECK ((SELECT private.is_vehicle_in_company(vehicle_id::text)));
 
 ALTER TABLE public.vehicle_maintenance_records ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "vehicle_maint_select_tenant" ON public.vehicle_maintenance_records
@@ -563,7 +575,7 @@ CREATE POLICY "absence_select_scoped" ON public.absence_justifications
     company_id = (SELECT private.current_company_id())
     AND (
       (SELECT private.is_company_admin())
-      OR employee_id = (SELECT private.current_employee_id())::text
+      OR employee_id::text = (SELECT private.current_employee_id())::text
     )
   );
 CREATE POLICY "absence_insert_self" ON public.absence_justifications
@@ -572,7 +584,7 @@ CREATE POLICY "absence_insert_self" ON public.absence_justifications
     company_id = (SELECT private.current_company_id())
     AND (
       (SELECT private.is_company_admin())
-      OR (employee_id = (SELECT private.current_employee_id())::text AND status = 'pendente')
+      OR (employee_id::text = (SELECT private.current_employee_id())::text AND status = 'pendente')
     )
   );
 CREATE POLICY "absence_update_admin" ON public.absence_justifications
@@ -640,45 +652,49 @@ BEGIN
   SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.created_at DESC), '[]'::jsonb)
   INTO v_tasks
   FROM public.site_tasks t
-  WHERE t.site_id = v_site.id;
+  WHERE t.site_id::text = v_site.id::text;
 
   SELECT COALESCE(jsonb_agg(to_jsonb(l) ORDER BY l.log_date DESC), '[]'::jsonb)
   INTO v_daily_logs
   FROM public.site_daily_logs l
-  WHERE l.site_id = v_site.id;
+  WHERE l.site_id::text = v_site.id::text;
 
   SELECT COALESCE(jsonb_agg(to_jsonb(ws) ORDER BY ws.work_date DESC), '[]'::jsonb)
   INTO v_work_sessions
   FROM public.site_work_sessions ws
-  WHERE ws.site_id = v_site.id;
+  WHERE ws.site_id::text = v_site.id::text;
 
   SELECT COALESCE(jsonb_agg(to_jsonb(d) ORDER BY d.uploaded_at DESC), '[]'::jsonb)
   INTO v_documents
   FROM public.site_documents d
-  WHERE d.site_id = v_site.id;
+  WHERE d.site_id::text = v_site.id::text;
 
   SELECT COALESCE(jsonb_agg(to_jsonb(ev) ORDER BY ev.event_date ASC), '[]'::jsonb)
   INTO v_milestones
   FROM public.calendar_events ev
-  WHERE ev.site_id = v_site.id::text
+  WHERE ev.site_id::text = v_site.id::text
     AND ev.category = 'etapa_obra';
 
   -- Apenas o total consolidado de receitas pagas desta obra (sem vazar linhas de despesas/fornecedores)
   SELECT COALESCE(SUM(
     CASE
-      WHEN ft.type IN ('receita', 'income') AND ft.status = 'pago' THEN ft.amount
-      WHEN ft.type IN ('receita', 'income') AND ft.status = 'parcial' THEN COALESCE(ft.paid_amount, 0)
+      WHEN (to_jsonb(ft)->>'type') IN ('receita', 'income')
+           AND ((to_jsonb(ft)->>'status') = 'pago' OR (to_jsonb(ft)->>'paid') = 'true')
+        THEN COALESCE((to_jsonb(ft)->>'amount')::numeric, 0)
+      WHEN (to_jsonb(ft)->>'type') IN ('receita', 'income')
+           AND (to_jsonb(ft)->>'status') = 'parcial'
+        THEN COALESCE((to_jsonb(ft)->>'paid_amount')::numeric, 0)
       ELSE 0
     END
   ), 0)
   INTO v_paid_revenues
   FROM public.financial_transactions ft
-  WHERE ft.site_id::text = v_site.id::text
-    AND ft.status <> 'cancelado';
+  WHERE (to_jsonb(ft)->>'site_id') = v_site.id::text
+    AND COALESCE(to_jsonb(ft)->>'status', 'pendente') <> 'cancelado';
 
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'site_accidents') THEN
     EXECUTE
-      'SELECT COALESCE(jsonb_agg(to_jsonb(a) ORDER BY a.accident_date DESC), ''[]''::jsonb) FROM public.site_accidents a WHERE a.site_id = $1'
+      'SELECT COALESCE(jsonb_agg(to_jsonb(a) ORDER BY a.accident_date DESC), ''[]''::jsonb) FROM public.site_accidents a WHERE a.site_id::text = $1'
       INTO v_accidents
       USING v_site.id::text;
   ELSE
