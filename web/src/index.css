@@ -640,6 +640,17 @@ html, body {
   background-color: var(--bg-card-subtle);
 }
 
+/* Virtualização nativa de linhas fora da viewport para tabelas longas */
+.flat-table tbody tr {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+
+.virtual-list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+
 /* Badges Flat */
 .badge-flat {
   display: inline-flex;

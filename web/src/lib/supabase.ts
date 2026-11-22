@@ -2410,6 +2410,7 @@ export async function addSiteDailyLog(
 export interface PaginationOptions {
   limit?: number;
   offset?: number;
+  beforeCursor?: string;
 }
 
 // ============================================================================
@@ -2419,11 +2420,11 @@ export async function getAllTimeEntries(
   companyId?: string,
   options?: PaginationOptions
 ): Promise<TimeEntry[]> {
-  const dedupeKey = `time_entries_${companyId || 'all'}_${options?.limit || 500}_${options?.offset || 0}`;
+  const dedupeKey = `time_entries_${companyId || 'all'}_${options?.limit || 100}_${options?.offset || 0}_${options?.beforeCursor || ''}`;
   return fetchWithDedupe(dedupeKey, async () => {
     let entries: TimeEntry[] = [];
 
-    // 1. Tenta carregar do Supabase com projeção explícita e paginação segura
+    // 1. Tenta carregar do Supabase com projeção explícita e paginação keyset/cursor
     if (supabase) {
       try {
         let query = supabase
@@ -2435,12 +2436,13 @@ export async function getAllTimeEntries(
           query = query.or(`company_id.eq.${companyId},company_id.is.null`);
         }
 
-        if (options?.limit) {
-          const offset = options.offset || 0;
-          query = query.range(offset, offset + options.limit - 1);
+        if (options?.beforeCursor) {
+          query = query.lt('recorded_at', options.beforeCursor).limit(options.limit || 50);
+        } else if (options?.limit && options?.offset) {
+          query = query.range(options.offset, options.offset + options.limit - 1);
         } else {
-          // Limite padrão seguro de 500 registos para preservar banda de rede e performance
-          query = query.limit(500);
+          // Limite inicial otimizado (100 registos recentes; usar beforeCursor para carregar páginas anteriores)
+          query = query.limit(options?.limit || 100);
         }
 
         const { data, error } = await query;
@@ -2638,28 +2640,31 @@ export async function getFinancialRecords(
   companyId?: string,
   options?: PaginationOptions
 ): Promise<FinancialRecord[]> {
-  const localKey = getFinStorageKey(companyId);
-  const stored = localStorage.getItem(localKey);
-  const localList: FinancialRecord[] = stored ? JSON.parse(stored) : [];
+  const dedupeKey = `financial_${companyId || 'all'}_${options?.limit || 200}_${options?.offset || 0}_${options?.beforeCursor || ''}`;
+  return fetchWithDedupe(dedupeKey, async () => {
+    const localKey = getFinStorageKey(companyId);
+    const stored = localStorage.getItem(localKey);
+    const localList: FinancialRecord[] = stored ? JSON.parse(stored) : [];
 
-  if (supabase) {
-    try {
-      let query = supabase
-        .from('financial_transactions')
-        .select('*')
-        .order('due_date', { ascending: false });
+    if (supabase) {
+      try {
+        let query = supabase
+          .from('financial_transactions')
+          .select('*')
+          .order('due_date', { ascending: false });
 
-      if (companyId) {
-        query = query.or(`company_id.eq.${companyId},company_id.is.null`);
-      }
+        if (companyId) {
+          query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+        }
 
-      if (options?.limit) {
-        const offset = options.offset || 0;
-        query = query.range(offset, offset + options.limit - 1);
-      } else {
-        // Limite padrão protetor de 500 registos para otimização de rede e renderização
-        query = query.limit(500);
-      }
+        if (options?.beforeCursor) {
+          query = query.lt('due_date', options.beforeCursor).limit(options.limit || 50);
+        } else if (options?.limit && options?.offset) {
+          query = query.range(options.offset, options.offset + options.limit - 1);
+        } else {
+          // Limite inicial otimizado (200 registos; suporta paginação por cursor beforeCursor)
+          query = query.limit(options?.limit || 200);
+        }
 
       const { data, error } = await query;
       if (!error && data) {
@@ -2782,6 +2787,7 @@ export async function getFinancialRecords(
   }
 
   return localList.filter((r) => !r.id.startsWith('fin-0'));
+  });
 }
 
 export async function saveFinancialRecord(
