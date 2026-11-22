@@ -634,6 +634,10 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
                                 <img
                                   src={photoUrl}
                                   alt="Serviço"
+                                  width={80}
+                                  height={80}
+                                  loading="lazy"
+                                  decoding="async"
                                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                 />
                               </button>
@@ -1453,7 +1457,7 @@ export const SiteDetailPage: React.FC<SiteDetailPageProps> = ({
                         onClick={() => setViewingPhotoUrl(pUrl)}
                         title="Clique para ampliar"
                       >
-                        <img src={pUrl} alt="Foto do serviço" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <img src={pUrl} alt="Foto do serviço" width={160} height={120} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       </div>
                     ))}
                   </div>

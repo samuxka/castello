@@ -1001,6 +1001,10 @@ export function EmployeeDetailPage({
                               <img
                                 src={photo}
                                 alt={`Comprovativo ${pIdx + 1}`}
+                                width={80}
+                                height={80}
+                                loading="lazy"
+                                decoding="async"
                                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                               />
                               <div
@@ -1207,6 +1211,10 @@ export function EmployeeDetailPage({
                                 <img
                                   src={photoUri}
                                   alt={`Anexo ${idx + 1}`}
+                                  width={60}
+                                  height={60}
+                                  loading="lazy"
+                                  decoding="async"
                                   style={{ width: 60, height: 60, objectFit: 'cover', display: 'block' }}
                                 />
                               </button>

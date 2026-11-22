@@ -740,12 +740,20 @@ export default function App() {
               <img
                 src={activeCompany.logo_url}
                 alt="Logo"
+                width={32}
+                height={32}
+                fetchPriority="high"
+                decoding="async"
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             ) : (
               <img
-                src="/logo.png"
+                src="/logo.webp"
                 alt="Logo Castello"
+                width={32}
+                height={32}
+                fetchPriority="high"
+                decoding="async"
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}
               />
             )}
@@ -826,6 +834,10 @@ export default function App() {
                   <img
                     src={activeCompany.logo_url}
                     alt="Logo"
+                    width={36}
+                    height={36}
+                    fetchPriority="high"
+                    decoding="async"
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 ) : (
@@ -834,6 +846,8 @@ export default function App() {
                     alt="Logo Castello"
                     width={36}
                     height={36}
+                    fetchPriority="high"
+                    decoding="async"
                     style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                   />
                 )}
@@ -1413,6 +1427,10 @@ export default function App() {
                                           <img
                                             src={emp.avatar_url}
                                             alt={emp.full_name}
+                                            width={28}
+                                            height={28}
+                                            loading="lazy"
+                                            decoding="async"
                                             style={{
                                               width: 28,
                                               height: 28,
@@ -1551,6 +1569,10 @@ export default function App() {
                                           <img
                                             src={emp.avatar_url}
                                             alt={emp.full_name}
+                                            width={28}
+                                            height={28}
+                                            loading="lazy"
+                                            decoding="async"
                                             style={{
                                               width: 28,
                                               height: 28,
@@ -1995,6 +2017,10 @@ export default function App() {
                                       <img
                                         src={emp.avatar_url}
                                         alt={emp.full_name}
+                                        width={36}
+                                        height={36}
+                                        loading="lazy"
+                                        decoding="async"
                                         style={{
                                           width: 36,
                                           height: 36,
@@ -2108,6 +2134,10 @@ export default function App() {
                                 <img
                                   src={emp.avatar_url}
                                   alt={emp.full_name}
+                                  width={48}
+                                  height={48}
+                                  loading="lazy"
+                                  decoding="async"
                                   style={{
                                     width: 48,
                                     height: 48,

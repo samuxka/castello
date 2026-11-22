@@ -612,13 +612,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             }}
             className="auth-image-panel"
           >
-            <div
+            <img
+              src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=75&w=1000&auto=format&fit=crop&fm=webp"
+              srcSet="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=75&w=600&auto=format&fit=crop&fm=webp 600w, https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=75&w=1000&auto=format&fit=crop&fm=webp 1000w, https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=75&w=1400&auto=format&fit=crop&fm=webp 1400w"
+              sizes="(max-width: 768px) 0px, 50vw"
+              alt="Edifício arquitetónico moderno"
+              width={700}
+              height={900}
+              fetchPriority="high"
+              decoding="async"
               style={{
                 position: 'absolute',
                 inset: 0,
-                backgroundImage: `url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=1400&auto=format&fit=crop')`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center',
                 filter: 'brightness(0.9) contrast(1.1)',
               }}
             />

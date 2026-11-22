@@ -1021,6 +1021,10 @@ export function TeamsPage({
                             <img
                               src={emp.avatar_url}
                               alt={emp.full_name}
+                              width={26}
+                              height={26}
+                              loading="lazy"
+                              decoding="async"
                               style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }}
                             />
                           ) : (
@@ -1988,6 +1992,10 @@ export function TeamsPage({
                           <img
                             src={leaderEmp.avatar_url}
                             alt={team.leader_name}
+                            width={34}
+                            height={34}
+                            loading="lazy"
+                            decoding="async"
                             style={{
                               width: 34,
                               height: 34,
@@ -2400,6 +2408,10 @@ export function TeamsPage({
                             <img
                               src={leaderEmp.avatar_url}
                               alt={team.leader_name}
+                              width={28}
+                              height={28}
+                              loading="lazy"
+                              decoding="async"
                               style={{
                                 width: 28,
                                 height: 28,

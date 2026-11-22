@@ -1008,6 +1008,10 @@ export function VehicleDetailPage({
                                   <img
                                     src={drv.avatar_url}
                                     alt={a.driver_name}
+                                    width={24}
+                                    height={24}
+                                    loading="lazy"
+                                    decoding="async"
                                     style={{ width: 24, height: 24, borderRadius: '50%', objectFit: 'cover' }}
                                   />
                                 ) : (
@@ -1163,6 +1167,10 @@ export function VehicleDetailPage({
                               <img
                                 src={uri}
                                 alt={`Foto ${idx + 1}`}
+                                width={64}
+                                height={64}
+                                loading="lazy"
+                                decoding="async"
                                 style={{ width: 64, height: 64, objectFit: 'cover', display: 'block' }}
                               />
                             </button>

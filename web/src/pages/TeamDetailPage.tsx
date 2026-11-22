@@ -2039,6 +2039,10 @@ export function TeamDetailPage({
                             <img
                               src={member.avatar_url}
                               alt={member.full_name}
+                              width={44}
+                              height={44}
+                              loading="lazy"
+                              decoding="async"
                               style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
                             />
                           ) : (

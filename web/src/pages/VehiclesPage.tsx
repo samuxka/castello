@@ -580,6 +580,10 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
                               <img
                                 src={v.photo_url}
                                 alt={v.license_plate}
+                                width={38}
+                                height={38}
+                                loading="lazy"
+                                decoding="async"
                                 style={{
                                   width: 38,
                                   height: 38,
@@ -799,6 +803,10 @@ export function VehiclesPage({ companyId, sites, employees, onSelectVehicle, sho
                           <img
                             src={v.photo_url}
                             alt={v.license_plate}
+                            width={36}
+                            height={36}
+                            loading="lazy"
+                            decoding="async"
                             style={{
                               width: 36,
                               height: 36,

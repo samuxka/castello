@@ -385,6 +385,10 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
               <img
                 src={company?.logo_url || '/logo.webp'}
                 alt={company?.name || 'Castello'}
+                width={48}
+                height={48}
+                fetchPriority="high"
+                decoding="async"
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}
               />
             </div>
@@ -1208,7 +1212,7 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
                                 }}
                                 title="Clique para ampliar"
                               >
-                                <img src={pUrl} alt={task.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <img src={pUrl} alt={task.title} width={96} height={96} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                               </div>
                             ))}
                           </div>
@@ -1275,6 +1279,10 @@ export const ClientPortalPage: React.FC<ClientPortalPageProps> = ({ shareCode })
                       <img
                         src={photo.url}
                         alt={photo.title}
+                        width={260}
+                        height={180}
+                        loading="lazy"
+                        decoding="async"
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
                       <div
