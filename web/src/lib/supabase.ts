@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { fetchWithTimeout } from './fetchWithTimeout';
 import {
   AbsenceJustification,
   CalendarEvent,
@@ -64,6 +65,10 @@ export const isSupabaseConfigured =
 
 export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: {
+        fetch: (input, init) =>
+          fetchWithTimeout(input, init, { timeoutMs: 12000, retries: 1 }),
+      },
       auth: {
         persistSession: true,
         autoRefreshToken: true,
@@ -4724,7 +4729,7 @@ export async function pushEventToGoogleCalendarApi(
       }
     }
 
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
       {
         method: 'POST',
@@ -4733,7 +4738,8 @@ export async function pushEventToGoogleCalendarApi(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
-      }
+      },
+      { timeoutMs: 8000, retries: 0 }
     );
 
     if (res.ok) {

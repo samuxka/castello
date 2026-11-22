@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { fetchWithTimeout } from './fetchWithTimeout';
 
 interface CloudinarySignResponse {
   signature: string;
@@ -13,9 +14,13 @@ interface CloudinarySignResponse {
  * garantindo que nenhuma chave secreta (API Secret) seja exposta no navegador.
  */
 async function getSecureUploadParams(folder: string): Promise<CloudinarySignResponse> {
-  // 1. Tentar endpoint serverless Vercel / Vite dev server
+  // 1. Tentar endpoint serverless Vercel / Vite dev server com timeout e retry seguro
   try {
-    const res = await fetch(`/api/sign-cloudinary?folder=${encodeURIComponent(folder)}`);
+    const res = await fetchWithTimeout(
+      `/api/sign-cloudinary?folder=${encodeURIComponent(folder)}`,
+      { method: 'GET' },
+      { timeoutMs: 5000, retries: 1 }
+    );
     if (res.ok) {
       const data = await res.json();
       if (data.signature && data.timestamp && data.api_key && data.cloud_name) {
@@ -77,12 +82,13 @@ export async function uploadImageToCloudinary(
   formData.append('folder', params.folder);
   formData.append('signature', params.signature);
 
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://api.cloudinary.com/v1_1/${params.cloud_name}/image/upload`,
     {
       method: 'POST',
       body: formData,
-    }
+    },
+    { timeoutMs: 25000, retries: 0 }
   );
 
   const data = await response.json();
