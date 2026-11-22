@@ -10,7 +10,7 @@ interface CloudinarySignResponse {
 }
 
 const SIGN_API_BASE =
-  process.env.EXPO_PUBLIC_API_URL || 'https://castello-ponto.vercel.app';
+  process.env.EXPO_PUBLIC_API_URL || 'https://www.erpcastle.com';
 
 /**
  * Obtém parâmetros e assinatura criptográfica segura gerados no backend serverless,

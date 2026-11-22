@@ -205,16 +205,51 @@ export async function authenticateEmployee(
 ): Promise<EmployeeProfile | null> {
   const cleanEmail = email.trim().toLowerCase();
   const cleanCode = accessCode.trim();
+  // Supabase Auth exige senha >= 6 chars; para PINs legados de 4-5 dígitos, aplica sufixo determinístico
+  const authPassword = cleanCode.length >= 6 ? cleanCode : `${cleanCode}_cst`;
 
   if (supabase) {
     try {
       // 1. Autentica via Supabase Auth (JWT real no servidor)
-      const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+      let { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
-        password: cleanCode,
+        password: authPassword,
       });
 
+      // 2. Migração transparente de colaborador legado (criado em public.profiles antes do Supabase Auth)
+      if (authErr || !authData?.user) {
+        const { data: legacyValid, error: legacyErr } = await supabase.rpc(
+          'verify_legacy_employee_credentials',
+          { p_email: cleanEmail, p_access_code: cleanCode }
+        );
+
+        if (!legacyErr && legacyValid === true) {
+          const { data: signedUp, error: signUpErr } = await supabase.auth.signUp({
+            email: cleanEmail,
+            password: authPassword,
+          });
+          if (!signUpErr && signedUp?.user) {
+            authData = signedUp as any;
+            authErr = null;
+            if (!signedUp.session) {
+              const retry = await supabase.auth.signInWithPassword({
+                email: cleanEmail,
+                password: authPassword,
+              });
+              if (!retry.error && retry.data?.user) {
+                authData = retry.data as any;
+              }
+            }
+          }
+        }
+      }
+
       if (!authErr && authData?.user) {
+        // Vincula auth_user_id em profiles se ainda for conta legada
+        try {
+          await supabase.rpc('claim_legacy_employee_by_email');
+        } catch {}
+
         const { data: profileByAuth } = await supabase
           .from('profiles')
           .select('id, company_id, auth_user_id, full_name, email, role, job_title, phone, hourly_rate, monthly_target_hours, avatar_url, admission_date, is_active, created_at')

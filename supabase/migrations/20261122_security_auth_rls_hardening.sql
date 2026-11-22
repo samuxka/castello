@@ -817,5 +817,68 @@ $$;
 REVOKE ALL ON FUNCTION public.claim_legacy_company_by_email() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.claim_legacy_company_by_email() TO authenticated;
 
--- 9. RECARREGAR SCHEMA DO POSTGREST
+-- 9. RPCS PARA MIGRAÇÃO TRANSPARENTE DE COLABORADORES LEGADOS NO APP MOBILE
+CREATE OR REPLACE FUNCTION public.verify_legacy_employee_credentials(p_email text, p_access_code text)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_clean_email text;
+  v_clean_code text;
+BEGIN
+  v_clean_email := LOWER(TRIM(COALESCE(p_email, '')));
+  v_clean_code := TRIM(COALESCE(p_access_code, ''));
+  IF v_clean_email = '' OR v_clean_code = '' THEN
+    RETURN false;
+  END IF;
+
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles p
+    WHERE LOWER(TRIM(p.email)) = v_clean_email
+      AND p.is_active = true
+      AND p.auth_user_id IS NULL
+      AND TRIM(COALESCE(p.access_code, '')) = v_clean_code
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.verify_legacy_employee_credentials(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.verify_legacy_employee_credentials(text, text) TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.claim_legacy_employee_by_email()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_uid uuid;
+  v_email text;
+BEGIN
+  v_uid := (SELECT auth.uid());
+  IF v_uid IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT LOWER(TRIM(email)) INTO v_email FROM auth.users WHERE id = v_uid;
+  IF v_email IS NULL THEN
+    RETURN;
+  END IF;
+
+  UPDATE public.profiles
+  SET auth_user_id = v_uid,
+      access_code = 'supabase_auth_managed'
+  WHERE LOWER(TRIM(email)) = v_email
+    AND is_active = true
+    AND auth_user_id IS NULL;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.claim_legacy_employee_by_email() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.claim_legacy_employee_by_email() TO authenticated;
+
+-- 10. RECARREGAR SCHEMA DO POSTGREST
 NOTIFY pgrst, 'reload schema';
