@@ -390,38 +390,6 @@ export async function registerCompany(
       throw new Error('Já existe uma firma registada com este e-mail.');
     }
 
-    // Dispara o registo com envio do e-mail de verificação oficial pelo Supabase Auth
-    const redirectUrl =
-      typeof window !== 'undefined'
-        ? `${window.location.origin}/?verified=true`
-        : undefined;
-
-    // Gera e armazena token numérico de contingência
-    const generatedOtp = String(Math.floor(100000 + Math.random() * 900000));
-    try {
-      localStorage.setItem(`castello_otp_${cleanEmail}`, generatedOtp);
-    } catch {}
-
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: cleanEmail,
-      password: password,
-      options: {
-        data: {
-          company_name: name.trim(),
-          phone: phone?.trim() || null,
-          tax_id: taxId?.trim() || null,
-        },
-        emailRedirectTo: redirectUrl,
-      },
-    });
-
-    if (authError) {
-      if (authError.message.toLowerCase().includes('already registered')) {
-        throw new Error('Já existe uma conta registada com este e-mail no sistema.');
-      }
-      console.warn('Aviso no supabase.auth.signUp:', authError.message);
-    }
-
     const { data, error } = await supabase
       .from('companies')
       .insert({
@@ -431,26 +399,28 @@ export async function registerCompany(
         phone: phone?.trim() || null,
         tax_id: taxId?.trim() || null,
       })
-      .select('*')
+      .select(COMPANY_SAFE_COLS)
       .single();
 
     if (error || !data) {
       throw new Error(error?.message || 'Falha ao criar firma.');
     }
 
+    const createdCompany = data as unknown as Company;
+
     // Carrega configurações da nuvem (logo_url, theme_color, theme_mode)
-    const cloudSettings = await fetchCompanyCloudSettings(data.id);
+    const cloudSettings = await fetchCompanyCloudSettings(createdCompany.id);
     if (cloudSettings) {
-      if (cloudSettings.logo_url && !data.logo_url) data.logo_url = cloudSettings.logo_url;
-      if (cloudSettings.theme_color && !data.theme_color) data.theme_color = cloudSettings.theme_color;
-      if (cloudSettings.theme_mode && !data.theme_mode) data.theme_mode = cloudSettings.theme_mode;
+      if (cloudSettings.logo_url && !createdCompany.logo_url) createdCompany.logo_url = cloudSettings.logo_url;
+      if (cloudSettings.theme_color && !createdCompany.theme_color) createdCompany.theme_color = cloudSettings.theme_color;
+      if (cloudSettings.theme_mode && !createdCompany.theme_mode) createdCompany.theme_mode = cloudSettings.theme_mode;
     }
 
-    if (data.theme_color || data.theme_mode) {
-      saveTheme((data.theme_color as ThemeColor) || 'azul', (data.theme_mode as ThemeMode) || 'dark');
+    if (createdCompany.theme_color || createdCompany.theme_mode) {
+      saveTheme((createdCompany.theme_color as ThemeColor) || 'azul', (createdCompany.theme_mode as ThemeMode) || 'dark');
     }
 
-    return data as Company;
+    return createdCompany;
   }
 
   const mockCompany: Company = {
@@ -461,125 +431,7 @@ export async function registerCompany(
     phone,
     tax_id: taxId,
   };
-  try {
-    localStorage.setItem(`castello_otp_${cleanEmail}`, '123456');
-  } catch {}
   return mockCompany;
-}
-
-export async function resendVerificationEmail(email: string): Promise<void> {
-  const cleanEmail = email.trim().toLowerCase();
-  const generatedOtp = String(Math.floor(100000 + Math.random() * 900000));
-  try {
-    localStorage.setItem(`castello_otp_${cleanEmail}`, generatedOtp);
-  } catch {}
-
-  if (supabase) {
-    try {
-      const redirectUrl =
-        typeof window !== 'undefined'
-          ? `${window.location.origin}/?verified=true`
-          : undefined;
-
-      await supabase.auth.resend({
-        type: 'signup',
-        email: cleanEmail,
-        options: {
-          emailRedirectTo: redirectUrl,
-        },
-      });
-    } catch (e: any) {
-      console.warn('Aviso no resend do Supabase:', e?.message || e);
-    }
-  }
-}
-
-export async function verifyRegistrationCode(
-  email: string,
-  code: string
-): Promise<{ success: boolean; error?: string }> {
-  const cleanEmail = email.trim().toLowerCase();
-  const cleanCode = code.trim().replace(/\D/g, '');
-
-  if (cleanCode.length !== 6) {
-    return {
-      success: false,
-      error: 'O código de verificação deve conter exatamente 6 dígitos numéricos.',
-    };
-  }
-
-  // 1. Tenta validar via Supabase Auth OTP oficial
-  if (supabase) {
-    try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: cleanEmail,
-        token: cleanCode,
-        type: 'signup',
-      });
-
-      if (!error && data?.user) {
-        try {
-          localStorage.setItem(`castello_verified_${cleanEmail}`, 'true');
-          localStorage.removeItem(`castello_otp_${cleanEmail}`);
-        } catch {}
-
-        return { success: true };
-      }
-
-      // Tenta também com type: 'email'
-      const retry = await supabase.auth.verifyOtp({
-        email: cleanEmail,
-        token: cleanCode,
-        type: 'email',
-      });
-
-      if (!retry.error && retry.data?.user) {
-        try {
-          localStorage.setItem(`castello_verified_${cleanEmail}`, 'true');
-          localStorage.removeItem(`castello_otp_${cleanEmail}`);
-        } catch {}
-
-        return { success: true };
-      }
-    } catch (err) {
-      console.warn('Aviso no Supabase verifyOtp:', err);
-    }
-  }
-
-  // 2. Validação via token local de contingência
-  try {
-    const localOtp = localStorage.getItem(`castello_otp_${cleanEmail}`);
-    if (localOtp && localOtp === cleanCode) {
-      localStorage.setItem(`castello_verified_${cleanEmail}`, 'true');
-      localStorage.removeItem(`castello_otp_${cleanEmail}`);
-      return { success: true };
-    }
-  } catch {}
-
-  return {
-    success: false,
-    error: 'Código incorreto ou expirado. Verifique os 6 dígitos recebidos no seu e-mail e tente novamente.',
-  };
-}
-
-export async function checkEmailVerificationStatus(email: string): Promise<boolean> {
-  const cleanEmail = email.trim().toLowerCase();
-  try {
-    if (localStorage.getItem(`castello_verified_${cleanEmail}`) === 'true') {
-      return true;
-    }
-  } catch {}
-
-  if (!supabase) return false;
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user && session.user.email?.toLowerCase() === cleanEmail) {
-      return !!session.user.email_confirmed_at;
-    }
-  } catch (e) {
-    console.warn('Erro ao verificar status de e-mail:', e);
-  }
-  return false;
 }
 
 export async function getCompanyByEmail(email: string): Promise<Company | null> {

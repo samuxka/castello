@@ -1,34 +1,19 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
-  Building2,
   Check,
   CheckCircle2,
-  Clock,
   Eye,
   EyeOff,
-  FileText,
-  KeyRound,
   Lock,
-  Mail,
-  RefreshCw,
-  RotateCcw,
-  Shield,
   ShieldCheck,
-  Sparkles,
-  Users,
-  Wrench,
 } from 'lucide-react';
 import {
-  checkEmailVerificationStatus,
-  getCompanyByEmail,
   loginCompany,
   loginWithGoogle,
   registerCompany,
-  resendVerificationEmail,
   updateCompanyProfile,
-  verifyRegistrationCode,
 } from '../lib/supabase';
 import { Company } from '../types';
 import { loginSchema, registerSchema, validateWithZod } from '../lib/validation';
@@ -37,7 +22,7 @@ interface AuthModalProps {
   onSuccess: (company: Company) => void;
 }
 
-type AuthStage = 'auth' | 'code-verification' | 'onboarding' | 'terms';
+type AuthStage = 'auth' | 'onboarding' | 'terms';
 
 interface OnboardingOption {
   id: string;
@@ -249,15 +234,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   // Pending company state after initial registration
   const [pendingCompany, setPendingCompany] = useState<Company | null>(null);
 
-  // OTP 6-Digit Code State
-  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
-  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const [verifyingCode, setVerifyingCode] = useState(false);
-  const [codeError, setCodeError] = useState<string | null>(null);
-  const [codeSuccess, setCodeSuccess] = useState(false);
-  const [resendTimer, setResendTimer] = useState(45);
-  const [resendNotice, setResendNotice] = useState<string | null>(null);
-
   // Multi-step Onboarding State
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [onboardingAnswers, setOnboardingAnswers] = useState<Record<string, string>>({
@@ -272,27 +248,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [acceptPrivacy, setAcceptPrivacy] = useState(false);
   const [savingOnboarding, setSavingOnboarding] = useState(false);
-
-  // Temporizador para reenvio do código
-  useEffect(() => {
-    if (stage !== 'code-verification') return;
-    if (resendTimer <= 0) return;
-
-    const timer = setInterval(() => {
-      setResendTimer((prev) => Math.max(0, prev - 1));
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [stage, resendTimer]);
-
-  // Foco automático no primeiro campo quando entra na tela de código
-  useEffect(() => {
-    if (stage === 'code-verification') {
-      setTimeout(() => {
-        otpInputRefs.current[0]?.focus();
-      }, 150);
-    }
-  }, [stage]);
 
   const handleGoogleAuth = async () => {
     setErrorMsg(null);
@@ -328,7 +283,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         setLoading(false);
       }
     } else {
-      // 1. Registo de Conta: Dispara o registo e envio de código
+      // Registo de Conta: cria a firma e avança diretamente para o formulário multistep
       const val = validateWithZod(registerSchema, {
         companyName,
         email,
@@ -351,134 +306,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           val.data.phone || '',
           val.data.taxId || ''
         );
-        // Guarda a firma pendente e avança para a tela de introdução do código!
         setPendingCompany(created);
-        setOtpDigits(['', '', '', '', '', '']);
-        setCodeError(null);
-        setCodeSuccess(false);
-        setResendTimer(45);
-        setAuthStage('code-verification');
+        setCurrentStepIndex(0);
+        setAuthStage('onboarding');
       } catch (err: any) {
         setErrorMsg(err.message || 'Falha no registo da firma.');
       } finally {
         setLoading(false);
       }
-    }
-  };
-
-  // Gerenciamento dos 6 dígitos de OTP
-  const handleOtpChange = (index: number, value: string) => {
-    setCodeError(null);
-
-    // Se o utilizador colar uma string com múltiplos caracteres (ex: "123456")
-    const cleanedDigits = value.replace(/\D/g, '');
-    if (cleanedDigits.length > 1) {
-      const newDigits = [...otpDigits];
-      for (let i = 0; i < 6; i++) {
-        newDigits[i] = cleanedDigits[i] || '';
-      }
-      setOtpDigits(newDigits);
-      const nextFocus = Math.min(cleanedDigits.length, 5);
-      otpInputRefs.current[nextFocus]?.focus();
-      if (cleanedDigits.length >= 6) {
-        executeVerifyCode(newDigits.join(''));
-      }
-      return;
-    }
-
-    const singleDigit = cleanedDigits.slice(-1);
-    const newDigits = [...otpDigits];
-    newDigits[index] = singleDigit;
-    setOtpDigits(newDigits);
-
-    // Se digitou um número, salta para o próximo campo
-    if (singleDigit && index < 5) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
-
-    // Se preencheu os 6 dígitos, dispara a validação automaticamente
-    if (singleDigit && index === 5 && newDigits.every((d) => d !== '')) {
-      executeVerifyCode(newDigits.join(''));
-    }
-  };
-
-  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
-      otpInputRefs.current[index - 1]?.focus();
-    }
-    if (e.key === 'ArrowLeft' && index > 0) {
-      otpInputRefs.current[index - 1]?.focus();
-    }
-    if (e.key === 'ArrowRight' && index < 5) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleOtpPaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    if (!pastedData) return;
-
-    const newDigits = [...otpDigits];
-    for (let i = 0; i < 6; i++) {
-      newDigits[i] = pastedData[i] || '';
-    }
-    setOtpDigits(newDigits);
-
-    const nextIndex = Math.min(pastedData.length, 5);
-    otpInputRefs.current[nextIndex]?.focus();
-
-    if (pastedData.length === 6) {
-      executeVerifyCode(pastedData);
-    }
-  };
-
-  // Executa verificação do código digitado
-  const executeVerifyCode = async (codeToVerify?: string) => {
-    const fullCode = codeToVerify || otpDigits.join('');
-    const targetEmail = pendingCompany?.owner_email || email;
-
-    if (fullCode.length !== 6) {
-      setCodeError('Por favor introduza o código completo de 6 dígitos.');
-      return;
-    }
-
-    setVerifyingCode(true);
-    setCodeError(null);
-
-    try {
-      const result = await verifyRegistrationCode(targetEmail, fullCode);
-      if (result.success) {
-        setCodeSuccess(true);
-        setTimeout(() => {
-          // Conta verificada com sucesso! Avança para o formulário multistep
-          setAuthStage('onboarding');
-        }, 600);
-      } else {
-        setCodeError(result.error || 'Código incorreto. Tente novamente.');
-      }
-    } catch (err: any) {
-      setCodeError(err.message || 'Falha ao validar o código.');
-    } finally {
-      setVerifyingCode(false);
-    }
-  };
-
-  // Reenviar código
-  const handleResendCode = async () => {
-    if (resendTimer > 0) return;
-    const targetEmail = pendingCompany?.owner_email || email;
-
-    setResendNotice('A enviar novo código...');
-    try {
-      await resendVerificationEmail(targetEmail);
-      setResendTimer(45);
-      setResendNotice('✓ Novo código de 6 dígitos enviado para o seu e-mail!');
-      setOtpDigits(['', '', '', '', '', '']);
-      otpInputRefs.current[0]?.focus();
-      setTimeout(() => setResendNotice(null), 4000);
-    } catch (err: any) {
-      setResendNotice('Aviso: ' + (err.message || 'Aguarde antes de reenviar novo código.'));
     }
   };
 
@@ -523,7 +358,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           active_sites_count: onboardingAnswers.active_sites_count,
           primary_goal: onboardingAnswers.primary_goal,
           terms_accepted_at: new Date().toISOString(),
-          email_verified_at: new Date().toISOString(),
         });
       }
       if (finalCompany) {
@@ -540,7 +374,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   };
 
   const isSignup = mode === 'signup';
-  const isFullCodeEntered = otpDigits.every((d) => d !== '');
 
   return (
     <div
@@ -1149,285 +982,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       )}
 
       {/* ==================================================================== */}
-      {/* ESTÁGIO 2: TELA DE CÓDIGO (USUÁRIO DIGITA O CÓDIGO DE 6 DÍGITOS)     */}
-      {/* ==================================================================== */}
-      {stage === 'code-verification' && (
-        <div
-          style={{
-            position: 'relative',
-            width: '100%',
-            maxWidth: '560px',
-            borderRadius: '28px',
-            backgroundColor: '#ffffff',
-            boxShadow: '0 30px 80px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1)',
-            padding: '48px 40px',
-            textAlign: 'center',
-            zIndex: 10,
-          }}
-        >
-          {/* Key / Shield Icon */}
-          <div
-            style={{
-              width: '80px',
-              height: '80px',
-              margin: '0 auto 20px auto',
-              borderRadius: '24px',
-              backgroundColor: '#eff6ff',
-              border: '2px solid #bfdbfe',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#2563eb',
-              boxShadow: '0 12px 30px -8px rgba(37, 99, 235, 0.3)',
-            }}
-          >
-            <KeyRound size={38} />
-          </div>
-
-          <h2
-            style={{
-              fontSize: '26px',
-              fontWeight: 700,
-              color: '#0f172a',
-              fontFamily: `'Playfair Display', Georgia, serif`,
-              marginBottom: '8px',
-            }}
-          >
-            Introduza o Código de Verificação
-          </h2>
-
-          <p style={{ fontSize: '14px', color: '#64748b', lineHeight: 1.5, marginBottom: '18px' }}>
-            Enviámos um código numérico de <strong>6 dígitos</strong> para o e-mail:
-          </p>
-
-          {/* Email badge */}
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 18px',
-              borderRadius: '12px',
-              backgroundColor: '#f1f5f9',
-              border: '1px solid #e2e8f0',
-              color: '#0f172a',
-              fontWeight: 700,
-              fontSize: '13.5px',
-              marginBottom: '30px',
-            }}
-          >
-            <Mail size={15} color="#2563eb" />
-            <span>{pendingCompany?.owner_email || email}</span>
-          </div>
-
-          {/* 6 Individual Digit Boxes */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              gap: '10px',
-              marginBottom: '24px',
-            }}
-            onPaste={handleOtpPaste}
-          >
-            {otpDigits.map((digit, idx) => (
-              <input
-                key={idx}
-                ref={(el) => (otpInputRefs.current[idx] = el)}
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={1}
-                value={digit}
-                onChange={(e) => handleOtpChange(idx, e.target.value)}
-                onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                style={{
-                  width: '52px',
-                  height: '60px',
-                  borderRadius: '14px',
-                  border: `2px solid ${
-                    codeError
-                      ? '#ef4444'
-                      : digit
-                      ? '#2563eb'
-                      : '#cbd5e1'
-                  }`,
-                  backgroundColor: digit ? '#f0f7ff' : '#f8fafc',
-                  textAlign: 'center',
-                  fontSize: '24px',
-                  fontWeight: 700,
-                  color: '#0f172a',
-                  outline: 'none',
-                  transition: 'all 0.15s ease',
-                  boxShadow: digit ? '0 4px 12px -2px rgba(37, 99, 235, 0.2)' : 'none',
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = '#2563eb';
-                  e.target.style.backgroundColor = '#f0f7ff';
-                }}
-                onBlur={(e) => {
-                  if (!digit && !codeError) {
-                    e.target.style.borderColor = '#cbd5e1';
-                    e.target.style.backgroundColor = '#f8fafc';
-                  }
-                }}
-              />
-            ))}
-          </div>
-
-          {/* Feedback Messages */}
-          {codeError && (
-            <div
-              style={{
-                padding: '10px 14px',
-                borderRadius: '10px',
-                backgroundColor: '#fef2f2',
-                border: '1px solid #fecaca',
-                color: '#dc2626',
-                fontSize: '12.5px',
-                fontWeight: 500,
-                marginBottom: '20px',
-                textAlign: 'center',
-              }}
-            >
-              {codeError}
-            </div>
-          )}
-
-          {codeSuccess && (
-            <div
-              style={{
-                padding: '10px 14px',
-                borderRadius: '10px',
-                backgroundColor: '#f0fdf4',
-                border: '1px solid #bbf7d0',
-                color: '#166534',
-                fontSize: '13px',
-                fontWeight: 600,
-                marginBottom: '20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-              }}
-            >
-              <CheckCircle2 size={18} color="#22c55e" />
-              <span>Código validado com sucesso! A carregar questionário...</span>
-            </div>
-          )}
-
-          {/* Action Button: "Verificar Código" */}
-          <button
-            type="button"
-            onClick={() => executeVerifyCode()}
-            disabled={!isFullCodeEntered || verifyingCode}
-            style={{
-              width: '100%',
-              padding: '13px 20px',
-              borderRadius: '12px',
-              backgroundColor: isFullCodeEntered ? '#09090b' : '#f1f5f9',
-              color: isFullCodeEntered ? '#ffffff' : '#94a3b8',
-              fontSize: '14px',
-              fontWeight: 600,
-              border: 'none',
-              cursor: isFullCodeEntered && !verifyingCode ? 'pointer' : 'not-allowed',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              marginBottom: '20px',
-              transition: 'all 0.2s',
-              boxShadow: isFullCodeEntered ? '0 8px 24px -6px rgba(0,0,0,0.4)' : 'none',
-            }}
-          >
-            {verifyingCode ? (
-              <>
-                <RefreshCw size={17} className="spin-slow" />
-                <span>A validar código...</span>
-              </>
-            ) : (
-              <>
-                <CheckCircle2 size={18} color={isFullCodeEntered ? '#22c55e' : '#94a3b8'} />
-                <span>Verificar Código</span>
-              </>
-            )}
-          </button>
-
-          {/* Resend and Edit Email Controls */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingTop: '16px',
-              borderTop: '1px solid #f1f5f9',
-              fontSize: '12.5px',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setAuthStage('auth');
-                setMode('signup');
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#64748b',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: 0,
-              }}
-            >
-              <ArrowLeft size={14} />
-              <span>Alterar e-mail</span>
-            </button>
-
-            <div>
-              {resendTimer > 0 ? (
-                <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Clock size={13} />
-                  <span>Reenviar código em {resendTimer}s</span>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleResendCode}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#2563eb',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    textDecoration: 'underline',
-                    padding: 0,
-                  }}
-                >
-                  Reenviar código agora
-                </button>
-              )}
-            </div>
-          </div>
-
-          {resendNotice && (
-            <p
-              style={{
-                fontSize: '12px',
-                color: resendNotice.startsWith('✓') ? '#16a34a' : '#d97706',
-                marginTop: '12px',
-                fontWeight: 500,
-              }}
-            >
-              {resendNotice}
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* ==================================================================== */}
-      {/* ESTÁGIO 3: FORMULÁRIO MULTI-STEP PARA CONHECER A FIRMA (DE MARCAR)   */}
+      {/* ESTÁGIO 2: FORMULÁRIO MULTI-STEP PARA CONHECER A FIRMA (DE MARCAR)   */}
       {/* ==================================================================== */}
       {stage === 'onboarding' && (
         <div
