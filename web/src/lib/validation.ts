@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+// Desativa compilação JIT via new Function() do Zod v4 para compatibilidade total com CSP estrita (sem unsafe-eval)
+z.config({ jitless: true });
+
 // ============================================================================
 // ESQUEMAS DE VALIDAÇÃO ZOD PARA O CASTELLO
 // ============================================================================

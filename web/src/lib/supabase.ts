@@ -78,9 +78,6 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<any>) => {
-          return await fn();
-        },
       },
     })
   : null;
@@ -125,13 +122,13 @@ export async function restoreVerifiedCompanySession(): Promise<Company | null> {
       return null;
     }
 
-    const { data: comp } = await supabase
+    const { data: comp, error: ownerErr } = await supabase
       .from('companies')
       .select(COMPANY_SAFE_COLS)
       .eq('owner_auth_id', session.user.id)
       .maybeSingle();
 
-    if (comp) {
+    if (!ownerErr && comp) {
       const safe = stripSensitiveCompanyFields(comp as unknown as Company);
       const cloudSettings = await fetchCompanyCloudSettings(safe.id);
       if (cloudSettings) {
@@ -149,6 +146,20 @@ export async function restoreVerifiedCompanySession(): Promise<Company | null> {
       const safe = stripSensitiveCompanyFields(claimed as Company);
       localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(safe));
       return safe;
+    }
+
+    // Fallback seguro caso a coluna owner_auth_id ainda não exista no schema cache (usa o e-mail verificado do JWT)
+    if (session.user.email) {
+      const { data: byEmail } = await supabase
+        .from('companies')
+        .select(COMPANY_SAFE_COLS)
+        .eq('owner_email', session.user.email.toLowerCase().trim())
+        .maybeSingle();
+      if (byEmail) {
+        const safe = stripSensitiveCompanyFields(byEmail as unknown as Company);
+        localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(safe));
+        return safe;
+      }
     }
 
     localStorage.removeItem(CURRENT_COMPANY_KEY);
@@ -418,30 +429,70 @@ export async function loginCompany(
   }
 
   // 1. Autenticação real no servidor via Supabase Auth (JWT)
-  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+  let { data: authData, error: authError } = await supabase.auth.signInWithPassword({
     email: cleanEmail,
     password,
   });
 
-  if (authError || !authData.user) {
+  // 2. Migração transparente para firmas criadas ANTES do Supabase Auth:
+  //    Valida a senha legada no servidor via RPC (sem expor password_hash) e cria automaticamente o usuário em auth.users
+  if (authError || !authData?.user) {
+    const { data: legacyValid, error: legacyRpcErr } = await supabase.rpc(
+      'verify_legacy_company_credentials',
+      { p_email: cleanEmail, p_password: password }
+    );
+
+    if (!legacyRpcErr && legacyValid === true) {
+      const { data: migratedAuth, error: signUpErr } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+      });
+
+      if (!signUpErr && migratedAuth?.user) {
+        authData = migratedAuth as any;
+        authError = null;
+        if (!migratedAuth.session) {
+          const retrySignIn = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password,
+          });
+          if (!retrySignIn.error && retrySignIn.data?.user) {
+            authData = retrySignIn.data as any;
+          }
+        }
+      }
+    }
+  }
+
+  if (authError || !authData?.user) {
     throw new Error('E-mail ou senha da firma incorretos.');
   }
 
-  // 2. Busca firma vinculada ao auth.uid() (sem nunca ler password_hash)
+  // 3. Busca firma vinculada ao auth.uid() (sem nunca ler password_hash)
   let companyData: Company | null = null;
-  const { data: byOwner } = await supabase
+  const { data: byOwner, error: byOwnerErr } = await supabase
     .from('companies')
     .select(COMPANY_SAFE_COLS)
     .eq('owner_auth_id', authData.user.id)
     .maybeSingle();
 
-  if (byOwner) {
+  if (!byOwnerErr && byOwner) {
     companyData = stripSensitiveCompanyFields(byOwner as unknown as Company);
   } else {
     // Migração segura de firma legada via RPC autenticada
     const { data: claimed } = await supabase.rpc('claim_legacy_company_by_email');
     if (claimed && typeof claimed === 'object' && (claimed as any).id) {
       companyData = stripSensitiveCompanyFields(claimed as Company);
+    } else {
+      // Fallback caso owner_auth_id ainda não tenha sido criado no banco
+      const { data: byEmail } = await supabase
+        .from('companies')
+        .select(COMPANY_SAFE_COLS)
+        .eq('owner_email', cleanEmail)
+        .maybeSingle();
+      if (byEmail) {
+        companyData = stripSensitiveCompanyFields(byEmail as unknown as Company);
+      }
     }
   }
 
@@ -496,13 +547,13 @@ export async function handleGoogleAuthRedirect(): Promise<Company | null> {
     if (!userEmail) return null;
 
     // 1. Procura firma já vinculada ao auth.uid() ou reivindica firma legada por owner_email
-    const { data: existingByAuth } = await supabase
+    const { data: existingByAuth, error: authLookupErr } = await supabase
       .from('companies')
       .select(COMPANY_SAFE_COLS)
       .eq('owner_auth_id', user.id)
       .maybeSingle();
 
-    if (existingByAuth) {
+    if (!authLookupErr && existingByAuth) {
       const safe = stripSensitiveCompanyFields(existingByAuth as unknown as Company);
       setActiveCompanySession(safe);
       return safe;
@@ -511,6 +562,19 @@ export async function handleGoogleAuthRedirect(): Promise<Company | null> {
     const { data: claimed } = await supabase.rpc('claim_legacy_company_by_email');
     if (claimed && typeof claimed === 'object' && (claimed as any).id) {
       const safe = stripSensitiveCompanyFields(claimed as Company);
+      setActiveCompanySession(safe);
+      return safe;
+    }
+
+    // Fallback caso a coluna owner_auth_id ainda não exista no schema cache
+    const { data: existingByEmail } = await supabase
+      .from('companies')
+      .select(COMPANY_SAFE_COLS)
+      .eq('owner_email', userEmail)
+      .maybeSingle();
+
+    if (existingByEmail) {
+      const safe = stripSensitiveCompanyFields(existingByEmail as unknown as Company);
       setActiveCompanySession(safe);
       return safe;
     }
@@ -530,11 +594,23 @@ export async function handleGoogleAuthRedirect(): Promise<Company | null> {
       phone: user.phone || null,
     };
 
-    const { data: created, error: insertError } = await supabase
+    let { data: created, error: insertError } = await supabase
       .from('companies')
       .insert([newCompany])
       .select(COMPANY_SAFE_COLS)
       .maybeSingle();
+
+    // Retry sem owner_auth_id caso a migração SQL ainda não tenha sido executada no banco
+    if (insertError && (insertError.code === 'PGRST204' || insertError.message?.includes('owner_auth_id'))) {
+      delete newCompany.owner_auth_id;
+      const retry = await supabase
+        .from('companies')
+        .insert([newCompany])
+        .select(COMPANY_SAFE_COLS)
+        .maybeSingle();
+      created = retry.data;
+      insertError = retry.error;
+    }
 
     if (insertError) {
       console.warn('Erro ao registar firma via Google:', insertError);

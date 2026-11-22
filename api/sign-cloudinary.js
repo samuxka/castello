@@ -15,6 +15,8 @@ const ALLOWED_FOLDERS = new Set([
 const ALLOWED_FORMATS = 'jpg,jpeg,png,webp,pdf';
 
 const DEFAULT_ALLOWED_ORIGINS = [
+  'https://www.erpcastle.com',
+  'https://erpcastle.com',
   'https://castello-ponto.vercel.app',
   'http://localhost:5173',
   'http://localhost:4173',

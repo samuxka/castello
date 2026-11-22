@@ -14,7 +14,8 @@
 --   7. Expõe RPC dedicada get_public_site_portal(p_share_code) para o Portal do Cliente
 -- ============================================================================
 
--- 1. REMOVER RPC INSEGURA DO CLOUDINARY (SEGREDO HARDCODED + ACESSO ANON)
+-- 1. EXTENSÃO CRIPTOGRÁFICA E REMOÇÃO DA RPC INSEGURA DO CLOUDINARY
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 DROP FUNCTION IF EXISTS public.sign_cloudinary_upload(text);
 
 -- 2. COLUNA DE VÍNCULO AUTH + ÍNDICES DE PERFORMANCE PARA RLS
@@ -701,7 +702,48 @@ $$;
 REVOKE ALL ON FUNCTION public.get_public_site_portal(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_public_site_portal(text) TO anon, authenticated;
 
--- 8. RPC PARA MIGRAÇÃO SEGURA DE CONTAS LEGADAS (VINCULA owner_auth_id APÓS LOGIN NO SUPABASE AUTH)
+-- 8. RPCS PARA MIGRAÇÃO TRANSPARENTE DE CONTAS LEGADAS (ZERO LOCKOUT NO PRIMEIRO LOGIN)
+--    Verifica credenciais legadas NO SERVIDOR (nunca expõe password_hash ao navegador)
+CREATE OR REPLACE FUNCTION public.verify_legacy_company_credentials(p_email text, p_password text)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_stored text;
+  v_clean_email text;
+  v_clean_pass text;
+  v_expected_hash text;
+BEGIN
+  v_clean_email := LOWER(TRIM(COALESCE(p_email, '')));
+  v_clean_pass := TRIM(COALESCE(p_password, ''));
+  IF v_clean_email = '' OR v_clean_pass = '' THEN
+    RETURN false;
+  END IF;
+
+  SELECT c.password_hash INTO v_stored
+  FROM public.companies c
+  WHERE LOWER(TRIM(c.owner_email)) = v_clean_email
+    AND c.owner_auth_id IS NULL
+    AND c.password_hash IS NOT NULL
+    AND c.password_hash <> 'supabase_auth_managed'
+  LIMIT 1;
+
+  IF NOT FOUND OR v_stored IS NULL THEN
+    RETURN false;
+  END IF;
+
+  v_expected_hash := 'sha256$' || encode(extensions.digest('castello_sec_salt_v1:' || v_clean_pass, 'sha256'), 'hex');
+  RETURN (v_stored = v_expected_hash OR v_stored = v_clean_pass);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.verify_legacy_company_credentials(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.verify_legacy_company_credentials(text, text) TO anon, authenticated;
+
+-- Vincula owner_auth_id após login/cadastro no Supabase Auth e limpa password_hash legado
 CREATE OR REPLACE FUNCTION public.claim_legacy_company_by_email()
 RETURNS jsonb
 LANGUAGE plpgsql

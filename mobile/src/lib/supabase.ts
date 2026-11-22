@@ -44,9 +44,6 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
-        lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<any>) => {
-          return await fn();
-        },
       },
     })
   : null;
