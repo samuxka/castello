@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { useDebounce } from '../hooks/useDebounce';
 
 interface EmployeeSelectProps {
   employees: Array<{ id: string; full_name: string; job_title: string }>;
@@ -31,10 +32,16 @@ export const EmployeeAutocompleteSelect: React.FC<EmployeeSelectProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filtered = employees.filter((emp) =>
-    emp.full_name.toLowerCase().includes(query.toLowerCase()) ||
-    emp.job_title.toLowerCase().includes(query.toLowerCase())
-  );
+  const debouncedQuery = useDebounce(query, 250);
+
+  const filtered = useMemo(() => {
+    const q = debouncedQuery.toLowerCase();
+    return employees.filter(
+      (emp) =>
+        emp.full_name.toLowerCase().includes(q) ||
+        emp.job_title.toLowerCase().includes(q)
+    );
+  }, [employees, debouncedQuery]);
 
   return (
     <div ref={wrapperRef} style={{ position: 'relative', width: '100%' }}>

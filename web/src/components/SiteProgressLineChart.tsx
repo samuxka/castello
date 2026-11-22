@@ -7,7 +7,7 @@ interface SiteProgressLineChartProps {
   tasks: SiteTask[];
 }
 
-export function SiteProgressLineChart({ sites, tasks }: SiteProgressLineChartProps) {
+function SiteProgressLineChartBase({ sites, tasks }: SiteProgressLineChartProps) {
   const [selectedSiteId, setSelectedSiteId] = useState<string>('all');
   const [hoveredPoint, setHoveredPoint] = useState<{
     label: string;
@@ -456,3 +456,5 @@ export function SiteProgressLineChart({ sites, tasks }: SiteProgressLineChartPro
     </div>
   );
 }
+
+export const SiteProgressLineChart = React.memo(SiteProgressLineChartBase);

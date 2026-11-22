@@ -7,7 +7,7 @@ interface SiteStatusDonutChartProps {
   onSelectSite?: (site: ConstructionSite) => void;
 }
 
-export function SiteStatusDonutChart({ sites, onSelectSite }: SiteStatusDonutChartProps) {
+function SiteStatusDonutChartBase({ sites, onSelectSite }: SiteStatusDonutChartProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [periodFilter, setPeriodFilter] = useState<'todos' | 'trimestre' | 'ano'>('todos');
 
@@ -344,3 +344,5 @@ export function SiteStatusDonutChart({ sites, onSelectSite }: SiteStatusDonutCha
     </div>
   );
 }
+
+export const SiteStatusDonutChart = React.memo(SiteStatusDonutChartBase);

@@ -10,7 +10,7 @@ interface DashboardCalendarCardProps {
   onOpenCalendar: () => void;
 }
 
-export function DashboardCalendarCard({
+function DashboardCalendarCardBase({
   companyId,
   sites,
   employees,
@@ -283,3 +283,5 @@ export function DashboardCalendarCard({
     </div>
   );
 }
+
+export const DashboardCalendarCard = React.memo(DashboardCalendarCardBase);

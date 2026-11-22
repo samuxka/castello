@@ -100,6 +100,7 @@ const SiteProgressLineChart = React.lazy(() => import('./components/SiteProgress
 const SiteStatusDonutChart = React.lazy(() => import('./components/SiteStatusDonutChart').then((m) => ({ default: m.SiteStatusDonutChart })));
 
 import { DashboardSkeleton, PageModuleSkeleton } from './components/Skeletons';
+import { useDebounce } from './hooks/useDebounce';
 
 const PageLoadingFallback = () => <PageModuleSkeleton />;
 import { EmployeeAutocompleteSelect } from './components/EmployeeAutocompleteSelect';
@@ -263,15 +264,96 @@ export default function App() {
 
   // Estados de Busca, Filtro, Ordenação e Layout para Funcionários
   const [empSearch, setEmpSearch] = useState('');
+  const debouncedEmpSearch = useDebounce(empSearch, 250);
   const [empStatusFilter, setEmpStatusFilter] = useState<string>('all');
   const [empSortBy, setEmpSortBy] = useState<string>('name-asc');
   const [empViewMode, setEmpViewMode] = useState<'table' | 'cards'>('table');
 
   // Estados de Busca, Filtro, Ordenação e Layout para Obras
   const [siteSearch, setSiteSearch] = useState('');
+  const debouncedSiteSearch = useDebounce(siteSearch, 250);
   const [siteStatusFilter, setSiteStatusFilter] = useState<string>('all');
   const [siteSortBy, setSiteSortBy] = useState<string>('name-asc');
   const [siteViewMode, setSiteViewMode] = useState<'table' | 'cards'>('table');
+
+  // Derivações memoizadas (evitam recalcular filtros/ordenações em re-renders não relacionados)
+  const pendingEntries = useMemo(() => entries.filter((e) => e.status === 'pendente'), [entries]);
+  const pendingJustifs = useMemo(() => justifications.filter((j) => j.status === 'pendente'), [justifications]);
+  const pendingWorkSessions = useMemo(
+    () => companyWorkSessions.filter((s) => s.status === 'pendente'),
+    [companyWorkSessions]
+  );
+  const activeSites = useMemo(() => sites.filter((s) => s.status === 'ativa'), [sites]);
+
+  const filteredAndSortedEmployees = useMemo(() => {
+    const q = debouncedEmpSearch.toLowerCase().trim();
+    return employees
+      .filter((emp) => {
+        const matchesSearch =
+          !q ||
+          emp.full_name.toLowerCase().includes(q) ||
+          emp.email.toLowerCase().includes(q) ||
+          emp.job_title.toLowerCase().includes(q) ||
+          (emp.phone && emp.phone.includes(q));
+
+        const matchesStatus =
+          empStatusFilter === 'all' ||
+          (empStatusFilter === 'active' && emp.is_active) ||
+          (empStatusFilter === 'inactive' && !emp.is_active);
+
+        return matchesSearch && matchesStatus;
+      })
+      .sort((a, b) => {
+        switch (empSortBy) {
+          case 'name-asc':
+            return a.full_name.localeCompare(b.full_name);
+          case 'name-desc':
+            return b.full_name.localeCompare(a.full_name);
+          case 'rate-desc':
+            return (b.hourly_rate || 0) - (a.hourly_rate || 0);
+          case 'rate-asc':
+            return (a.hourly_rate || 0) - (b.hourly_rate || 0);
+          case 'admission-desc':
+            return (b.admission_date || '').localeCompare(a.admission_date || '');
+          case 'admission-asc':
+            return (a.admission_date || '').localeCompare(b.admission_date || '');
+          default:
+            return 0;
+        }
+      });
+  }, [employees, debouncedEmpSearch, empStatusFilter, empSortBy]);
+
+  const filteredAndSortedSites = useMemo(() => {
+    const q = debouncedSiteSearch.toLowerCase().trim();
+    return sites
+      .filter((site) => {
+        const matchesSearch =
+          !q ||
+          site.name.toLowerCase().includes(q) ||
+          site.share_code.toLowerCase().includes(q) ||
+          site.address.toLowerCase().includes(q) ||
+          (site.manager_name && site.manager_name.toLowerCase().includes(q));
+
+        const matchesStatus =
+          siteStatusFilter === 'all' || site.status === siteStatusFilter;
+
+        return matchesSearch && matchesStatus;
+      })
+      .sort((a, b) => {
+        switch (siteSortBy) {
+          case 'name-asc':
+            return a.name.localeCompare(b.name);
+          case 'name-desc':
+            return b.name.localeCompare(a.name);
+          case 'code-asc':
+            return a.share_code.localeCompare(b.share_code);
+          case 'status':
+            return a.status.localeCompare(b.status);
+          default:
+            return 0;
+        }
+      });
+  }, [sites, debouncedSiteSearch, siteStatusFilter, siteSortBy]);
 
   // Modal Funcionário (CRUD - Sem alocação fixa de obra)
   const [empModalOpen, setEmpModalOpen] = useState(false);
@@ -647,79 +729,6 @@ export default function App() {
       </React.Suspense>
     );
   }
-
-  const pendingEntries = entries.filter((e) => e.status === 'pendente');
-  const pendingJustifs = justifications.filter((j) => j.status === 'pendente');
-  const pendingWorkSessions = companyWorkSessions.filter((s) => s.status === 'pendente');
-  const activeSites = sites.filter((s) => s.status === 'ativa');
-
-  // Filtragem e ordenação de funcionários
-  const filteredAndSortedEmployees = employees
-    .filter((emp) => {
-      const q = empSearch.toLowerCase().trim();
-      const matchesSearch =
-        !q ||
-        emp.full_name.toLowerCase().includes(q) ||
-        emp.email.toLowerCase().includes(q) ||
-        emp.job_title.toLowerCase().includes(q) ||
-        (emp.phone && emp.phone.includes(q));
-
-      const matchesStatus =
-        empStatusFilter === 'all' ||
-        (empStatusFilter === 'active' && emp.is_active) ||
-        (empStatusFilter === 'inactive' && !emp.is_active);
-
-      return matchesSearch && matchesStatus;
-    })
-    .sort((a, b) => {
-      switch (empSortBy) {
-        case 'name-asc':
-          return a.full_name.localeCompare(b.full_name);
-        case 'name-desc':
-          return b.full_name.localeCompare(a.full_name);
-        case 'rate-desc':
-          return (b.hourly_rate || 0) - (a.hourly_rate || 0);
-        case 'rate-asc':
-          return (a.hourly_rate || 0) - (b.hourly_rate || 0);
-        case 'admission-desc':
-          return (b.admission_date || '').localeCompare(a.admission_date || '');
-        case 'admission-asc':
-          return (a.admission_date || '').localeCompare(b.admission_date || '');
-        default:
-          return 0;
-      }
-    });
-
-  // Filtragem e ordenação de obras
-  const filteredAndSortedSites = sites
-    .filter((site) => {
-      const q = siteSearch.toLowerCase().trim();
-      const matchesSearch =
-        !q ||
-        site.name.toLowerCase().includes(q) ||
-        site.share_code.toLowerCase().includes(q) ||
-        site.address.toLowerCase().includes(q) ||
-        (site.manager_name && site.manager_name.toLowerCase().includes(q));
-
-      const matchesStatus =
-        siteStatusFilter === 'all' || site.status === siteStatusFilter;
-
-      return matchesSearch && matchesStatus;
-    })
-    .sort((a, b) => {
-      switch (siteSortBy) {
-        case 'name-asc':
-          return a.name.localeCompare(b.name);
-        case 'name-desc':
-          return b.name.localeCompare(a.name);
-        case 'code-asc':
-          return a.share_code.localeCompare(b.share_code);
-        case 'status':
-          return a.status.localeCompare(b.status);
-        default:
-          return 0;
-      }
-    });
 
   return (
     <div className="app-container">

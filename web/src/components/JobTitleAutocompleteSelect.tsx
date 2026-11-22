@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Plus } from 'lucide-react';
+import { useDebounce } from '../hooks/useDebounce';
 
 interface JobTitleSelectProps {
   value: string;
@@ -68,14 +69,18 @@ export const JobTitleAutocompleteSelect: React.FC<JobTitleSelectProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const debouncedQuery = useDebounce(query, 250);
+
   // Une os cargos padrão, cargos já usados por outros colaboradores e cargos customizados
-  const allJobOptions = Array.from(
-    new Set([...DEFAULT_JOBS, ...existingJobs, ...customJobsList])
+  const allJobOptions = useMemo(
+    () => Array.from(new Set([...DEFAULT_JOBS, ...existingJobs, ...customJobsList])),
+    [existingJobs, customJobsList]
   );
 
-  const filtered = allJobOptions.filter((job) =>
-    job.toLowerCase().includes(query.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const q = debouncedQuery.toLowerCase();
+    return allJobOptions.filter((job) => job.toLowerCase().includes(q));
+  }, [allJobOptions, debouncedQuery]);
 
   const exactMatchExists = allJobOptions.some(
     (j) => j.toLowerCase() === query.trim().toLowerCase()

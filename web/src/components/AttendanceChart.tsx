@@ -7,7 +7,7 @@ interface AttendanceChartProps {
   entries: TimeEntry[];
 }
 
-export function AttendanceChart({ employees, entries }: AttendanceChartProps) {
+function AttendanceChartBase({ employees, entries }: AttendanceChartProps) {
   const daysOfWeek = [
     { label: 'Seg', dayIdx: 1 },
     { label: 'Ter', dayIdx: 2 },
@@ -238,3 +238,5 @@ export function AttendanceChart({ employees, entries }: AttendanceChartProps) {
     </div>
   );
 }
+
+export const AttendanceChart = React.memo(AttendanceChartBase);
