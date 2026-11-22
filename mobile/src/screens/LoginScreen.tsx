@@ -40,8 +40,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       if (!success) {
         setErrorMsg('Credenciais incorretas ou utilizador não encontrado.');
       }
-    } catch {
-      setErrorMsg('Erro de comunicação. Tente novamente.');
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Erro de comunicação. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -65,8 +65,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             'success'
           );
           return;
-        } catch {
-          setErrorMsg('Erro de comunicação. Tente novamente.');
+        } catch (err: any) {
+          setErrorMsg(err?.message || 'Erro de comunicação. Tente novamente.');
           return;
         } finally {
           setLoading(false);

@@ -448,17 +448,24 @@ export async function loginCompany(
         password,
       });
 
-      if (!signUpErr && migratedAuth?.user) {
+      if (!signUpErr && migratedAuth?.session && migratedAuth?.user) {
         authData = migratedAuth as any;
         authError = null;
-        if (!migratedAuth.session) {
-          const retrySignIn = await supabase.auth.signInWithPassword({
-            email: cleanEmail,
-            password,
+      } else {
+        try {
+          await supabase.rpc('confirm_migrated_company_email', {
+            p_email: cleanEmail,
+            p_password: password,
           });
-          if (!retrySignIn.error && retrySignIn.data?.user) {
-            authData = retrySignIn.data as any;
-          }
+        } catch {}
+
+        const retrySignIn = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        });
+        if (!retrySignIn.error && retrySignIn.data?.session && retrySignIn.data?.user) {
+          authData = retrySignIn.data as any;
+          authError = null;
         }
       }
     }

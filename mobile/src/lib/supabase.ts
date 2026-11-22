@@ -242,72 +242,124 @@ export async function authenticateEmployee(
   // Supabase Auth exige senha >= 6 chars; para PINs legados de 4-5 dígitos, aplica sufixo determinístico
   const authPassword = cleanCode.length >= 6 ? cleanCode : `${cleanCode}_cst`;
 
-  if (supabase) {
-    try {
-      // 1. Autentica via Supabase Auth (JWT real no servidor)
-      let { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password: authPassword,
-      });
+  if (!supabase) {
+    throw new Error('Serviço de autenticação indisponível. Verifique a ligação à internet.');
+  }
 
-      // 2. Migração transparente de colaborador legado (criado em public.profiles antes do Supabase Auth)
-      if (authErr || !authData?.user) {
-        const { data: legacyValid, error: legacyErr } = await supabase.rpc(
-          'verify_legacy_employee_credentials',
-          { p_email: cleanEmail, p_access_code: cleanCode }
-        );
+  let legacyMatched = false;
+  let alreadyRegisteredElsewhere = false;
 
-        if (!legacyErr && legacyValid === true) {
-          const { data: signedUp, error: signUpErr } = await supabase.auth.signUp({
+  try {
+    // 1. Autentica via Supabase Auth (JWT real no servidor)
+    let { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password: authPassword,
+    });
+
+    // 2. Migração transparente de colaborador criado em public.profiles antes do Supabase Auth
+    if (authErr || !authData?.session || !authData?.user) {
+      const { data: legacyValid, error: legacyErr } = await supabase.rpc(
+        'verify_legacy_employee_credentials',
+        { p_email: cleanEmail, p_access_code: cleanCode }
+      );
+
+      if (!legacyErr && legacyValid === true) {
+        legacyMatched = true;
+        const { data: signedUp, error: signUpErr } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password: authPassword,
+        });
+
+        if (signUpErr && /already registered/i.test(signUpErr.message || '')) {
+          alreadyRegisteredElsewhere = true;
+        }
+
+        if (!signUpErr && signedUp?.session && signedUp?.user) {
+          authData = signedUp as any;
+          authErr = null;
+        } else {
+          // Se "Confirm email" estiver ativo no Supabase Auth (ou tentativa anterior ficou por confirmar),
+          // confirma o e-mail no servidor após validar e-mail + PIN e inicia sessão real com JWT
+          try {
+            await supabase.rpc('confirm_migrated_employee_email', {
+              p_email: cleanEmail,
+              p_access_code: cleanCode,
+            });
+          } catch {}
+
+          const retry = await supabase.auth.signInWithPassword({
             email: cleanEmail,
             password: authPassword,
           });
-          if (!signUpErr && signedUp?.user) {
-            authData = signedUp as any;
+          if (!retry.error && retry.data?.session && retry.data?.user) {
+            authData = retry.data as any;
             authErr = null;
-            if (!signedUp.session) {
-              const retry = await supabase.auth.signInWithPassword({
-                email: cleanEmail,
-                password: authPassword,
-              });
-              if (!retry.error && retry.data?.user) {
-                authData = retry.data as any;
-              }
-            }
+            alreadyRegisteredElsewhere = false;
+          } else {
+            authErr = retry.error || signUpErr || authErr;
           }
         }
       }
-
-      if (!authErr && authData?.user) {
-        // Vincula auth_user_id em profiles se ainda for conta legada
-        try {
-          await supabase.rpc('claim_legacy_employee_by_email');
-        } catch {}
-
-        const { data: profileByAuth } = await supabase
-          .from('profiles')
-          .select('id, company_id, auth_user_id, full_name, email, role, job_title, phone, hourly_rate, monthly_target_hours, avatar_url, admission_date, is_active, created_at')
-          .or(`auth_user_id.eq.${authData.user.id},email.ilike.${cleanEmail}`)
-          .eq('is_active', true)
-          .maybeSingle();
-
-        if (profileByAuth) {
-          await setActiveEmployeeId(profileByAuth.id);
-          // Guarda apenas metadados não sensíveis (nunca grava senha/PIN em texto puro no AsyncStorage)
-          await AsyncStorage.setItem(
-            BIOMETRIC_SAVED_CREDS_KEY,
-            JSON.stringify({ email: cleanEmail, id: profileByAuth.id })
-          );
-          await AsyncStorage.setItem(`@castello:profile_${profileByAuth.id}`, JSON.stringify(profileByAuth));
-          return profileByAuth as EmployeeProfile;
-        }
-      }
-    } catch (e) {
-      console.warn('Erro ao autenticar no Supabase', e);
     }
-  }
 
-  return null;
+    if (authErr || !authData?.session || !authData?.user) {
+      if (legacyMatched && alreadyRegisteredElsewhere) {
+        throw new Error(
+          'Este e-mail já tem conta ativa no Castello. Entre usando a senha principal da sua conta (a mesma do painel Web).'
+        );
+      }
+      if (authErr?.message && /email not confirmed/i.test(authErr.message)) {
+        throw new Error(
+          'O e-mail desta conta aguarda confirmação. Verifique a sua caixa de entrada ou peça ao administrador para concluir a ativação.'
+        );
+      }
+      return null;
+    }
+
+    // 3. Vincula auth_user_id em profiles (se ainda for conta legada) e obtém o perfil com segurança
+    let profileByAuth: EmployeeProfile | null = null;
+    try {
+      const { data: claimed } = await supabase.rpc('claim_legacy_employee_by_email');
+      if (claimed && typeof claimed === 'object' && (claimed as any).id) {
+        profileByAuth = claimed as EmployeeProfile;
+      }
+    } catch {}
+
+    if (!profileByAuth) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, company_id, auth_user_id, full_name, email, role, job_title, phone, hourly_rate, monthly_target_hours, avatar_url, admission_date, is_active, created_at')
+        .or(`auth_user_id.eq.${authData.user.id},email.ilike.${cleanEmail}`)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (data) {
+        profileByAuth = data as EmployeeProfile;
+      }
+    }
+
+    if (profileByAuth) {
+      await setActiveEmployeeId(profileByAuth.id);
+      // Guarda apenas metadados não sensíveis (nunca grava senha/PIN em texto puro no AsyncStorage)
+      await AsyncStorage.setItem(
+        BIOMETRIC_SAVED_CREDS_KEY,
+        JSON.stringify({ email: cleanEmail, id: profileByAuth.id })
+      );
+      await AsyncStorage.setItem(`@castello:profile_${profileByAuth.id}`, JSON.stringify(profileByAuth));
+      return profileByAuth;
+    }
+
+    // Sessão autenticou no Supabase Auth, mas não existe perfil ativo de colaborador com este e-mail
+    await supabase.auth.signOut().catch(() => {});
+    throw new Error(
+      'Conta autenticada, mas não existe nenhum colaborador ativo com este e-mail na equipa. Registe-o em Equipa no painel Web.'
+    );
+  } catch (e: any) {
+    if (e instanceof Error && e.message) {
+      throw e;
+    }
+    console.warn('Erro ao autenticar no Supabase', e);
+    return null;
+  }
 }
 
 /**

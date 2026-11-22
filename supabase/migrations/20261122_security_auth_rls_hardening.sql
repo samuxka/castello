@@ -149,6 +149,19 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
+  -- Permite vínculo inicial seguro feito pela RPC SECURITY DEFINER claim_legacy_employee_by_email()
+  IF current_setting('app.castello_internal_claim', true) = '1'
+     AND OLD.auth_user_id IS NULL
+     AND NEW.auth_user_id = (SELECT auth.uid())
+     AND NEW.role IS NOT DISTINCT FROM OLD.role
+     AND NEW.hourly_rate IS NOT DISTINCT FROM OLD.hourly_rate
+     AND NEW.monthly_target_hours IS NOT DISTINCT FROM OLD.monthly_target_hours
+     AND NEW.company_id IS NOT DISTINCT FROM OLD.company_id
+     AND NEW.is_active IS NOT DISTINCT FROM OLD.is_active
+  THEN
+    RETURN NEW;
+  END IF;
+
   IF NOT (SELECT private.is_company_admin()) THEN
     IF NEW.role IS DISTINCT FROM OLD.role
        OR NEW.hourly_rate IS DISTINCT FROM OLD.hourly_rate
@@ -848,8 +861,82 @@ $$;
 REVOKE ALL ON FUNCTION public.verify_legacy_employee_credentials(text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.verify_legacy_employee_credentials(text, text) TO anon, authenticated;
 
+CREATE OR REPLACE FUNCTION public.confirm_migrated_company_email(p_email text, p_password text)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_clean_email text;
+  v_valid boolean;
+BEGIN
+  v_clean_email := LOWER(TRIM(COALESCE(p_email, '')));
+  IF v_clean_email = '' THEN
+    RETURN false;
+  END IF;
+
+  SELECT public.verify_legacy_company_credentials(p_email, p_password) INTO v_valid;
+  IF NOT COALESCE(v_valid, false) THEN
+    RETURN false;
+  END IF;
+
+  UPDATE auth.users
+  SET email_confirmed_at = COALESCE(email_confirmed_at, now())
+  WHERE LOWER(TRIM(email)) = v_clean_email
+    AND email_confirmed_at IS NULL;
+
+  RETURN true;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.confirm_migrated_company_email(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.confirm_migrated_company_email(text, text) TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.confirm_migrated_employee_email(p_email text, p_access_code text)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_clean_email text;
+  v_clean_code text;
+  v_valid boolean;
+BEGIN
+  v_clean_email := LOWER(TRIM(COALESCE(p_email, '')));
+  v_clean_code := TRIM(COALESCE(p_access_code, ''));
+  IF v_clean_email = '' OR v_clean_code = '' THEN
+    RETURN false;
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles p
+    WHERE LOWER(TRIM(p.email)) = v_clean_email
+      AND p.is_active = true
+      AND p.auth_user_id IS NULL
+      AND TRIM(COALESCE(p.access_code, '')) = v_clean_code
+  ) INTO v_valid;
+
+  IF NOT v_valid THEN
+    RETURN false;
+  END IF;
+
+  UPDATE auth.users
+  SET email_confirmed_at = COALESCE(email_confirmed_at, now())
+  WHERE LOWER(TRIM(email)) = v_clean_email
+    AND email_confirmed_at IS NULL;
+
+  RETURN true;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.confirm_migrated_employee_email(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.confirm_migrated_employee_email(text, text) TO anon, authenticated;
+
+DROP FUNCTION IF EXISTS public.claim_legacy_employee_by_email();
 CREATE OR REPLACE FUNCTION public.claim_legacy_employee_by_email()
-RETURNS void
+RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
@@ -857,16 +944,19 @@ AS $$
 DECLARE
   v_uid uuid;
   v_email text;
+  v_profile public.profiles%ROWTYPE;
 BEGIN
   v_uid := (SELECT auth.uid());
   IF v_uid IS NULL THEN
-    RETURN;
+    RETURN NULL;
   END IF;
 
   SELECT LOWER(TRIM(email)) INTO v_email FROM auth.users WHERE id = v_uid;
   IF v_email IS NULL THEN
-    RETURN;
+    RETURN NULL;
   END IF;
+
+  PERFORM set_config('app.castello_internal_claim', '1', true);
 
   UPDATE public.profiles
   SET auth_user_id = v_uid,
@@ -874,6 +964,19 @@ BEGIN
   WHERE LOWER(TRIM(email)) = v_email
     AND is_active = true
     AND auth_user_id IS NULL;
+
+  SELECT * INTO v_profile
+  FROM public.profiles
+  WHERE auth_user_id = v_uid
+    AND is_active = true
+  ORDER BY created_at DESC
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+
+  RETURN to_jsonb(v_profile) - 'access_code';
 END;
 $$;
 
