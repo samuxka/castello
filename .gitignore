@@ -12,6 +12,12 @@ node_modules/
 
 # Expo & Mobile builds
 .expo/
+mobile/android/
+mobile/ios/
+mobile/credentials.json
+*.aab
+*.apk
+*.keystore
 dist/
 web-build/
 *.jks
