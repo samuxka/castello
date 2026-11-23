@@ -327,7 +327,7 @@ export async function registerCompany(
   }
 
   // 1. Cria credencial real no Supabase Auth (bcrypt/scrypt no servidor + sessão JWT)
-  const { data: authData, error: authError } = await supabase.auth.signUp({
+  let { data: authData, error: authError } = await supabase.auth.signUp({
     email: cleanEmail,
     password,
     options: {
@@ -335,44 +335,92 @@ export async function registerCompany(
     },
   });
 
-  if (authError) {
-    if (authError.message?.toLowerCase().includes('already registered')) {
-      throw new Error('Já existe uma conta registada com este e-mail.');
-    }
+  const isAlreadyRegisteredErr = Boolean(
+    authError?.message && /already registered/i.test(authError.message)
+  );
+
+  if (authError && !isAlreadyRegisteredErr) {
     throw new Error(authError.message || 'Falha ao registar conta de autenticação.');
   }
 
-  const authUser = authData.user;
-  if (!authUser) {
-    throw new Error('Não foi possível criar a sessão de autenticação.');
+  // 2. Se o signUp não devolveu sessão ativa (ex: "Confirm email" ativo no Supabase Auth),
+  //    confirma o e-mail recém-criado no servidor e autentica com signInWithPassword para obter o JWT real
+  if (!authData?.session) {
+    try {
+      await supabase.rpc('complete_company_signup', {
+        p_email: cleanEmail,
+        p_name: name.trim(),
+        p_phone: phone?.trim() || null,
+        p_tax_id: taxId?.trim() || null,
+      });
+    } catch {}
+
+    const { data: signedIn, error: signInErr } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
+    if (!signInErr && signedIn?.session && signedIn?.user) {
+      authData = signedIn as any;
+    } else if (isAlreadyRegisteredErr) {
+      throw new Error('Já existe uma conta registada com este e-mail.');
+    }
   }
 
-  // 2. Cria registo da empresa vinculado ao auth.uid() via owner_auth_id
-  const insertPayload: Record<string, unknown> = {
-    name: name.trim(),
-    owner_email: cleanEmail,
-    owner_auth_id: authUser.id,
-    password_hash: 'supabase_auth_managed',
-    phone: phone?.trim() || null,
-    tax_id: taxId?.trim() || null,
-  };
+  // 3. Com sessão JWT autenticada (auth.uid() ativo), cria a firma via RPC segura ou INSERT direto
+  let rpcCompany: Company | null = null;
+  try {
+    const { data: createdByRpc } = await supabase.rpc('complete_company_signup', {
+      p_email: cleanEmail,
+      p_name: name.trim(),
+      p_phone: phone?.trim() || null,
+      p_tax_id: taxId?.trim() || null,
+    });
+    if (createdByRpc && typeof createdByRpc === 'object' && (createdByRpc as any).id) {
+      rpcCompany = stripSensitiveCompanyFields(createdByRpc as Company);
+    }
+  } catch {}
 
-  let { data, error } = await supabase
-    .from('companies')
-    .insert(insertPayload)
-    .select(COMPANY_SAFE_COLS)
-    .single();
+  if (isAlreadyRegisteredErr && !rpcCompany) {
+    throw new Error('Já existe uma conta registada com este e-mail.');
+  }
 
-  // Fallback temporário caso a coluna owner_auth_id ainda não tenha sido aplicada no banco
-  if (error && (error.code === 'PGRST204' || error.message?.includes('owner_auth_id'))) {
-    delete insertPayload.owner_auth_id;
-    const retry = await supabase
+  let data: any = rpcCompany;
+  let error: any = null;
+
+  if (!data) {
+    const authUser = authData?.user;
+    if (!authUser) {
+      throw new Error('Não foi possível criar a sessão de autenticação.');
+    }
+
+    const insertPayload: Record<string, unknown> = {
+      name: name.trim(),
+      owner_email: cleanEmail,
+      owner_auth_id: authUser.id,
+      password_hash: 'supabase_auth_managed',
+      phone: phone?.trim() || null,
+      tax_id: taxId?.trim() || null,
+    };
+
+    const insertRes = await supabase
       .from('companies')
       .insert(insertPayload)
       .select(COMPANY_SAFE_COLS)
       .single();
-    data = retry.data;
-    error = retry.error;
+    data = insertRes.data;
+    error = insertRes.error;
+
+    // Fallback temporário caso a coluna owner_auth_id ainda não tenha sido aplicada no banco
+    if (error && (error.code === 'PGRST204' || error.message?.includes('owner_auth_id'))) {
+      delete insertPayload.owner_auth_id;
+      const retry = await supabase
+        .from('companies')
+        .insert(insertPayload)
+        .select(COMPANY_SAFE_COLS)
+        .single();
+      data = retry.data;
+      error = retry.error;
+    }
   }
 
   if (error || !data) {

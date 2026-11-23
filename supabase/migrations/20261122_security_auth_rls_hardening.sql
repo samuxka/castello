@@ -830,6 +830,116 @@ $$;
 REVOKE ALL ON FUNCTION public.claim_legacy_company_by_email() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.claim_legacy_company_by_email() TO authenticated;
 
+-- Finaliza o Sign Up de novas firmas confirmando o e-mail em auth.users e criando o registo em companies
+CREATE OR REPLACE FUNCTION public.complete_company_signup(
+  p_email text,
+  p_name text,
+  p_phone text DEFAULT NULL,
+  p_tax_id text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_clean_email text;
+  v_clean_name text;
+  v_caller_uid uuid;
+  v_target_uid uuid;
+  v_existing public.companies%ROWTYPE;
+  v_created public.companies%ROWTYPE;
+BEGIN
+  v_clean_email := LOWER(TRIM(COALESCE(p_email, '')));
+  v_clean_name := TRIM(COALESCE(p_name, ''));
+
+  IF v_clean_email = '' OR v_clean_name = '' THEN
+    RETURN NULL;
+  END IF;
+
+  v_caller_uid := (SELECT auth.uid());
+
+  SELECT u.id INTO v_target_uid
+  FROM auth.users u
+  WHERE LOWER(TRIM(u.email)) = v_clean_email
+  ORDER BY u.created_at DESC
+  LIMIT 1;
+
+  IF v_target_uid IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  IF v_caller_uid IS NOT NULL AND v_caller_uid <> v_target_uid THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT * INTO v_existing
+  FROM public.companies c
+  WHERE c.owner_auth_id = v_target_uid
+     OR LOWER(TRIM(c.owner_email)) = v_clean_email
+  LIMIT 1;
+
+  IF FOUND THEN
+    IF v_caller_uid IS NOT NULL AND v_existing.owner_auth_id = v_caller_uid THEN
+      RETURN jsonb_build_object(
+        'id', v_existing.id,
+        'name', v_existing.name,
+        'tax_id', v_existing.tax_id,
+        'owner_email', v_existing.owner_email,
+        'phone', v_existing.phone,
+        'logo_url', v_existing.logo_url,
+        'theme_color', v_existing.theme_color,
+        'theme_mode', v_existing.theme_mode,
+        'created_at', v_existing.created_at
+      );
+    END IF;
+    RETURN NULL;
+  END IF;
+
+  UPDATE auth.users
+  SET email_confirmed_at = COALESCE(email_confirmed_at, now())
+  WHERE id = v_target_uid
+    AND email_confirmed_at IS NULL;
+
+  IF v_caller_uid IS NULL OR v_caller_uid <> v_target_uid THEN
+    RETURN NULL;
+  END IF;
+
+  INSERT INTO public.companies (
+    name,
+    owner_email,
+    owner_auth_id,
+    password_hash,
+    phone,
+    tax_id
+  )
+  VALUES (
+    v_clean_name,
+    v_clean_email,
+    v_target_uid,
+    'supabase_auth_managed',
+    NULLIF(TRIM(COALESCE(p_phone, '')), ''),
+    NULLIF(TRIM(COALESCE(p_tax_id, '')), '')
+  )
+  RETURNING * INTO v_created;
+
+  RETURN jsonb_build_object(
+    'id', v_created.id,
+    'name', v_created.name,
+    'tax_id', v_created.tax_id,
+    'owner_email', v_created.owner_email,
+    'phone', v_created.phone,
+    'logo_url', v_created.logo_url,
+    'theme_color', v_created.theme_color,
+    'theme_mode', v_created.theme_mode,
+    'created_at', v_created.created_at
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.complete_company_signup(text, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.complete_company_signup(text, text, text, text) TO anon, authenticated;
+
 -- 9. RPCS PARA MIGRAÇÃO TRANSPARENTE DE COLABORADORES LEGADOS NO APP MOBILE
 CREATE OR REPLACE FUNCTION public.verify_legacy_employee_credentials(p_email text, p_access_code text)
 RETURNS boolean
