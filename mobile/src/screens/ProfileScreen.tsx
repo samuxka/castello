@@ -17,6 +17,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { ConstructionSite, EmployeeProfile, TimeEntry } from '../types';
 import { calculateMonthlySummaries } from '../utils/timeCalculations';
 import { uploadImageToCloudinary } from '../services/cloudinary';
+import { PrivacyPolicyScreen } from './PrivacyPolicyScreen';
+import { TermsOfServiceScreen } from './TermsOfServiceScreen';
 
 interface ProfileScreenProps {
   employee: EmployeeProfile;
@@ -54,6 +56,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [uploading, setUploading] = useState(false);
   const [urlModalVisible, setUrlModalVisible] = useState(false);
   const [customUrlInput, setCustomUrlInput] = useState('');
+  const [privacyVisible, setPrivacyVisible] = useState(false);
+  const [termsVisible, setTermsVisible] = useState(false);
 
   const now = new Date();
   const stats = calculateMonthlySummaries(entries, now.getFullYear(), now.getMonth());
@@ -368,6 +372,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
         </Text>
       </TouchableOpacity>
 
+      {/* Política de Privacidade */}
+      <TouchableOpacity
+        style={[
+          styles.actionButton,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+        onPress={() => setPrivacyVisible(true)}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Ionicons name="shield-checkmark-outline" size={18} color={colors.textMain} />
+          <Text style={[styles.actionButtonText, { color: colors.textMain }]}>
+            Política de Privacidade
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      </TouchableOpacity>
+
+      {/* Termos de Serviço */}
+      <TouchableOpacity
+        style={[
+          styles.actionButton,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+        onPress={() => setTermsVisible(true)}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Ionicons name="document-text-outline" size={18} color={colors.textMain} />
+          <Text style={[styles.actionButtonText, { color: colors.textMain }]}>
+            Termos de Serviço
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      </TouchableOpacity>
+
       {/* Terminar Sessão */}
       <TouchableOpacity
         style={[styles.btnLogout, { borderColor: colors.border }]}
@@ -378,6 +416,26 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           Terminar Sessão
         </Text>
       </TouchableOpacity>
+
+      <PrivacyPolicyScreen
+        visible={privacyVisible}
+        onClose={() => setPrivacyVisible(false)}
+        onOpenTerms={() => {
+          setPrivacyVisible(false);
+          setTermsVisible(true);
+        }}
+        theme={theme}
+      />
+
+      <TermsOfServiceScreen
+        visible={termsVisible}
+        onClose={() => setTermsVisible(false)}
+        onOpenPrivacy={() => {
+          setTermsVisible(false);
+          setPrivacyVisible(true);
+        }}
+        theme={theme}
+      />
 
       {/* Modal para Colar Link de Foto (Fallback Web/URL) */}
       <Modal

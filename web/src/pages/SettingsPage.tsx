@@ -694,6 +694,55 @@ export function SettingsPage({
         </div>
       </div>
 
+      {/* Documentos Legais Públicos */}
+      <div
+        className="content-panel"
+        style={{
+          padding: 20,
+          borderRadius: 8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)' }}>
+            Documentos Legais Públicos
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>
+            Consulte a Política de Privacidade (RGPD / LGPD) e os Termos de Serviço oficiais da plataforma Castello.
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <a
+            href="/privacidade"
+            onClick={(e) => {
+              e.preventDefault();
+              window.history.pushState({}, '', '/privacidade');
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+            className="btn-flat-secondary"
+            style={{ textDecoration: 'none', fontSize: 13, fontWeight: 600 }}
+          >
+            Política de Privacidade
+          </a>
+          <a
+            href="/termos"
+            onClick={(e) => {
+              e.preventDefault();
+              window.history.pushState({}, '', '/termos');
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+            className="btn-flat-secondary"
+            style={{ textDecoration: 'none', fontSize: 13, fontWeight: 600 }}
+          >
+            Termos de Serviço
+          </a>
+        </div>
+      </div>
+
       {/* Modal de Confirmação */}
       {deleteModalOpen && (
         <div className="flat-modal-backdrop">

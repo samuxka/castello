@@ -11,6 +11,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { EmployeeProfile } from '../types';
 import { showCustomAlert } from '../context/DialogContext';
+import { PrivacyPolicyScreen } from './PrivacyPolicyScreen';
+import { TermsOfServiceScreen } from './TermsOfServiceScreen';
 
 interface LoginScreenProps {
   onLogin: (email: string, code: string) => Promise<boolean>;
@@ -27,6 +29,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [privacyVisible, setPrivacyVisible] = useState(false);
+  const [termsVisible, setTermsVisible] = useState(false);
 
   const handleManualLogin = async () => {
     if (!email.trim() || !code.trim()) {
@@ -169,8 +173,41 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           <Text style={styles.footerNoteText}>
             castello • Sistema de Gestão e Picagem de Ponto
           </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 10 }}>
+            <TouchableOpacity onPress={() => setPrivacyVisible(true)}>
+              <Text style={{ color: '#94A3B8', fontSize: 12, textDecorationLine: 'underline', fontWeight: '600' }}>
+                Política de Privacidade
+              </Text>
+            </TouchableOpacity>
+            <Text style={{ color: '#475569', fontSize: 12 }}>•</Text>
+            <TouchableOpacity onPress={() => setTermsVisible(true)}>
+              <Text style={{ color: '#94A3B8', fontSize: 12, textDecorationLine: 'underline', fontWeight: '600' }}>
+                Termos de Serviço
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
+
+      <PrivacyPolicyScreen
+        visible={privacyVisible}
+        onClose={() => setPrivacyVisible(false)}
+        onOpenTerms={() => {
+          setPrivacyVisible(false);
+          setTermsVisible(true);
+        }}
+        theme="dark"
+      />
+
+      <TermsOfServiceScreen
+        visible={termsVisible}
+        onClose={() => setTermsVisible(false)}
+        onOpenPrivacy={() => {
+          setTermsVisible(false);
+          setPrivacyVisible(true);
+        }}
+        theme="dark"
+      />
     </View>
   );
 };

@@ -963,6 +963,44 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               >
                 {isSignup ? 'Acessar' : 'Registrar'}
               </button>
+
+              <div
+                style={{
+                  marginTop: '14px',
+                  paddingTop: '12px',
+                  borderTop: '1px solid #f1f5f9',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px',
+                  fontSize: '11.5px',
+                  color: '#64748b',
+                }}
+              >
+                <a
+                  href="/privacidade"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState({}, '', '/privacidade');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  style={{ color: '#475569', textDecoration: 'underline', fontWeight: 500 }}
+                >
+                  Política de Privacidade
+                </a>
+                <span>•</span>
+                <a
+                  href="/termos"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState({}, '', '/termos');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  style={{ color: '#475569', textDecoration: 'underline', fontWeight: 500 }}
+                >
+                  Termos de Serviço
+                </a>
+              </div>
             </div>
           </div>
         </div>
@@ -1329,7 +1367,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               />
               <span style={{ fontSize: '13px', color: '#1e293b', lineHeight: 1.45 }}>
                 Li, compreendo e aceito integralmente os{' '}
-                <strong>Termos de Uso</strong> e as condições de licenciamento do sistema Castello.
+                <a
+                  href="/termos"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ color: '#2563eb', fontWeight: 700, textDecoration: 'underline' }}
+                >
+                  Termos de Serviço
+                </a>{' '}
+                e as condições de licenciamento do sistema Castello.
               </span>
             </label>
 
@@ -1359,7 +1406,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 }}
               />
               <span style={{ fontSize: '13px', color: '#1e293b', lineHeight: 1.45 }}>
-                Aceito a <strong>Política de Privacidade</strong> e autorizo o tratamento de dados
+                Aceito a{' '}
+                <a
+                  href="/privacidade"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ color: '#2563eb', fontWeight: 700, textDecoration: 'underline' }}
+                >
+                  Política de Privacidade
+                </a>{' '}
+                e autorizo o tratamento de dados
                 operacionais da firma e dos colaboradores para fins de gestão de obras.
               </span>
             </label>

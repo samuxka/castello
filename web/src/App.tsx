@@ -95,6 +95,8 @@ const VehiclesPage = React.lazy(() => import('./pages/VehiclesPage').then((m) =>
 const VehicleDetailPage = React.lazy(() => import('./pages/VehicleDetailPage').then((m) => ({ default: m.VehicleDetailPage })));
 const CalendarPage = React.lazy(() => import('./pages/CalendarPage').then((m) => ({ default: m.CalendarPage })));
 const EmployeeDetailPage = React.lazy(() => import('./pages/EmployeeDetailPage').then((m) => ({ default: m.EmployeeDetailPage })));
+const PrivacyPolicyPage = React.lazy(() => import('./pages/PrivacyPolicyPage').then((m) => ({ default: m.PrivacyPolicyPage })));
+const TermsOfServicePage = React.lazy(() => import('./pages/TermsOfServicePage').then((m) => ({ default: m.TermsOfServicePage })));
 const AttendanceChart = React.lazy(() => import('./components/AttendanceChart').then((m) => ({ default: m.AttendanceChart })));
 const DashboardCalendarCard = React.lazy(() => import('./components/DashboardCalendarCard').then((m) => ({ default: m.DashboardCalendarCard })));
 const SiteProgressLineChart = React.lazy(() => import('./components/SiteProgressLineChart').then((m) => ({ default: m.SiteProgressLineChart })));
@@ -120,7 +122,80 @@ type Page =
   | 'calendario'
   | 'configuracoes';
 
+function resolvePublicLegalRoute(): 'privacidade' | 'termos' | null {
+  if (typeof window === 'undefined') return null;
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+  const params = new URLSearchParams(window.location.search);
+  const legalParam = (params.get('legal') || params.get('pagina') || '').toLowerCase();
+
+  if (
+    path === '/privacidade' ||
+    path === '/politica-de-privacidade' ||
+    path === '/privacy' ||
+    legalParam === 'privacidade' ||
+    legalParam === 'privacy'
+  ) {
+    return 'privacidade';
+  }
+  if (
+    path === '/termos' ||
+    path === '/termos-de-servico' ||
+    path === '/terms' ||
+    legalParam === 'termos' ||
+    legalParam === 'terms'
+  ) {
+    return 'termos';
+  }
+  return null;
+}
+
 export default function App() {
+  const [publicLegalPage, setPublicLegalPage] = useState<'privacidade' | 'termos' | null>(() =>
+    resolvePublicLegalRoute()
+  );
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setPublicLegalPage(resolvePublicLegalRoute());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  if (publicLegalPage === 'privacidade') {
+    return (
+      <React.Suspense fallback={<PageLoadingFallback />}>
+        <PrivacyPolicyPage
+          onBack={() => {
+            window.history.pushState({}, '', '/');
+            setPublicLegalPage(null);
+          }}
+          onOpenTerms={() => {
+            window.history.pushState({}, '', '/termos');
+            setPublicLegalPage('termos');
+          }}
+        />
+      </React.Suspense>
+    );
+  }
+
+  if (publicLegalPage === 'termos') {
+    return (
+      <React.Suspense fallback={<PageLoadingFallback />}>
+        <TermsOfServicePage
+          onBack={() => {
+            window.history.pushState({}, '', '/');
+            setPublicLegalPage(null);
+          }}
+          onOpenPrivacy={() => {
+            window.history.pushState({}, '', '/privacidade');
+            setPublicLegalPage('privacidade');
+          }}
+        />
+      </React.Suspense>
+    );
+  }
+
   // Verifica se o link é o link público do cliente (?obra=CODIGO)
   const queryParams = new URLSearchParams(window.location.search);
   const clientShareCode = queryParams.get('obra');

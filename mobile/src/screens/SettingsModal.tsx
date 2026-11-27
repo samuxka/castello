@@ -16,6 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { EmployeeProfile } from '../types';
 import { uploadImageToCloudinary } from '../services/cloudinary';
+import { PrivacyPolicyScreen } from './PrivacyPolicyScreen';
+import { TermsOfServiceScreen } from './TermsOfServiceScreen';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -53,6 +55,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const [refreshing, setRefreshing] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [privacyVisible, setPrivacyVisible] = useState(false);
+  const [termsVisible, setTermsVisible] = useState(false);
 
   const processAndUploadPhoto = async (asset: ImagePicker.ImagePickerAsset) => {
     if (!onUpdateAvatar) return;
@@ -344,10 +348,74 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 Versão
               </Text>
               <Text style={{ fontSize: 13, color: colors.textMuted }}>
-                1.0.0 (Build APK)
+                1.0.3
               </Text>
             </View>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => setPrivacyVisible(true)}
+            >
+              <View style={styles.settingIconLabel}>
+                <View style={[styles.iconWrap, { backgroundColor: colors.cardSubtle }]}>
+                  <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.textMain }]}>
+                    Política de Privacidade
+                  </Text>
+                  <Text style={[styles.settingSub, { color: colors.textMuted }]}>
+                    Proteção de dados e RGPD / LGPD
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => setTermsVisible(true)}
+            >
+              <View style={styles.settingIconLabel}>
+                <View style={[styles.iconWrap, { backgroundColor: colors.cardSubtle }]}>
+                  <Ionicons name="document-text-outline" size={18} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={[styles.settingLabel, { color: colors.textMain }]}>
+                    Termos de Serviço
+                  </Text>
+                  <Text style={[styles.settingSub, { color: colors.textMuted }]}>
+                    Condições gerais de uso do sistema
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
           </View>
+
+          <PrivacyPolicyScreen
+            visible={privacyVisible}
+            onClose={() => setPrivacyVisible(false)}
+            onOpenTerms={() => {
+              setPrivacyVisible(false);
+              setTermsVisible(true);
+            }}
+            theme={theme}
+          />
+
+          <TermsOfServiceScreen
+            visible={termsVisible}
+            onClose={() => setTermsVisible(false)}
+            onOpenPrivacy={() => {
+              setTermsVisible(false);
+              setPrivacyVisible(true);
+            }}
+            theme={theme}
+          />
 
           {/* Botão Sair da Conta */}
           <TouchableOpacity
