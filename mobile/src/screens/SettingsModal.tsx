@@ -348,7 +348,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 Versão
               </Text>
               <Text style={{ fontSize: 13, color: colors.textMuted }}>
-                1.0.4
+                1.0.5
               </Text>
             </View>
 
