@@ -60,6 +60,8 @@ import {
 } from '../lib/supabase';
 import { Company } from '../types';
 import { loginSchema, registerSchema, validateWithZod } from '../lib/validation';
+import { verifyTurnstileToken } from '../lib/turnstile';
+import { TurnstileWidget } from './TurnstileWidget';
 
 interface AuthModalProps {
   onSuccess: (company: Company) => void;
@@ -464,6 +466,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resendSuccessMsg, setResendSuccessMsg] = useState<string | null>(null);
 
+  // Cloudflare Turnstile token & single-use reset counter
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileResetSignal, setTurnstileResetSignal] = useState(0);
+
   // Multi-step Onboarding State (restaurado automaticamente se a página for atualizada)
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(
     () => initialOnboardingDraft?.currentStepIndex ?? 0
@@ -635,8 +641,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         return;
       }
 
+      if (!turnstileToken) {
+        setErrorMsg('Conclua a verificação de segurança Cloudflare Turnstile.');
+        return;
+      }
+
       setLoading(true);
       try {
+        await verifyTurnstileToken(turnstileToken, 'login');
         const logged = await loginCompany(val.data.email, val.data.password);
         if (isCompanyOnboardingPending(logged)) {
           const restored = await restorePendingOnboardingSession();
@@ -654,6 +666,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       } catch (err: any) {
         setErrorMsg(err.message || 'Falha na autenticação da firma.');
       } finally {
+        setTurnstileResetSignal((prev) => prev + 1);
         setLoading(false);
       }
     } else {
@@ -671,9 +684,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         return;
       }
 
+      if (!turnstileToken) {
+        setErrorMsg('Conclua a verificação de segurança Cloudflare Turnstile.');
+        return;
+      }
+
       setLoading(true);
       isManualAuthFlowRef.current = true;
       try {
+        await verifyTurnstileToken(turnstileToken, 'signup');
         await initiateEmailSignupVerification(
           val.data.companyName,
           val.data.email,
@@ -696,6 +715,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         isManualAuthFlowRef.current = false;
         setErrorMsg(err.message || 'Falha no registo da firma.');
       } finally {
+        setTurnstileResetSignal((prev) => prev + 1);
         setLoading(false);
       }
     }
@@ -1494,6 +1514,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   </button>
                 </div>
               )}
+
+              {/* Cloudflare Turnstile Bot Protection */}
+              <TurnstileWidget
+                action={isSignup ? 'signup' : 'login'}
+                onTokenChange={setTurnstileToken}
+                resetSignal={turnstileResetSignal}
+                theme="light"
+              />
 
               {/* Submit Button */}
               <button

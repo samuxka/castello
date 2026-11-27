@@ -14,6 +14,8 @@ import {
   supabase,
   updateAccountPassword,
 } from '../lib/supabase';
+import { verifyTurnstileToken } from '../lib/turnstile';
+import { TurnstileWidget } from '../components/TurnstileWidget';
 
 interface ResetPasswordPageProps {
   initialMode?: 'request' | 'update';
@@ -45,6 +47,8 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [emailSent, setEmailSent] = useState(false);
   const [passwordUpdated, setPasswordUpdated] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileResetSignal, setTurnstileResetSignal] = useState(0);
 
   useEffect(() => {
     setMode(initialMode);
@@ -74,8 +78,14 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
       return;
     }
 
+    if (!turnstileToken) {
+      setErrorMsg('Conclua a verificação de segurança Cloudflare Turnstile.');
+      return;
+    }
+
     setLoading(true);
     try {
+      await verifyTurnstileToken(turnstileToken, 'password_reset');
       await requestPasswordReset(cleanEmail);
       setEmailSent(true);
     } catch (err: any) {
@@ -83,6 +93,7 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
         err?.message || 'Não foi possível enviar o e-mail de recuperação. Tente novamente.'
       );
     } finally {
+      setTurnstileResetSignal((prev) => prev + 1);
       setLoading(false);
     }
   };
@@ -299,6 +310,13 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
                   />
                 </div>
               </div>
+
+              <TurnstileWidget
+                action="password_reset"
+                onTokenChange={setTurnstileToken}
+                resetSignal={turnstileResetSignal}
+                theme="light"
+              />
 
               <button
                 type="submit"
