@@ -451,7 +451,8 @@ export async function registerCompany(
     saveTheme((createdCompany.theme_color as ThemeColor) || 'azul', (createdCompany.theme_mode as ThemeMode) || 'dark');
   }
 
-  setActiveCompanySession(createdCompany);
+  // Não chama setActiveCompanySession aqui: a sessão ativa só é gravada após o utilizador
+  // concluir o formulário multi-step de onboarding e aceitar os Termos e Política de Privacidade.
   return createdCompany;
 }
 
@@ -646,6 +647,18 @@ export interface PendingGoogleUser {
   phone: string;
 }
 
+function isGoogleProviderUser(user: any): boolean {
+  if (!user) return false;
+  if (user.app_metadata?.provider === 'google') return true;
+  if (Array.isArray(user.app_metadata?.providers) && user.app_metadata.providers.includes('google')) {
+    return true;
+  }
+  if (Array.isArray(user.identities) && user.identities.some((id: any) => id?.provider === 'google')) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Verifica no retorno do Google OAuth se o utilizador autenticado JÁ possui firma cadastrada.
  * Se já possuir, restaura a sessão e devolve a firma.
@@ -663,6 +676,10 @@ export async function handleGoogleAuthRedirect(): Promise<Company | null> {
       return null;
     }
     const user = session.user;
+    // Ignora sessões criadas pelo formulário manual de e-mail/senha para não pular o onboarding multi-step
+    if (!isGoogleProviderUser(user)) {
+      return null;
+    }
     const userEmail = user.email?.toLowerCase().trim();
     if (!userEmail) return null;
 
@@ -726,6 +743,9 @@ export async function getPendingGoogleAuthUser(): Promise<PendingGoogleUser | nu
       return null;
     }
     const user = session.user;
+    if (!isGoogleProviderUser(user)) {
+      return null;
+    }
     const cleanEmail = (user.email || '').toLowerCase().trim();
     if (!cleanEmail) return null;
 

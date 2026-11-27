@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -241,21 +241,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   // Pending company state after initial registration
   const [pendingCompany, setPendingCompany] = useState<Company | null>(null);
   const [pendingGoogleUser, setPendingGoogleUser] = useState<PendingGoogleUser | null>(null);
+  const isManualAuthFlowRef = useRef(false);
 
   // Detecta retorno do Google OAuth: se já tiver firma entra direto; se for novo registo abre o formulário multi-step
   useEffect(() => {
     let mounted = true;
 
     const checkGoogleOAuthState = async () => {
+      if (isManualAuthFlowRef.current) return;
+
       const existingCompany = await handleGoogleAuthRedirect();
-      if (!mounted) return;
+      if (!mounted || isManualAuthFlowRef.current) return;
       if (existingCompany) {
         onSuccess(existingCompany);
         return;
       }
 
       const googleUsr = await getPendingGoogleAuthUser();
-      if (!mounted) return;
+      if (!mounted || isManualAuthFlowRef.current) return;
       if (googleUsr) {
         setPendingGoogleUser(googleUsr);
         setEmail(googleUsr.email);
@@ -268,6 +271,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
 
     const { data: authListener } =
       supabase?.auth.onAuthStateChange((event) => {
+        if (isManualAuthFlowRef.current) return;
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
           checkGoogleOAuthState();
         }
@@ -386,6 +390,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       }
 
       setLoading(true);
+      isManualAuthFlowRef.current = true;
       try {
         const created = await registerCompany(
           val.data.companyName,
@@ -398,6 +403,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         setCurrentStepIndex(0);
         setAuthStage('onboarding');
       } catch (err: any) {
+        isManualAuthFlowRef.current = false;
         setErrorMsg(err.message || 'Falha no registo da firma.');
       } finally {
         setLoading(false);
