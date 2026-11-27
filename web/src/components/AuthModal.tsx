@@ -7,20 +7,25 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
+  KeyRound,
   Lock,
+  MailCheck,
+  RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
 import {
   getPendingGoogleAuthUser,
   handleGoogleAuthRedirect,
+  initiateEmailSignupVerification,
   loginCompany,
   loginWithGoogle,
   PendingGoogleUser,
-  registerCompany,
   registerCompanyForGoogleUser,
+  resendEmailSignupCode,
   setActiveCompanySession,
   supabase,
   updateCompanyProfile,
+  verifyEmailSignupCodeAndCreateCompany,
 } from '../lib/supabase';
 import { Company } from '../types';
 import { loginSchema, registerSchema, validateWithZod } from '../lib/validation';
@@ -29,7 +34,7 @@ interface AuthModalProps {
   onSuccess: (company: Company) => void;
 }
 
-type AuthStage = 'auth' | 'google-company' | 'onboarding' | 'terms';
+type AuthStage = 'auth' | 'verify-email' | 'google-company' | 'onboarding' | 'terms';
 
 interface OnboardingOption {
   id: string;
@@ -243,6 +248,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [pendingGoogleUser, setPendingGoogleUser] = useState<PendingGoogleUser | null>(null);
   const isManualAuthFlowRef = useRef(false);
 
+  // Email verification code states (para registo com e-mail/senha)
+  const [verificationCode, setVerificationCode] = useState('');
+  const [resendingCode, setResendingCode] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendSuccessMsg, setResendSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
   // Detecta retorno do Google OAuth: se já tiver firma entra direto; se for novo registo abre o formulário multi-step
   useEffect(() => {
     let mounted = true;
@@ -392,22 +411,72 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       setLoading(true);
       isManualAuthFlowRef.current = true;
       try {
-        const created = await registerCompany(
+        await initiateEmailSignupVerification(
           val.data.companyName,
           val.data.email,
           val.data.password,
           val.data.phone || '',
           val.data.taxId || ''
         );
-        setPendingCompany(created);
-        setCurrentStepIndex(0);
-        setAuthStage('onboarding');
+        setVerificationCode('');
+        setResendSuccessMsg(null);
+        setResendCooldown(60);
+        setAuthStage('verify-email');
       } catch (err: any) {
         isManualAuthFlowRef.current = false;
         setErrorMsg(err.message || 'Falha no registo da firma.');
       } finally {
         setLoading(false);
       }
+    }
+  };
+
+  const handleVerifyEmailCodeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setResendSuccessMsg(null);
+
+    const cleanCode = verificationCode.trim().replace(/\s+/g, '');
+    if (cleanCode.length < 6) {
+      setErrorMsg('Introduza o código de verificação enviado para o seu e-mail.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const created = await verifyEmailSignupCodeAndCreateCompany(
+        companyName,
+        email,
+        password,
+        cleanCode,
+        phone,
+        taxId
+      );
+      setPendingCompany(created);
+      setCurrentStepIndex(0);
+      setAuthStage('onboarding');
+    } catch (err: any) {
+      setErrorMsg(
+        err.message || 'Código inválido ou expirado. Verifique o código recebido no seu e-mail.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendVerificationCode = async () => {
+    if (resendCooldown > 0 || resendingCode) return;
+    setErrorMsg(null);
+    setResendSuccessMsg(null);
+    setResendingCode(true);
+    try {
+      await resendEmailSignupCode(email);
+      setResendSuccessMsg('Enviámos um novo código de verificação para o seu e-mail.');
+      setResendCooldown(60);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Não foi possível reenviar o código neste momento.');
+    } finally {
+      setResendingCode(false);
     }
   };
 
@@ -1105,6 +1174,297 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 </a>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* ESTÁGIO 1.2 (E-MAIL/SENHA): TELA DE CÓDIGO DE CONFIRMAÇÃO DE E-MAIL  */}
+      {/* ==================================================================== */}
+      {stage === 'verify-email' && (
+        <div
+          style={{
+            position: 'relative',
+            width: '100%',
+            maxWidth: '520px',
+            borderRadius: '24px',
+            backgroundColor: '#ffffff',
+            boxShadow: '0 30px 80px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+            padding: '40px 44px',
+            zIndex: 10,
+            overflowY: 'auto',
+            maxHeight: '92vh',
+          }}
+        >
+          {/* Barra de Progresso */}
+          <div style={{ marginBottom: '22px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '10px',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: '11.5px',
+                  fontWeight: 700,
+                  letterSpacing: '1px',
+                  textTransform: 'uppercase',
+                  color: '#0015D4',
+                }}
+              >
+                Verificação de Conta • Código de Confirmação
+              </span>
+              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                Passo 1 de {ONBOARDING_STEPS.length + 2}
+              </span>
+            </div>
+
+            <div
+              style={{
+                height: '6px',
+                width: '100%',
+                borderRadius: '999px',
+                backgroundColor: '#EEF1FF',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  height: '100%',
+                  width: `${Math.round((1 / (ONBOARDING_STEPS.length + 2)) * 100)}%`,
+                  borderRadius: '999px',
+                  backgroundColor: '#0015D4',
+                  transition: 'width 0.4s ease',
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Ícone e Título */}
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <div
+              style={{
+                width: '56px',
+                height: '56px',
+                margin: '0 auto 16px',
+                borderRadius: '16px',
+                backgroundColor: '#EEF1FF',
+                border: '1px solid #B9C8FF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#0015D4',
+              }}
+            >
+              <MailCheck size={28} />
+            </div>
+
+            <h2
+              style={{
+                fontSize: '26px',
+                fontWeight: 600,
+                color: '#010106',
+                fontFamily: `'Outfit', sans-serif`,
+                margin: '0 0 8px',
+              }}
+            >
+              Confirme o seu E-mail
+            </h2>
+            <p style={{ fontSize: '13.5px', color: '#64748B', margin: 0, lineHeight: 1.55 }}>
+              Enviámos um código de verificação para{' '}
+              <strong style={{ color: '#010106' }}>{email.trim().toLowerCase()}</strong>. Introduza
+              o código abaixo para validar o seu e-mail e prosseguir com o registo da firma.
+            </p>
+          </div>
+
+          {errorMsg && (
+            <div
+              style={{
+                padding: '10px 14px',
+                backgroundColor: '#FEE2E2',
+                border: '1px solid #FECACA',
+                borderRadius: '8px',
+                color: '#DC2626',
+                fontSize: '12.5px',
+                fontWeight: 500,
+                marginBottom: '16px',
+                textAlign: 'center',
+              }}
+            >
+              {errorMsg}
+            </div>
+          )}
+
+          {resendSuccessMsg && (
+            <div
+              style={{
+                padding: '10px 14px',
+                backgroundColor: '#DCFCE7',
+                border: '1px solid #BBF7D0',
+                borderRadius: '8px',
+                color: '#16A34A',
+                fontSize: '12.5px',
+                fontWeight: 600,
+                marginBottom: '16px',
+                textAlign: 'center',
+              }}
+            >
+              {resendSuccessMsg}
+            </div>
+          )}
+
+          <form onSubmit={handleVerifyEmailCodeSubmit} noValidate>
+            <div style={{ marginBottom: '20px' }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  color: '#010106',
+                  marginBottom: '8px',
+                }}
+              >
+                <KeyRound size={14} color="#0015D4" />
+                <span>Código de Verificação</span>
+              </label>
+
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                maxLength={8}
+                placeholder="000000"
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/[^0-9a-zA-Z]/g, ''))}
+                style={{
+                  width: '100%',
+                  minHeight: '54px',
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  border: '2px solid #D2D8E4',
+                  backgroundColor: '#F5F7FB',
+                  fontSize: '24px',
+                  fontWeight: 700,
+                  letterSpacing: '8px',
+                  textAlign: 'center',
+                  color: '#010106',
+                  outline: 'none',
+                  fontFamily: `'Outfit', monospace`,
+                }}
+              />
+              <span
+                style={{
+                  display: 'block',
+                  textAlign: 'center',
+                  fontSize: '11.5px',
+                  color: '#64748B',
+                  marginTop: '6px',
+                }}
+              >
+                Digite ou cole o código recebido na sua caixa de entrada (verifique também a pasta
+                de Spam).
+              </span>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || verificationCode.trim().length < 6}
+              style={{
+                width: '100%',
+                minHeight: '48px',
+                padding: '13px 20px',
+                borderRadius: '8px',
+                backgroundColor:
+                  verificationCode.trim().length >= 6 && !loading ? '#0015D4' : '#D2D8E4',
+                color: verificationCode.trim().length >= 6 && !loading ? '#FFFFFF' : '#64748B',
+                fontSize: '14px',
+                fontWeight: 600,
+                border: 'none',
+                cursor:
+                  verificationCode.trim().length >= 6 && !loading ? 'pointer' : 'not-allowed',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                marginBottom: '14px',
+                transition: 'all 0.18s ease',
+              }}
+            >
+              <span>{loading ? 'A validar código...' : 'Verificar Código e Continuar'}</span>
+              <ArrowRight size={16} />
+            </button>
+          </form>
+
+          {/* Reenviar Código e Voltar */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '12px',
+              paddingTop: '14px',
+              borderTop: '1px solid #EEF1FF',
+            }}
+          >
+            <button
+              type="button"
+              onClick={handleResendVerificationCode}
+              disabled={resendCooldown > 0 || resendingCode}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'none',
+                border: 'none',
+                fontSize: '12.5px',
+                fontWeight: 600,
+                color: resendCooldown > 0 ? '#64748B' : '#0015D4',
+                cursor: resendCooldown > 0 ? 'not-allowed' : 'pointer',
+                padding: 0,
+              }}
+            >
+              <RefreshCw size={13} />
+              <span>
+                {resendingCode
+                  ? 'A reenviar código...'
+                  : resendCooldown > 0
+                  ? `Reenviar código em ${resendCooldown}s`
+                  : 'Não recebeu o e-mail? Reenviar código'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                isManualAuthFlowRef.current = false;
+                setErrorMsg(null);
+                setResendSuccessMsg(null);
+                setAuthStage('auth');
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'none',
+                border: 'none',
+                fontSize: '12.5px',
+                fontWeight: 500,
+                color: '#64748B',
+                cursor: 'pointer',
+                padding: 0,
+                textDecoration: 'underline',
+              }}
+            >
+              <ArrowLeft size={13} />
+              <span>Voltar e corrigir dados ou e-mail</span>
+            </button>
           </div>
         </div>
       )}

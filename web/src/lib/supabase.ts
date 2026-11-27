@@ -302,6 +302,215 @@ export async function fetchCompanyCloudSettings(
   return null;
 }
 
+/**
+ * Passo 1 do Registo por E-mail/Senha:
+ * Cria o utilizador pendente no Supabase Auth e dispara o envio do código de verificação por e-mail.
+ */
+export async function initiateEmailSignupVerification(
+  name: string,
+  ownerEmail: string,
+  password: string,
+  phone?: string,
+  taxId?: string
+): Promise<void> {
+  const validation = validateWithZod(registerSchema, {
+    companyName: name,
+    email: ownerEmail,
+    password,
+    phone,
+    taxId,
+  });
+  if (!validation.success) {
+    throw new Error(validation.error);
+  }
+
+  const cleanEmail = ownerEmail.trim().toLowerCase();
+
+  if (!supabase) {
+    throw new Error('Serviço Supabase não configurado no ambiente.');
+  }
+
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email: cleanEmail,
+    password,
+    options: {
+      data: {
+        company_name: name.trim(),
+        phone: phone?.trim() || null,
+        tax_id: taxId?.trim() || null,
+      },
+    },
+  });
+
+  if (authError) {
+    if (/already registered/i.test(authError.message || '')) {
+      // Se o utilizador iniciou o cadastro antes mas ainda não confirmou o código, reenvia o código
+      const { error: resendErr } = await supabase.auth.resend({
+        type: 'signup',
+        email: cleanEmail,
+      });
+      if (!resendErr) {
+        return;
+      }
+      throw new Error('Já existe uma conta registada com este e-mail.');
+    }
+    throw new Error(authError.message || 'Falha ao enviar código de verificação.');
+  }
+
+  // No Supabase Auth com proteção de enumeração ativa, identities vazio indica e-mail já existente e confirmado
+  if (authData?.user && Array.isArray(authData.user.identities) && authData.user.identities.length === 0) {
+    throw new Error('Já existe uma conta registada com este e-mail.');
+  }
+}
+
+/**
+ * Reenvia o código de verificação de criação de conta para o e-mail informado.
+ */
+export async function resendEmailSignupCode(ownerEmail: string): Promise<void> {
+  if (!supabase) {
+    throw new Error('Serviço Supabase não configurado.');
+  }
+  const cleanEmail = ownerEmail.trim().toLowerCase();
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email: cleanEmail,
+  });
+  if (error) {
+    throw new Error(error.message || 'Não foi possível reenviar o código. Aguarde alguns segundos.');
+  }
+}
+
+/**
+ * Passo 2 do Registo por E-mail/Senha:
+ * Valida o código OTP enviado por e-mail, obtém a sessão JWT real e cria a firma em public.companies.
+ */
+export async function verifyEmailSignupCodeAndCreateCompany(
+  name: string,
+  ownerEmail: string,
+  password: string,
+  verificationCode: string,
+  phone?: string,
+  taxId?: string
+): Promise<Company> {
+  if (!supabase) {
+    throw new Error('Serviço Supabase não configurado no ambiente.');
+  }
+
+  const cleanEmail = ownerEmail.trim().toLowerCase();
+  const cleanCode = verificationCode.trim().replace(/\s+/g, '');
+
+  if (cleanCode.length < 6) {
+    throw new Error('Introduza o código de verificação completo enviado para o seu e-mail.');
+  }
+
+  // 1. Valida o código OTP de signup no Supabase Auth
+  let { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+    email: cleanEmail,
+    token: cleanCode,
+    type: 'signup',
+  });
+
+  if (verifyError || !verifyData?.user) {
+    const fallbackOtp = await supabase.auth.verifyOtp({
+      email: cleanEmail,
+      token: cleanCode,
+      type: 'email',
+    });
+    if (!fallbackOtp.error && fallbackOtp.data?.user) {
+      verifyData = fallbackOtp.data;
+      verifyError = null;
+    }
+  }
+
+  if (verifyError || !verifyData?.user) {
+    throw new Error('Código de verificação inválido ou expirado. Verifique o código no seu e-mail.');
+  }
+
+  // Garante sessão JWT ativa caso verifyOtp não a tenha persistido
+  if (!verifyData.session) {
+    const { data: signedIn } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
+    if (signedIn?.user) {
+      verifyData = signedIn as any;
+    }
+  }
+
+  const authUser = verifyData.user!;
+
+  // 2. Cria a firma via RPC segura ou INSERT + SELECT separados
+  let rpcCompany: Company | null = null;
+  try {
+    const { data: createdByRpc } = await supabase.rpc('complete_company_signup', {
+      p_email: cleanEmail,
+      p_name: name.trim(),
+      p_phone: phone?.trim() || null,
+      p_tax_id: taxId?.trim() || null,
+    });
+    if (createdByRpc && typeof createdByRpc === 'object' && (createdByRpc as any).id) {
+      rpcCompany = stripSensitiveCompanyFields(createdByRpc as Company);
+    }
+  } catch {}
+
+  let data: any = rpcCompany;
+  let error: any = null;
+
+  if (!data) {
+    const insertPayload: Record<string, unknown> = {
+      name: name.trim(),
+      owner_email: cleanEmail,
+      owner_auth_id: authUser.id,
+      password_hash: 'supabase_auth_managed',
+      phone: phone?.trim() || null,
+      tax_id: taxId?.trim() || null,
+    };
+
+    let insertRes = await supabase.from('companies').insert(insertPayload);
+    error = insertRes.error;
+
+    if (error && (error.code === 'PGRST204' || error.message?.includes('owner_auth_id'))) {
+      delete insertPayload.owner_auth_id;
+      insertRes = await supabase.from('companies').insert(insertPayload);
+      error = insertRes.error;
+    }
+
+    if (!error) {
+      const selectRes = await supabase
+        .from('companies')
+        .select(COMPANY_SAFE_COLS)
+        .eq('owner_auth_id', authUser.id)
+        .maybeSingle();
+      if (selectRes.data) {
+        data = selectRes.data;
+      } else {
+        const byEmailRes = await supabase
+          .from('companies')
+          .select(COMPANY_SAFE_COLS)
+          .eq('owner_email', cleanEmail)
+          .maybeSingle();
+        data = byEmailRes.data;
+        error = byEmailRes.error;
+      }
+    }
+  }
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Falha ao criar firma após verificação.');
+  }
+
+  const createdCompany = stripSensitiveCompanyFields(data as unknown as Company);
+
+  if (createdCompany.theme_color || createdCompany.theme_mode) {
+    saveTheme(
+      (createdCompany.theme_color as ThemeColor) || 'azul',
+      (createdCompany.theme_mode as ThemeMode) || 'dark'
+    );
+  }
+
+  return createdCompany;
+}
+
 export async function registerCompany(
   name: string,
   ownerEmail: string,
