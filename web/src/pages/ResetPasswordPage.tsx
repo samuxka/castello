@@ -124,13 +124,14 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
         alignItems: 'center',
         justifyContent: 'center',
         padding: '24px 16px',
-        backgroundColor: '#07090e',
+        backgroundColor: '#010106',
         backgroundImage: `
-          radial-gradient(ellipse 90% 70% at 50% -20%, rgba(120, 28, 140, 0.35) 0%, transparent 60%),
-          radial-gradient(ellipse 70% 60% at 100% 100%, rgba(220, 38, 90, 0.28) 0%, transparent 50%),
-          radial-gradient(ellipse 70% 60% at 0% 100%, rgba(37, 99, 235, 0.25) 0%, transparent 50%),
-          linear-gradient(180deg, #07090e 0%, #0d1117 100%)
+          radial-gradient(ellipse 90% 70% at 50% -20%, rgba(1, 15, 107, 0.55) 0%, transparent 60%),
+          radial-gradient(ellipse 70% 60% at 100% 100%, rgba(0, 21, 212, 0.35) 0%, transparent 50%),
+          radial-gradient(ellipse 70% 60% at 0% 100%, rgba(92, 127, 251, 0.25) 0%, transparent 50%),
+          linear-gradient(180deg, #010106 0%, #111525 100%)
         `,
+        fontFamily: `'Outfit', sans-serif`,
         overflowY: 'auto',
       }}
     >
@@ -224,7 +225,7 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
                   fontSize: '26px',
                   fontWeight: 700,
                   color: '#0f172a',
-                  fontFamily: `'Playfair Display', Georgia, serif`,
+                  fontFamily: `'Outfit', sans-serif`,
                   margin: '0 0 8px',
                 }}
               >
@@ -353,7 +354,7 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
                 fontSize: '24px',
                 fontWeight: 700,
                 color: '#0f172a',
-                fontFamily: `'Playfair Display', Georgia, serif`,
+                fontFamily: `'Outfit', sans-serif`,
                 margin: '0 0 10px',
               }}
             >
@@ -444,7 +445,7 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
                   fontSize: '26px',
                   fontWeight: 700,
                   color: '#0f172a',
-                  fontFamily: `'Playfair Display', Georgia, serif`,
+                  fontFamily: `'Outfit', sans-serif`,
                   margin: '0 0 8px',
                 }}
               >
@@ -630,7 +631,7 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
                 fontSize: '24px',
                 fontWeight: 700,
                 color: '#0f172a',
-                fontFamily: `'Playfair Display', Georgia, serif`,
+                fontFamily: `'Outfit', sans-serif`,
                 margin: '0 0 10px',
               }}
             >

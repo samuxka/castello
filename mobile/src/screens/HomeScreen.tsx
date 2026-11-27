@@ -79,14 +79,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 }) => {
   const isDark = theme === 'dark';
   const colors = {
-    bg: isDark ? '#0F172A' : '#F8FAFC',
-    card: isDark ? '#1E293B' : '#FFFFFF',
-    border: isDark ? '#334155' : '#E2E8F0',
-    textMain: isDark ? '#F8FAFC' : '#0F172A',
-    textMuted: isDark ? '#94A3B8' : '#64748B',
-    primary: '#2563EB',
-    cardSubtle: isDark ? '#172554' : '#EFF6FF',
-    primaryBorder: isDark ? '#1E3A8A' : '#BFDBFE',
+    bg: isDark ? '#010106' : '#F5F7FB',
+    card: isDark ? '#111525' : '#FFFFFF',
+    border: isDark ? '#30374A' : '#D2D8E4',
+    textMain: isDark ? '#F1F4FA' : '#010106',
+    textMuted: isDark ? '#AAB4C8' : '#64748B',
+    primary: isDark ? '#5C7FFB' : '#0015D4',
+    cardSubtle: isDark ? '#010F6B' : '#EEF1FF',
+    primaryBorder: isDark ? '#304CF0' : '#B9C8FF',
     success: '#16A34A',
   };
 

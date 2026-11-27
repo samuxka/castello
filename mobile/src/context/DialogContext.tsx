@@ -144,13 +144,13 @@ export function DialogProvider({ children, isDark = true }: { children: ReactNod
   const getIconData = () => {
     switch (dialogState.type) {
       case 'success':
-        return { name: 'checkmark-circle-outline' as const, color: '#10B981', bg: 'rgba(16, 185, 129, 0.12)' };
+        return { name: 'checkmark-circle-outline' as const, color: '#16A34A', bg: isDark ? '#052E16' : '#DCFCE7' };
       case 'warning':
-        return { name: 'alert-circle-outline' as const, color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.12)' };
+        return { name: 'alert-circle-outline' as const, color: '#D97706', bg: isDark ? '#451A03' : '#FEF3C7' };
       case 'danger':
-        return { name: 'trash-outline' as const, color: '#EF4444', bg: 'rgba(239, 68, 68, 0.12)' };
+        return { name: 'trash-outline' as const, color: '#DC2626', bg: isDark ? '#450A0A' : '#FEE2E2' };
       default:
-        return { name: 'information-circle-outline' as const, color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.12)' };
+        return { name: 'information-circle-outline' as const, color: isDark ? '#5C7FFB' : '#0015D4', bg: isDark ? '#010F6B' : '#EEF1FF' };
     }
   };
 
@@ -166,8 +166,8 @@ export function DialogProvider({ children, isDark = true }: { children: ReactNod
             style={[
               styles.card,
               {
-                backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                borderColor: isDark ? '#334155' : '#E2E8F0',
+                backgroundColor: isDark ? '#111525' : '#FFFFFF',
+                borderColor: isDark ? '#30374A' : '#D2D8E4',
               },
             ]}
           >
@@ -177,14 +177,14 @@ export function DialogProvider({ children, isDark = true }: { children: ReactNod
                 <Ionicons name={iconData.name} size={24} color={iconData.color} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.title, { color: isDark ? '#F8FAFC' : '#0F172A' }]}>
+                <Text style={[styles.title, { color: isDark ? '#F1F4FA' : '#010106' }]}>
                   {dialogState.title}
                 </Text>
               </View>
             </View>
 
             {/* Mensagem */}
-            <Text style={[styles.message, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+            <Text style={[styles.message, { color: isDark ? '#AAB4C8' : '#64748B' }]}>
               {dialogState.message}
             </Text>
 
@@ -194,14 +194,14 @@ export function DialogProvider({ children, isDark = true }: { children: ReactNod
                 const isCancel = btn.style === 'cancel';
                 const isDestructive = btn.style === 'destructive';
 
-                let btnBg = '#3B82F6';
+                let btnBg = '#0015D4';
                 let textColor = '#FFFFFF';
 
                 if (isCancel) {
-                  btnBg = isDark ? '#334155' : '#F1F5F9';
-                  textColor = isDark ? '#CBD5E1' : '#475569';
+                  btnBg = isDark ? '#30374A' : '#EEF1FF';
+                  textColor = isDark ? '#F1F4FA' : '#010106';
                 } else if (isDestructive) {
-                  btnBg = '#EF4444';
+                  btnBg = '#DC2626';
                   textColor = '#FFFFFF';
                 }
 

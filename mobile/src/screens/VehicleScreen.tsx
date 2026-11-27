@@ -43,19 +43,19 @@ interface VehicleScreenProps {
 export function VehicleScreen({ employee, theme }: VehicleScreenProps) {
   const isDark = theme === 'dark';
   const colors = {
-    bg: isDark ? '#0B132B' : '#F3F4F6',
-    card: isDark ? '#1C2541' : '#FFFFFF',
-    text: isDark ? '#FFFFFF' : '#111827',
-    textMuted: isDark ? '#94A3B8' : '#64748B',
-    border: isDark ? '#2D3748' : '#E2E8F0',
-    primary: '#2563EB',
-    primarySubtle: isDark ? 'rgba(37, 99, 235, 0.15)' : 'rgba(37, 99, 235, 0.08)',
-    success: '#10B981',
-    successSubtle: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.08)',
-    warning: '#F59E0B',
-    warningSubtle: isDark ? 'rgba(245, 158, 11, 0.15)' : 'rgba(245, 158, 11, 0.08)',
-    danger: '#EF4444',
-    dangerSubtle: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.08)',
+    bg: isDark ? '#010106' : '#F5F7FB',
+    card: isDark ? '#111525' : '#FFFFFF',
+    text: isDark ? '#F1F4FA' : '#010106',
+    textMuted: isDark ? '#AAB4C8' : '#64748B',
+    border: isDark ? '#30374A' : '#D2D8E4',
+    primary: isDark ? '#5C7FFB' : '#0015D4',
+    primarySubtle: isDark ? '#010F6B' : '#EEF1FF',
+    success: '#16A34A',
+    successSubtle: isDark ? 'rgba(22, 163, 74, 0.16)' : '#DCFCE7',
+    warning: '#D97706',
+    warningSubtle: isDark ? 'rgba(217, 119, 6, 0.16)' : '#FEF3C7',
+    danger: '#DC2626',
+    dangerSubtle: isDark ? 'rgba(220, 38, 38, 0.16)' : '#FEE2E2',
   };
 
   const [loading, setLoading] = useState(true);

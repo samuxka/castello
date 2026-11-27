@@ -42,15 +42,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const isDark = theme === 'dark';
   const colors = {
-    bg: isDark ? '#0F172A' : '#F8FAFC',
-    card: isDark ? '#1E293B' : '#FFFFFF',
-    border: isDark ? '#334155' : '#E2E8F0',
-    textMain: isDark ? '#F8FAFC' : '#0F172A',
-    textMuted: isDark ? '#94A3B8' : '#64748B',
-    primary: '#2563EB',
-    cardSubtle: isDark ? '#172554' : '#EFF6FF',
+    bg: isDark ? '#010106' : '#F5F7FB',
+    card: isDark ? '#111525' : '#FFFFFF',
+    border: isDark ? '#30374A' : '#D2D8E4',
+    textMain: isDark ? '#F1F4FA' : '#010106',
+    textMuted: isDark ? '#AAB4C8' : '#64748B',
+    primary: isDark ? '#5C7FFB' : '#0015D4',
+    cardSubtle: isDark ? '#010F6B' : '#EEF1FF',
     danger: '#DC2626',
-    dangerSubtle: isDark ? '#450A0A' : '#FEF2F2',
+    dangerSubtle: isDark ? '#450A0A' : '#FEE2E2',
   };
 
   const [refreshing, setRefreshing] = useState(false);

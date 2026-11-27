@@ -69,15 +69,15 @@ export const CalendarScreen: React.FC<CalendarScreenProps> = ({
 }) => {
   const isDark = theme === 'dark';
   const colors = {
-    bg: isDark ? '#0F172A' : '#F8FAFC',
-    card: isDark ? '#1E293B' : '#FFFFFF',
-    border: isDark ? '#334155' : '#E2E8F0',
-    textMain: isDark ? '#F8FAFC' : '#0F172A',
-    textMuted: isDark ? '#94A3B8' : '#64748B',
-    primary: '#2563EB',    // Azul quando trabalhou
+    bg: isDark ? '#010106' : '#F5F7FB',
+    card: isDark ? '#111525' : '#FFFFFF',
+    border: isDark ? '#30374A' : '#D2D8E4',
+    textMain: isDark ? '#F1F4FA' : '#010106',
+    textMuted: isDark ? '#AAB4C8' : '#64748B',
+    primary: isDark ? '#5C7FFB' : '#0015D4', // Azul quando trabalhou
     absent: '#DC2626',     // Vermelho quando faltou
-    admission: '#10B981',  // Verde Esmeralda para o dia de admissão
-    cardSubtle: isDark ? '#172554' : '#EFF6FF',
+    admission: '#16A34A',  // Verde para o dia de admissão
+    cardSubtle: isDark ? '#010F6B' : '#EEF1FF',
     warning: '#D97706',
   };
 

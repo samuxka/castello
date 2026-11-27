@@ -9,9 +9,18 @@ import {
   Image,
   Modal,
   Alert,
+  TextInput,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Font from 'expo-font';
+import {
+  Outfit_300Light,
+  Outfit_400Regular,
+  Outfit_500Medium,
+  Outfit_600SemiBold,
+  Outfit_700Bold,
+} from '@expo-google-fonts/outfit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
 import {
@@ -56,6 +65,30 @@ import { DialogProvider, showCustomAlert } from './src/context/DialogContext';
 type TabKey = 'inicio' | 'obras' | 'carrinha' | 'calendario' | 'perfil';
 
 export default function App() {
+  useEffect(() => {
+    Font.loadAsync({
+      Outfit: Outfit_400Regular,
+      Outfit_300Light,
+      Outfit_400Regular,
+      Outfit_500Medium,
+      Outfit_600SemiBold,
+      Outfit_700Bold,
+    })
+      .then(() => {
+        const TextAny = Text as any;
+        TextAny.defaultProps = TextAny.defaultProps || {};
+        TextAny.defaultProps.style = [{ fontFamily: 'Outfit' }, TextAny.defaultProps.style];
+
+        const TextInputAny = TextInput as any;
+        TextInputAny.defaultProps = TextInputAny.defaultProps || {};
+        TextInputAny.defaultProps.style = [
+          { fontFamily: 'Outfit' },
+          TextInputAny.defaultProps.style,
+        ];
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <SafeAreaProvider>
       <DialogProvider>
@@ -194,23 +227,31 @@ function MainApp() {
   };
 
   const THEME_PRIMARY_COLORS: Record<string, string> = {
-    azul: '#2563EB',
+    azul: isDark ? '#5C7FFB' : '#0015D4',
     vermelho: '#DC2626',
     verde: '#16A34A',
     amarelo: '#D97706',
     laranja: '#EA580C',
   };
 
-  const primaryAccent = (company?.theme_color && THEME_PRIMARY_COLORS[company.theme_color]) || '#2563EB';
+  const primaryAccent =
+    (company?.theme_color && THEME_PRIMARY_COLORS[company.theme_color]) ||
+    (isDark ? '#5C7FFB' : '#0015D4');
 
   const colors = {
-    bg: isDark ? '#0F172A' : '#F8FAFC',
-    card: isDark ? '#1E293B' : '#FFFFFF',
-    border: isDark ? '#334155' : '#E2E8F0',
-    textMain: isDark ? '#F8FAFC' : '#0F172A',
-    textMuted: isDark ? '#94A3B8' : '#64748B',
+    bg: isDark ? '#010106' : '#F5F7FB',
+    card: isDark ? '#111525' : '#FFFFFF',
+    border: isDark ? '#30374A' : '#D2D8E4',
+    textMain: isDark ? '#F1F4FA' : '#010106',
+    textMuted: isDark ? '#AAB4C8' : '#64748B',
     primary: primaryAccent,
-    cardSubtle: isDark ? (company?.theme_color === 'vermelho' ? '#450A0A' : '#172554') : (company?.theme_color === 'vermelho' ? '#FEF2F2' : '#EFF6FF'),
+    cardSubtle: isDark
+      ? company?.theme_color === 'vermelho'
+        ? '#450A0A'
+        : '#010F6B'
+      : company?.theme_color === 'vermelho'
+      ? '#FEE2E2'
+      : '#EEF1FF',
   };
 
   const loadData = useCallback(async () => {

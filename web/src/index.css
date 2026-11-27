@@ -1,84 +1,143 @@
 /* ==========================================================================
-   CASTELLO - DESIGN SYSTEM FLAT
-   Cores: Azul Corporativo (#1E3A8A, #2563EB, #3B82F6), Sem gradientes,
-   sem sombras brilhantes / neon, sem emojis. Temas Claro e Escuro.
+   CASTELLO - DESIGN SYSTEM v1.0 (FLAT DESIGN & IDENTIDADE VISUAL)
+   Paleta Oficial:
+     - Obsidian:   #010106 (Textos principais e fundos escuros)
+     - Deep Blue:  #010F6B (Identidade institucional e navegação)
+     - Royal Blue: #0015D4 (Cor primária, botões e ações)
+     - Sky Blue:   #5C7FFB (Elementos secundários e gráficos)
+     - Steel Gray: #D2D8E4 (Bordas, divisores e neutros)
+   Tipografia: 'Outfit' (Google Fonts) • Pesos 300 a 700
    ========================================================================== */
 
 :root {
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --primary-subtle: #eff6ff;
-  --primary-border: #bfdbfe;
+  /* Escala Primária (Brand 50..950) */
+  --brand-50: #EEF1FF;
+  --brand-100: #DCE4FF;
+  --brand-200: #B9C8FF;
+  --brand-300: #8FA6FF;
+  --brand-400: #5C7FFB;
+  --brand-500: #304CF0;
+  --brand-600: #0015D4;
+  --brand-700: #0112A3;
+  --brand-800: #010F6B;
+  --brand-900: #01083D;
+  --brand-950: #010106;
 
-  --success: #16a34a;
-  --success-subtle: #f0fdf4;
-  --success-border: #bbf7d0;
+  /* Tokens de Espaçamento (Múltiplos de 4px) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
 
-  --danger: #dc2626;
-  --danger-subtle: #fef2f2;
-  --danger-border: #fecaca;
+  /* Tokens de Bordas (Radius) */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
 
-  --warning: #d97706;
-  --warning-subtle: #fffbeb;
-  --warning-border: #fde68a;
+  /* Tema Light (Seção 09 / Light Mode) */
+  --primary: #0015D4;
+  --primary-hover: #0112A3;
+  --primary-subtle: #EEF1FF;
+  --primary-border: #B9C8FF;
+  --secondary: #010F6B;
+  --accent: #5C7FFB;
 
-  --bg-page: #f8fafc;
-  --bg-card: #ffffff;
-  --bg-card-subtle: #f1f5f9;
-  --border-color: #e2e8f0;
+  /* Cores Semânticas (Seção 01) */
+  --success: #16A34A;
+  --success-subtle: #DCFCE7;
+  --success-border: #BBF7D0;
 
-  --text-main: #0f172a;
-  --text-muted: #64748b;
-  --text-on-primary: #ffffff;
+  --danger: #DC2626;
+  --danger-subtle: #FEE2E2;
+  --danger-border: #FECACA;
 
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --warning: #D97706;
+  --warning-subtle: #FEF3C7;
+  --warning-border: #FDE68A;
+
+  --info: #0015D4;
+  --info-subtle: #EEF1FF;
+  --info-border: #B9C8FF;
+
+  --bg-page: #F5F7FB;
+  --bg-card: #FFFFFF;
+  --bg-card-subtle: #EEF1FF;
+  --border-color: #D2D8E4;
+
+  --text-main: #010106;
+  --text-muted: #64748B;
+  --text-on-primary: #FFFFFF;
+  --focus-ring: rgba(0, 21, 212, 0.16);
+
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-weight: 400;
 }
 
 [data-theme='dark'] {
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
-  --primary-subtle: #172554;
-  --primary-border: #1e3a8a;
+  /* Tema Dark (Seção 09 / Dark Mode) */
+  --primary: #5C7FFB;
+  --primary-hover: #8FA6FF;
+  --primary-subtle: #010F6B;
+  --primary-border: #304CF0;
+  --secondary: #010F6B;
+  --accent: #5C7FFB;
 
-  --success: #22c55e;
-  --success-subtle: #052e16;
-  --success-border: #14532d;
+  --success: #16A34A;
+  --success-subtle: #052E16;
+  --success-border: #14532D;
 
-  --danger: #ef4444;
-  --danger-subtle: #450a0a;
-  --danger-border: #7f1d1d;
+  --danger: #DC2626;
+  --danger-subtle: #450A0A;
+  --danger-border: #7F1D1D;
 
-  --warning: #f59e0b;
-  --warning-subtle: #451a03;
-  --warning-border: #78350f;
+  --warning: #D97706;
+  --warning-subtle: #451A03;
+  --warning-border: #78350F;
 
-  --bg-page: #0b1329;
-  --bg-card: #131f37;
-  --bg-card-subtle: #0f172a;
-  --border-color: #1e293b;
+  --info: #5C7FFB;
+  --info-subtle: #010F6B;
+  --info-border: #304CF0;
 
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --text-on-primary: #ffffff;
+  --bg-page: #010106;
+  --bg-card: #111525;
+  --bg-card-subtle: #01083D;
+  --border-color: #30374A;
+
+  --text-main: #F1F4FA;
+  --text-muted: #AAB4C8;
+  --text-on-primary: #010106;
+  --focus-ring: rgba(92, 127, 251, 0.24);
 }
 
 /* ==========================================================================
-   TEMAS DE CORES PERSONALIZADAS (AZUL, VERMELHO, VERDE, AMARELO, LARANJA)
+   TEMAS DE CORES PERSONALIZADAS (AZUL OFICIAL CASTELLO, VERMELHO, VERDE, AMARELO, LARANJA)
    Disponíveis nas versões Clara e Escura
    ========================================================================== */
 
-/* AZUL */
+/* AZUL (Paleta Principal Castello Design System) */
 [data-theme-color='azul'] {
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --primary-subtle: #eff6ff;
-  --primary-border: #bfdbfe;
+  --primary: #0015D4;
+  --primary-hover: #0112A3;
+  --primary-subtle: #EEF1FF;
+  --primary-border: #B9C8FF;
+  --text-on-primary: #FFFFFF;
 }
 [data-theme='dark'][data-theme-color='azul'] {
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
-  --primary-subtle: #172554;
-  --primary-border: #1e3a8a;
+  --primary: #5C7FFB;
+  --primary-hover: #8FA6FF;
+  --primary-subtle: #010F6B;
+  --primary-border: #304CF0;
+  --text-on-primary: #010106;
 }
 
 /* VERMELHO */
@@ -167,7 +226,18 @@ html, body {
   overflow: hidden; /* Evita quebra ou barra dupla na janela global */
   background-color: var(--bg-page);
   color: var(--text-main);
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
   transition: background-color 0.2s, color 0.2s;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 /* Portal do Cliente: Scroll garantido e independente */
@@ -496,7 +566,7 @@ html, body {
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  padding: 32px 40px 16px;
+  padding: 24px 24px 16px;
   position: relative;
   min-width: 0;
 }
@@ -513,54 +583,69 @@ html, body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
   gap: 16px;
   flex-wrap: wrap;
 }
 
 .view-title {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
   color: var(--text-main);
 }
 
 .view-description {
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
   color: var(--text-muted);
   margin-top: 4px;
 }
 
-/* Botões Flat */
+/* Botões Flat (Design System Seção 05: Padrão 40px/8px, Pequeno 32px/6px, Grande 48px/8px) */
 .btn-flat-primary {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  min-height: 40px;
   background-color: var(--primary);
   color: var(--text-on-primary);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 600;
-  padding: 9px 16px;
-  border-radius: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
   border: none;
   cursor: pointer;
+  transition: background-color 0.18s ease, opacity 0.18s ease;
 }
 .btn-flat-primary:hover {
   background-color: var(--primary-hover);
+}
+.btn-flat-primary:disabled {
+  background-color: var(--border-color);
+  color: var(--text-muted);
+  cursor: not-allowed;
 }
 
 .btn-flat-secondary {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
   background-color: var(--bg-card);
   color: var(--text-main);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
-  padding: 8px 14px;
-  border-radius: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
   border: 1px solid var(--border-color);
   cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
 }
 .btn-flat-secondary:hover {
   background-color: var(--bg-card-subtle);
@@ -569,43 +654,50 @@ html, body {
 .btn-flat-danger {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  min-height: 32px;
   background-color: var(--danger-subtle);
   color: var(--danger);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  padding: 6px 10px;
+  padding: 6px 12px;
   border-radius: 6px;
   border: 1px solid var(--danger-border);
   cursor: pointer;
+  transition: opacity 0.18s ease;
 }
 
 .btn-flat-success {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  min-height: 32px;
   background-color: var(--success);
   color: #ffffff;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   padding: 6px 12px;
   border-radius: 6px;
   border: none;
   cursor: pointer;
+  transition: opacity 0.18s ease;
 }
 
 .btn-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-height: 32px;
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   color: var(--text-muted);
   border-radius: 6px;
   cursor: pointer;
-  padding: 6px 8px;
+  padding: 6px 10px;
   font-size: 13px;
-  transition: all 0.15s ease;
+  transition: all 0.18s ease;
 }
 .btn-icon:hover {
   background-color: var(--bg-card-subtle);
@@ -613,7 +705,7 @@ html, body {
   border-color: var(--border-color);
 }
 
-/* Grid de Cards KPIs */
+/* Grid de Cards KPIs (Seção 05: Card Padding 20-24px, Radius 12px) */
 .kpi-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -624,38 +716,41 @@ html, body {
 .kpi-box {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 18px 20px;
+  border-radius: 12px;
+  padding: 20px 24px;
 }
 
 .kpi-label {
   font-size: 12px;
+  line-height: 16px;
   text-transform: uppercase;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.5px;
   color: var(--text-muted);
 }
 
 .kpi-value {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
   margin-top: 8px;
   color: var(--text-main);
 }
 
 .kpi-detail {
   font-size: 12px;
+  line-height: 16px;
   color: var(--text-muted);
   margin-top: 4px;
 }
 
-/* Painel Flat */
+/* Painel Flat (Seção 05: Card Padding 20-24px, Radius 12px) */
 .content-panel {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 20px;
+  border-radius: 12px;
+  padding: 20px 24px;
   margin-bottom: 24px;
 }
 
@@ -667,8 +762,9 @@ html, body {
 }
 
 .panel-title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
   color: var(--text-main);
 }
 
@@ -771,14 +867,15 @@ html, body {
   contain-intrinsic-size: auto 96px;
 }
 
-/* Badges Flat */
+/* Badges Flat (Seção 05: Padding 4px 8px, Radius 6px) */
 .badge-flat {
   display: inline-flex;
   align-items: center;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
 }
 
 .badge-flat.primary {
@@ -805,11 +902,11 @@ html, body {
   border: 1px solid var(--danger-border);
 }
 
-/* Modal Flat */
+/* Modal Flat (Seção 05: Padding 24px, Radius 16px) */
 .flat-modal-backdrop {
   position: fixed;
   inset: 0;
-  background-color: rgba(15, 23, 42, 0.65);
+  background-color: rgba(1, 1, 6, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -821,14 +918,14 @@ html, body {
 .flat-modal-box {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: 16px;
   width: 100%;
   max-width: 540px;
   max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
   padding: 24px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 12px 32px -8px rgba(1, 1, 6, 0.28);
   scrollbar-width: thin;
 }
 
@@ -840,8 +937,9 @@ html, body {
 }
 
 .flat-modal-title {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
   color: var(--text-main);
 }
 
@@ -863,27 +961,33 @@ html, body {
 }
 
 .flat-form-group label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
   color: var(--text-muted);
 }
 
+/* Inputs e Selects (Seção 05: 44px altura, 8px radius, foco com borda azul e halo discreto) */
 .flat-form-group input,
 .flat-form-group select,
 .flat-form-group textarea {
-  background-color: var(--bg-card-subtle);
+  min-height: 44px;
+  background-color: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 9px 12px;
+  border-radius: 8px;
+  padding: 10px 14px;
   color: var(--text-main);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
   outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .flat-form-group input:focus,
 .flat-form-group select:focus,
 .flat-form-group textarea:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .flat-modal-actions {

@@ -477,13 +477,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '24px 16px',
-        backgroundColor: '#07090e',
+        backgroundColor: '#010106',
         backgroundImage: `
-          radial-gradient(ellipse 90% 70% at 50% -20%, rgba(120, 28, 140, 0.35) 0%, transparent 60%),
-          radial-gradient(ellipse 70% 60% at 100% 100%, rgba(220, 38, 90, 0.28) 0%, transparent 50%),
-          radial-gradient(ellipse 70% 60% at 0% 100%, rgba(37, 99, 235, 0.25) 0%, transparent 50%),
-          linear-gradient(180deg, #07090e 0%, #0d1117 100%)
+          radial-gradient(ellipse 90% 70% at 50% -20%, rgba(1, 15, 107, 0.55) 0%, transparent 60%),
+          radial-gradient(ellipse 70% 60% at 100% 100%, rgba(0, 21, 212, 0.35) 0%, transparent 50%),
+          radial-gradient(ellipse 70% 60% at 0% 100%, rgba(92, 127, 251, 0.25) 0%, transparent 50%),
+          linear-gradient(180deg, #010106 0%, #111525 100%)
         `,
+        fontFamily: `'Outfit', sans-serif`,
         overflowY: 'auto',
       }}
     >
@@ -600,7 +601,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   lineHeight: '1.15',
                   fontWeight: 700,
                   letterSpacing: '-0.5px',
-                  fontFamily: `'Playfair Display', Georgia, serif`,
+                  fontFamily: `'Outfit', sans-serif`,
                   marginBottom: '18px',
                   textShadow: '0 4px 20px rgba(0,0,0,0.6)',
                 }}
@@ -679,7 +680,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   fontSize: '32px',
                   fontWeight: 700,
                   color: '#0f172a',
-                  fontFamily: `'Playfair Display', Georgia, serif`,
+                  fontFamily: `'Outfit', sans-serif`,
                   letterSpacing: '-0.5px',
                   marginBottom: '6px',
                 }}
@@ -1191,7 +1192,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   fontSize: '25px',
                   fontWeight: 700,
                   color: '#0f172a',
-                  fontFamily: `'Playfair Display', Georgia, serif`,
+                  fontFamily: `'Outfit', sans-serif`,
                   margin: '0 0 4px',
                 }}
               >
@@ -1495,7 +1496,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 fontSize: '26px',
                 fontWeight: 700,
                 color: '#0f172a',
-                fontFamily: `'Playfair Display', Georgia, serif`,
+                fontFamily: `'Outfit', sans-serif`,
                 lineHeight: 1.25,
                 marginBottom: '8px',
               }}
@@ -1693,7 +1694,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 fontSize: '26px',
                 fontWeight: 700,
                 color: '#0f172a',
-                fontFamily: `'Playfair Display', Georgia, serif`,
+                fontFamily: `'Outfit', sans-serif`,
                 marginBottom: '6px',
               }}
             >
