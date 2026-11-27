@@ -944,9 +944,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
 
                   <button
                     type="button"
-                    onClick={() =>
-                      alert('Contacte o suporte técnico ou administrador para repor a sua senha.')
-                    }
+                    onClick={() => {
+                      const query = email.trim()
+                        ? `?email=${encodeURIComponent(email.trim().toLowerCase())}`
+                        : '';
+                      window.history.pushState({}, '', `/recuperar-senha${query}`);
+                      window.dispatchEvent(new PopStateEvent('popstate'));
+                    }}
                     style={{
                       background: 'none',
                       border: 'none',

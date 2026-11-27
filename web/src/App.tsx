@@ -63,6 +63,7 @@ import {
   saveSite,
   saveTheme,
   setActiveCompanySession,
+  supabase,
   updateAbsenceJustificationStatus,
   updateEntryStatus,
   updateWorkSessionStatus,
@@ -97,6 +98,7 @@ const CalendarPage = React.lazy(() => import('./pages/CalendarPage').then((m) =>
 const EmployeeDetailPage = React.lazy(() => import('./pages/EmployeeDetailPage').then((m) => ({ default: m.EmployeeDetailPage })));
 const PrivacyPolicyPage = React.lazy(() => import('./pages/PrivacyPolicyPage').then((m) => ({ default: m.PrivacyPolicyPage })));
 const TermsOfServicePage = React.lazy(() => import('./pages/TermsOfServicePage').then((m) => ({ default: m.TermsOfServicePage })));
+const ResetPasswordPage = React.lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
 const AttendanceChart = React.lazy(() => import('./components/AttendanceChart').then((m) => ({ default: m.AttendanceChart })));
 const DashboardCalendarCard = React.lazy(() => import('./components/DashboardCalendarCard').then((m) => ({ default: m.DashboardCalendarCard })));
 const SiteProgressLineChart = React.lazy(() => import('./components/SiteProgressLineChart').then((m) => ({ default: m.SiteProgressLineChart })));
@@ -122,12 +124,38 @@ type Page =
   | 'calendario'
   | 'configuracoes';
 
-function resolvePublicLegalRoute(): 'privacidade' | 'termos' | null {
+type PublicRoute = 'privacidade' | 'termos' | 'recuperar-senha' | 'redefinir-senha' | null;
+
+// Captura se o hash inicial da URL veio de um link de recuperação de senha do Supabase (#...type=recovery)
+let initialHashHasRecovery =
+  typeof window !== 'undefined' &&
+  (window.location.hash.includes('type=recovery') ||
+    window.location.search.includes('type=recovery'));
+
+function resolvePublicLegalRoute(): PublicRoute {
   if (typeof window === 'undefined') return null;
   const path = window.location.pathname.toLowerCase().replace(/\/+$/, '');
   const params = new URLSearchParams(window.location.search);
   const legalParam = (params.get('legal') || params.get('pagina') || '').toLowerCase();
+  const hash = window.location.hash.toLowerCase();
 
+  if (
+    path === '/redefinir-senha' ||
+    path === '/nova-senha' ||
+    hash.includes('type=recovery') ||
+    params.get('type') === 'recovery'
+  ) {
+    return 'redefinir-senha';
+  }
+  if (
+    path === '/recuperar-senha' ||
+    path === '/esqueci-a-senha' ||
+    path === '/forgot-password' ||
+    path === '/reset-password' ||
+    legalParam === 'recuperar-senha'
+  ) {
+    return 'recuperar-senha';
+  }
   if (
     path === '/privacidade' ||
     path === '/politica-de-privacidade' ||
@@ -146,11 +174,14 @@ function resolvePublicLegalRoute(): 'privacidade' | 'termos' | null {
   ) {
     return 'termos';
   }
+  if (initialHashHasRecovery) {
+    return 'redefinir-senha';
+  }
   return null;
 }
 
 export default function App() {
-  const [publicLegalPage, setPublicLegalPage] = useState<'privacidade' | 'termos' | null>(() =>
+  const [publicLegalPage, setPublicLegalPage] = useState<PublicRoute>(() =>
     resolvePublicLegalRoute()
   );
 
@@ -159,42 +190,20 @@ export default function App() {
       setPublicLegalPage(resolvePublicLegalRoute());
     };
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+
+    const { data: authListener } =
+      supabase?.auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          window.history.pushState({}, '', '/redefinir-senha');
+          setPublicLegalPage('redefinir-senha');
+        }
+      }) || { data: { subscription: null } };
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      authListener?.subscription?.unsubscribe();
+    };
   }, []);
-
-  if (publicLegalPage === 'privacidade') {
-    return (
-      <React.Suspense fallback={<PageLoadingFallback />}>
-        <PrivacyPolicyPage
-          onBack={() => {
-            window.history.pushState({}, '', '/');
-            setPublicLegalPage(null);
-          }}
-          onOpenTerms={() => {
-            window.history.pushState({}, '', '/termos');
-            setPublicLegalPage('termos');
-          }}
-        />
-      </React.Suspense>
-    );
-  }
-
-  if (publicLegalPage === 'termos') {
-    return (
-      <React.Suspense fallback={<PageLoadingFallback />}>
-        <TermsOfServicePage
-          onBack={() => {
-            window.history.pushState({}, '', '/');
-            setPublicLegalPage(null);
-          }}
-          onOpenPrivacy={() => {
-            window.history.pushState({}, '', '/privacidade');
-            setPublicLegalPage('privacidade');
-          }}
-        />
-      </React.Suspense>
-    );
-  }
 
   // Verifica se o link é o link público do cliente (?obra=CODIGO)
   const queryParams = new URLSearchParams(window.location.search);
@@ -824,6 +833,59 @@ export default function App() {
       showNotice('Obra removida.');
     }
   };
+
+  if (publicLegalPage === 'recuperar-senha' || publicLegalPage === 'redefinir-senha') {
+    return (
+      <React.Suspense fallback={<PageLoadingFallback />}>
+        <ResetPasswordPage
+          initialMode={publicLegalPage === 'redefinir-senha' ? 'update' : 'request'}
+          onBackToLogin={async () => {
+            initialHashHasRecovery = false;
+            window.history.pushState({}, '', '/');
+            setPublicLegalPage(null);
+            const verified = await restoreVerifiedCompanySession();
+            if (verified) {
+              setActiveCompany(verified);
+            }
+          }}
+        />
+      </React.Suspense>
+    );
+  }
+
+  if (publicLegalPage === 'privacidade') {
+    return (
+      <React.Suspense fallback={<PageLoadingFallback />}>
+        <PrivacyPolicyPage
+          onBack={() => {
+            window.history.pushState({}, '', '/');
+            setPublicLegalPage(null);
+          }}
+          onOpenTerms={() => {
+            window.history.pushState({}, '', '/termos');
+            setPublicLegalPage('termos');
+          }}
+        />
+      </React.Suspense>
+    );
+  }
+
+  if (publicLegalPage === 'termos') {
+    return (
+      <React.Suspense fallback={<PageLoadingFallback />}>
+        <TermsOfServicePage
+          onBack={() => {
+            window.history.pushState({}, '', '/');
+            setPublicLegalPage(null);
+          }}
+          onOpenPrivacy={() => {
+            window.history.pushState({}, '', '/privacidade');
+            setPublicLegalPage('privacidade');
+          }}
+        />
+      </React.Suspense>
+    );
+  }
 
   if (!activeCompany) {
     return (

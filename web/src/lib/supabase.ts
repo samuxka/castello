@@ -601,6 +601,44 @@ export async function loginWithGoogle(): Promise<void> {
   }
 }
 
+/**
+ * Envia o e-mail de recuperação de senha via Supabase Auth com link para /redefinir-senha
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  if (!supabase) {
+    throw new Error('Serviço de autenticação não configurado.');
+  }
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail) {
+    throw new Error('Informe o e-mail da conta.');
+  }
+  const redirectUrl = `${window.location.origin}/redefinir-senha`;
+  const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+    redirectTo: redirectUrl,
+  });
+  if (error) {
+    throw new Error(error.message || 'Falha ao enviar o link de redefinição de senha.');
+  }
+}
+
+/**
+ * Atualiza a senha do utilizador autenticado através do link de recuperação (PASSWORD_RECOVERY)
+ */
+export async function updateAccountPassword(newPassword: string): Promise<void> {
+  if (!supabase) {
+    throw new Error('Serviço de autenticação não configurado.');
+  }
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error('A nova senha deve ter no mínimo 6 caracteres.');
+  }
+  const { error } = await supabase.auth.updateUser({
+    password: newPassword,
+  });
+  if (error) {
+    throw new Error(error.message || 'Não foi possível atualizar a senha.');
+  }
+}
+
 export interface PendingGoogleUser {
   id: string;
   email: string;
