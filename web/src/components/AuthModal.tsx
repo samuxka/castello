@@ -2,16 +2,37 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  Award,
+  Building,
   Building2,
   Check,
   CheckCircle2,
+  ClipboardCheck,
+  Clock,
   Eye,
   EyeOff,
+  FolderKanban,
+  Globe,
+  Hammer,
+  HardHat,
+  Home,
   KeyRound,
+  Landmark,
+  Layers,
   Lock,
+  LucideIcon,
   MailCheck,
+  MapPin,
+  Paintbrush,
   RefreshCw,
+  Rocket,
   ShieldCheck,
+  TrendingUp,
+  Truck,
+  User,
+  Users,
+  Wallet,
+  Zap,
 } from 'lucide-react';
 import {
   getPendingGoogleAuthUser,
@@ -38,7 +59,7 @@ type AuthStage = 'auth' | 'verify-email' | 'google-company' | 'onboarding' | 'te
 
 interface OnboardingOption {
   id: string;
-  icon: string;
+  Icon: LucideIcon;
   title: string;
   description: string;
 }
@@ -60,37 +81,37 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     options: [
       {
         id: 'residencial',
-        icon: '🏗️',
+        Icon: Home,
         title: 'Construção Residencial',
         description: 'Habitação unifamiliar, moradias, edifícios e condomínios residenciais.',
       },
       {
         id: 'comercial_industrial',
-        icon: '🏢',
+        Icon: Building2,
         title: 'Obras Comerciais & Industriais',
         description: 'Escritórios, lojas, armazéns logísticos e pavilhões industriais.',
       },
       {
         id: 'remodelacao_restauro',
-        icon: '🔨',
+        Icon: Hammer,
         title: 'Remodelação & Reabilitação',
         description: 'Renovações de interiores, reabilitação urbana e restauro de património.',
       },
       {
         id: 'infraestruturas',
-        icon: '🛣️',
+        Icon: Layers,
         title: 'Infraestruturas & Terraplanagens',
         description: 'Redes de águas, saneamento, loteamentos e pavimentação viária.',
       },
       {
         id: 'acabamentos',
-        icon: '🎨',
+        Icon: Paintbrush,
         title: 'Acabamentos & Pinturas',
         description: 'Gesso cartonado (pladur), isolamentos, revestimentos e pintura geral.',
       },
       {
         id: 'instalacoes_tecnicas',
-        icon: '⚡',
+        Icon: Zap,
         title: 'Instalações Técnicas (MEP)',
         description: 'Eletricidade, canalização, AVAC e soluções de energia solar.',
       },
@@ -104,25 +125,25 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     options: [
       {
         id: 'menos_1_ano',
-        icon: '🚀',
+        Icon: Rocket,
         title: 'Menos de 1 ano',
         description: 'Firma recente ou em arranque acelerado de atividade.',
       },
       {
         id: '1_a_3_anos',
-        icon: '📈',
+        Icon: TrendingUp,
         title: '1 a 3 anos',
         description: 'Empresa em crescimento com portfólio em expansão.',
       },
       {
         id: '4_a_10_anos',
-        icon: '🏛️',
+        Icon: Landmark,
         title: '4 a 10 anos',
         description: 'Firma sólida, estabelecida e com carteira estável de clientes.',
       },
       {
         id: 'mais_10_anos',
-        icon: '🏆',
+        Icon: Award,
         title: 'Mais de 10 anos',
         description: 'Empresa com vasta tradição, reconhecimento e reputação no setor.',
       },
@@ -136,25 +157,25 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     options: [
       {
         id: '1_a_5',
-        icon: '👤',
+        Icon: User,
         title: '1 a 5 colaboradores',
         description: 'Estrutura compacta com comunicação direta e ágil.',
       },
       {
         id: '6_a_15',
-        icon: '👥',
+        Icon: Users,
         title: '6 a 15 colaboradores',
         description: 'Equipas organizadas com encarregados ou mestres de obra.',
       },
       {
         id: '16_a_50',
-        icon: '👷',
+        Icon: HardHat,
         title: '16 a 50 colaboradores',
         description: 'Várias equipas a operar em simultâneo em diferentes locais.',
       },
       {
         id: 'mais_50',
-        icon: '🏢',
+        Icon: Building,
         title: 'Mais de 50 colaboradores',
         description: 'Grande operação com múltiplos departamentos e liderança hierarquizada.',
       },
@@ -168,25 +189,25 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     options: [
       {
         id: '1_a_2',
-        icon: '📍',
+        Icon: MapPin,
         title: '1 a 2 obras em simultâneo',
         description: 'Foco intensivo e acompanhamento próximo em cada projeto.',
       },
       {
         id: '3_a_5',
-        icon: '🏗️',
+        Icon: FolderKanban,
         title: '3 a 5 obras em simultâneo',
         description: 'Volume regular com rotação planeada de trabalhadores e carrinhas.',
       },
       {
         id: '6_a_10',
-        icon: '🏙️',
+        Icon: Building2,
         title: '6 a 10 obras em simultâneo',
         description: 'Gestão multi-obra que exige controlo rigoroso de horas e custos.',
       },
       {
         id: 'mais_10',
-        icon: '🌐',
+        Icon: Globe,
         title: 'Mais de 10 obras em paralelo',
         description: 'Operação de alta cadência com necessidade de automação de processos.',
       },
@@ -200,25 +221,25 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     options: [
       {
         id: 'ponto_e_presencas',
-        icon: '⏱️',
+        Icon: Clock,
         title: 'Registo e Validação de Ponto',
         description: 'Controlo rigoroso de horas, presenças no terreno e horas extraordinárias.',
       },
       {
         id: 'controlo_financeiro',
-        icon: '💶',
+        Icon: Wallet,
         title: 'Custos, Margens & Rentabilidade',
         description: 'Evitar desvios de orçamento e monitorizar a margem real de cada obra.',
       },
       {
         id: 'tarefas_e_diarios',
-        icon: '📋',
+        Icon: ClipboardCheck,
         title: 'Tarefas, Fotos & Diários de Obra',
         description: 'Acompanhar o avanço diário dos serviços com fotos e validação digital.',
       },
       {
         id: 'carrinhas_e_materiais',
-        icon: '🚐',
+        Icon: Truck,
         title: 'Frotas, Carrinhas & Inventário',
         description: 'Gestão de carrinhas, manutenção, ferramentas e materiais em circulação.',
       },
@@ -1883,39 +1904,52 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           >
             {currentStep.options.map((option) => {
               const isSelected = selectedOptionForCurrentStep === option.id;
+              const OptionIcon = option.Icon;
               return (
                 <div
                   key={option.id}
                   onClick={() => handleSelectOption(option.id)}
                   style={{
                     padding: '18px 20px',
-                    borderRadius: '16px',
-                    border: `2px solid ${isSelected ? '#2563eb' : '#e2e8f0'}`,
-                    backgroundColor: isSelected ? '#f0f7ff' : '#f8fafc',
+                    borderRadius: '12px',
+                    border: `2px solid ${isSelected ? '#0015D4' : '#D2D8E4'}`,
+                    backgroundColor: isSelected ? '#EEF1FF' : '#F5F7FB',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease',
+                    transition: 'all 0.18s ease',
                     display: 'flex',
                     alignItems: 'flex-start',
                     gap: '14px',
-                    boxShadow: isSelected
-                      ? '0 8px 20px -6px rgba(37, 99, 235, 0.25)'
-                      : 'none',
-                    transform: isSelected ? 'translateY(-2px)' : 'none',
                   }}
                   onMouseEnter={(e) => {
                     if (!isSelected) {
-                      e.currentTarget.style.borderColor = '#cbd5e1';
-                      e.currentTarget.style.backgroundColor = '#f1f5f9';
+                      e.currentTarget.style.borderColor = '#8FA6FF';
+                      e.currentTarget.style.backgroundColor = '#EEF1FF';
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (!isSelected) {
-                      e.currentTarget.style.borderColor = '#e2e8f0';
-                      e.currentTarget.style.backgroundColor = '#f8fafc';
+                      e.currentTarget.style.borderColor = '#D2D8E4';
+                      e.currentTarget.style.backgroundColor = '#F5F7FB';
                     }
                   }}
                 >
-                  <span style={{ fontSize: '24px', lineHeight: 1 }}>{option.icon}</span>
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '8px',
+                      backgroundColor: isSelected ? '#0015D4' : '#FFFFFF',
+                      border: `1px solid ${isSelected ? '#0015D4' : '#D2D8E4'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: isSelected ? '#FFFFFF' : '#0015D4',
+                      flexShrink: 0,
+                      transition: 'all 0.18s ease',
+                    }}
+                  >
+                    <OptionIcon size={20} strokeWidth={1.75} />
+                  </div>
 
                   <div style={{ flex: 1 }}>
                     <div
