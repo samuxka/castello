@@ -859,7 +859,7 @@ export default function App() {
 
       {/* Barra Lateral Flat Retrátil */}
       <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''} ${sidebarCollapsed && !mobileMenuOpen ? 'collapsed' : ''}`}>
-        <div>
+  <div className="sidebar-content">
           <div className="brand-section">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: sidebarCollapsed && !mobileMenuOpen ? 'none' : 1, minWidth: 0, justifyContent: sidebarCollapsed && !mobileMenuOpen ? 'center' : 'flex-start' }}>
               <div

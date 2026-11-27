@@ -210,23 +210,40 @@ html, body {
 }
 
 /* Sidebar Flat com Altura Padronizada, Scroll Próprio e Modo Retrátil */
+
+/* Sidebar */
 .sidebar {
   width: 260px;
   min-width: 260px;
   height: 100vh;
-  max-height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  box-sizing: border-box;
   background-color: var(--bg-card);
   border-right: 1px solid var(--border-color);
   padding: 20px 16px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   flex-shrink: 0;
-  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.2s cubic-bezier(0.4, 0, 0.2, 1), padding 0.2s ease;
+  transition:
+    width 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    min-width 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    padding 0.2s ease;
 }
 
+/* Container principal */
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Sidebar retrátil */
 .sidebar.collapsed {
   width: 72px;
   min-width: 72px;
@@ -255,6 +272,7 @@ html, body {
   padding: 8px;
 }
 
+/* Botão de recolher */
 .sidebar-collapse-btn {
   display: inline-flex;
   align-items: center;
@@ -276,6 +294,7 @@ html, body {
   background-color: var(--primary-subtle);
 }
 
+/* Cabeçalho */
 .brand-section {
   display: flex;
   align-items: center;
@@ -283,6 +302,7 @@ html, body {
   padding-bottom: 24px;
   border-bottom: 1px solid var(--border-color);
   margin-bottom: 24px;
+  flex-shrink: 0;
 }
 
 .brand-logo-flat {
@@ -296,6 +316,7 @@ html, body {
   font-weight: 800;
   font-size: 18px;
   letter-spacing: -0.5px;
+  flex-shrink: 0;
 }
 
 .brand-text-name {
@@ -310,10 +331,19 @@ html, body {
   color: var(--text-muted);
 }
 
+/* Navegação com scroll independente */
 .nav-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-bottom: 12px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .nav-item {
@@ -329,7 +359,10 @@ html, body {
   font-weight: 500;
   cursor: pointer;
   text-align: left;
-  transition: background-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
 
 .nav-item:hover {
@@ -343,14 +376,22 @@ html, body {
   font-weight: 600;
 }
 
+/* Rodapé sempre visível */
 .sidebar-bottom {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding-top: 16px;
   border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  margin-top: auto;
 }
 
+.sidebar-bottom button {
+  flex-shrink: 0;
+}
+
+/* Alternador de tema */
 .theme-toggle-btn {
   display: flex;
   align-items: center;
@@ -364,6 +405,85 @@ html, body {
   font-weight: 500;
   cursor: pointer;
 }
+
+/* Responsividade mobile */
+@media (max-width: 768px) {
+  .sidebar,
+  .sidebar.mobile-open {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    width: 280px;
+    min-width: 0;
+    max-width: 85vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    padding: 16px;
+    padding-top: max(16px, env(safe-area-inset-top));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    overflow: hidden;
+  }
+
+  .sidebar-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .sidebar .brand-section {
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+  }
+
+  .sidebar .nav-list {
+    flex: 1;
+    min-height: 0;
+    gap: 4px;
+    overflow-y: auto;
+    padding-bottom: 12px;
+  }
+
+  .sidebar .nav-item {
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 10px 12px;
+  }
+
+  .sidebar .sidebar-bottom {
+    flex-shrink: 0;
+    gap: 8px;
+    padding-top: 12px;
+    margin-top: auto;
+  }
+
+  .sidebar .sidebar-bottom button {
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+
+  .sidebar-collapse-btn {
+    display: none;
+  }
+}
+
+/* Celulares com pouca altura disponível */
+@media (max-width: 768px) and (max-height: 600px) {
+  .sidebar .brand-section {
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+  }
+
+  .sidebar .sidebar-bottom {
+    padding-top: 8px;
+    gap: 6px;
+  }
+
+  .sidebar .nav-list {
+    gap: 2px;
+  }
+}
+
 
 /* Área de Conteúdo Principal: Altura 100vh com Scroll Próprio e Footer no Fim */
 .main-view {
