@@ -70,7 +70,6 @@ export function EmployeeDetailPage({
   // Form de edição
   const [fullName, setFullName] = useState(employee.full_name);
   const [email, setEmail] = useState(employee.email);
-  const [accessCode, setAccessCode] = useState(employee.access_code);
   const [jobTitle, setJobTitle] = useState(employee.job_title);
   const [phone, setPhone] = useState(employee.phone || '');
   const [hourlyRate, setHourlyRate] = useState(String(employee.hourly_rate));
@@ -199,7 +198,7 @@ export function EmployeeDetailPage({
         company_id: employee.company_id,
         full_name: fullName.trim(),
         email: email.trim().toLowerCase(),
-        access_code: accessCode.trim() ? accessCode.trim() : employee.access_code,
+        access_code: employee.access_code,
         role: employee.role || 'funcionario',
         job_title: jobTitle.trim(),
         phone: phone.trim() || null,
@@ -463,14 +462,20 @@ export function EmployeeDetailPage({
             </div>
 
             <div className="flat-form-group">
-              <label style={{ fontSize: 13, fontWeight: 700 }}>PIN de Acesso (6 dígitos) *</label>
+              <label style={{ fontSize: 13, fontWeight: 700 }}>PIN de Acesso (Bloqueado)</label>
               <input
                 type="text"
-                required
-                maxLength={8}
-                value={accessCode}
-                onChange={(e) => setAccessCode(e.target.value)}
-                style={{ padding: '10px 14px', fontFamily: 'monospace', fontWeight: 700 }}
+                readOnly
+                disabled
+                value={employee.access_code}
+                style={{
+                  padding: '10px 14px',
+                  fontFamily: 'monospace',
+                  fontWeight: 700,
+                  cursor: 'not-allowed',
+                  opacity: 0.75,
+                  backgroundColor: 'var(--bg-card-subtle)',
+                }}
               />
             </div>
 

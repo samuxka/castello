@@ -1785,7 +1785,7 @@ export async function saveEmployee(
 
   if (supabase) {
     if (emp.id) {
-      const { id, ...updateFields } = payload;
+      const { id, access_code: _immutablePin, ...updateFields } = payload;
       let { data, error } = await supabase
         .from('profiles')
         .update(updateFields)

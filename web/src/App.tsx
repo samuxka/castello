@@ -574,6 +574,12 @@ export default function App() {
   };
 
   // CRUD Funcionários (Sem obra)
+  const [visibleEmployeePins, setVisibleEmployeePins] = useState<Record<string, boolean>>({});
+  const toggleEmployeePinVisibility = (empId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setVisibleEmployeePins((prev) => ({ ...prev, [empId]: !prev[empId] }));
+  };
+
   const handleOpenNewEmployee = () => {
     setEditingEmpId(undefined);
     setEmpForm({
@@ -2107,8 +2113,40 @@ export default function App() {
                                 </td>
                                 <td>
                                   <div>{emp.email}</div>
-                                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                    PIN: <strong style={{ color: 'var(--primary)' }}>{emp.access_code}</strong>
+                                  <div
+                                    style={{
+                                      fontSize: 11,
+                                      color: 'var(--text-muted)',
+                                      marginTop: 2,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 6,
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <span>
+                                      PIN:{' '}
+                                      <strong style={{ color: 'var(--primary)', fontFamily: 'monospace', letterSpacing: 0.5 }}>
+                                        {visibleEmployeePins[emp.id] ? emp.access_code : '••••••'}
+                                      </strong>
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => toggleEmployeePinVisibility(emp.id, e)}
+                                      title={visibleEmployeePins[emp.id] ? 'Ocultar PIN' : 'Mostrar PIN'}
+                                      style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        padding: 2,
+                                        cursor: 'pointer',
+                                        color: 'var(--text-muted)',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                    >
+                                      {visibleEmployeePins[emp.id] ? <EyeOff size={13} /> : <Eye size={13} />}
+                                    </button>
                                   </div>
                                 </td>
                                 <td>{emp.phone || 'Sem registo'}</td>
@@ -2233,8 +2271,33 @@ export default function App() {
                                 <Phone size={13} color="var(--primary)" />
                                 <span>{emp.phone || 'Sem telefone'}</span>
                               </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>PIN App: <strong style={{ color: 'var(--primary)' }}>{emp.access_code}</strong></span>
+                              <div
+                                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                  PIN App:{' '}
+                                  <strong style={{ color: 'var(--primary)', fontFamily: 'monospace', letterSpacing: 0.5 }}>
+                                    {visibleEmployeePins[emp.id] ? emp.access_code : '••••••'}
+                                  </strong>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => toggleEmployeePinVisibility(emp.id, e)}
+                                    title={visibleEmployeePins[emp.id] ? 'Ocultar PIN' : 'Mostrar PIN'}
+                                    style={{
+                                      background: 'transparent',
+                                      border: 'none',
+                                      padding: 2,
+                                      cursor: 'pointer',
+                                      color: 'var(--text-muted)',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                    }}
+                                  >
+                                    {visibleEmployeePins[emp.id] ? <EyeOff size={13} /> : <Eye size={13} />}
+                                  </button>
+                                </span>
                                 <span>•</span>
                                 <span>Taxa: <strong style={{ color: 'var(--text-main)' }}>{Number(emp.hourly_rate).toFixed(2)} €/h</strong></span>
                               </div>
@@ -2768,11 +2831,30 @@ export default function App() {
                 </div>
 
                 <div className="flat-form-group">
-                  <label>PIN / Código de Acesso *</label>
+                  <label>
+                    {editingEmpId ? 'PIN / Código de Acesso (Bloqueado)' : 'PIN / Código de Acesso *'}
+                  </label>
                   <input
                     required
                     value={empForm.access_code}
-                    onChange={(e) => setEmpForm({ ...empForm, access_code: e.target.value })}
+                    readOnly={Boolean(editingEmpId)}
+                    disabled={Boolean(editingEmpId)}
+                    onChange={(e) => {
+                      if (!editingEmpId) {
+                        setEmpForm({ ...empForm, access_code: e.target.value });
+                      }
+                    }}
+                    style={
+                      editingEmpId
+                        ? {
+                            cursor: 'not-allowed',
+                            opacity: 0.75,
+                            backgroundColor: 'var(--bg-card-subtle)',
+                            fontFamily: 'monospace',
+                            fontWeight: 700,
+                          }
+                        : undefined
+                    }
                   />
                 </div>
 
