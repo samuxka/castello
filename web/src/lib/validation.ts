@@ -34,8 +34,24 @@ export const registerSchema = z.object({
   password: z
     .string()
     .min(6, 'A senha deve ter pelo menos 6 caracteres'),
-  phone: z.string().trim().optional().or(z.literal('')),
-  taxId: z.string().trim().optional().or(z.literal('')),
+  phone: z
+    .string()
+    .trim()
+    .refine(
+      (val) => !val || /^\+?[0-9\s]+$/.test(val),
+      'O telefone deve conter apenas números'
+    )
+    .optional()
+    .or(z.literal('')),
+  taxId: z
+    .string()
+    .trim()
+    .refine(
+      (val) => !val || /^[0-9]+$/.test(val),
+      'O NIF deve conter apenas números'
+    )
+    .optional()
+    .or(z.literal('')),
 });
 
 export const employeeSchema = z.object({

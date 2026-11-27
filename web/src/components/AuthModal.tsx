@@ -7,6 +7,7 @@ import {
   Building2,
   Check,
   CheckCircle2,
+  ChevronDown,
   ClipboardCheck,
   Clock,
   Eye,
@@ -247,6 +248,160 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   },
 ];
 
+interface PhoneCountryOption {
+  iso: string;
+  name: string;
+  dialCode: string;
+  placeholder: string;
+  maxDigits: number;
+}
+
+const PHONE_COUNTRIES: PhoneCountryOption[] = [
+  { iso: 'PT', name: 'Portugal', dialCode: '+351', placeholder: '912345678', maxDigits: 9 },
+  { iso: 'BR', name: 'Brasil', dialCode: '+55', placeholder: '11987654321', maxDigits: 11 },
+  { iso: 'ES', name: 'Espanha', dialCode: '+34', placeholder: '612345678', maxDigits: 9 },
+  { iso: 'FR', name: 'França', dialCode: '+33', placeholder: '612345678', maxDigits: 9 },
+  { iso: 'CH', name: 'Suíça', dialCode: '+41', placeholder: '781234567', maxDigits: 9 },
+  { iso: 'LU', name: 'Luxemburgo', dialCode: '+352', placeholder: '621123456', maxDigits: 9 },
+  { iso: 'GB', name: 'Reino Unido', dialCode: '+44', placeholder: '7700900123', maxDigits: 10 },
+  { iso: 'DE', name: 'Alemanha', dialCode: '+49', placeholder: '15123456789', maxDigits: 11 },
+  { iso: 'BE', name: 'Bélgica', dialCode: '+32', placeholder: '470123456', maxDigits: 9 },
+  { iso: 'NL', name: 'Países Baixos', dialCode: '+31', placeholder: '612345678', maxDigits: 9 },
+  { iso: 'IT', name: 'Itália', dialCode: '+39', placeholder: '3123456789', maxDigits: 10 },
+  { iso: 'US', name: 'Estados Unidos', dialCode: '+1', placeholder: '2015550123', maxDigits: 10 },
+  { iso: 'AO', name: 'Angola', dialCode: '+244', placeholder: '923123456', maxDigits: 9 },
+  { iso: 'MZ', name: 'Moçambique', dialCode: '+258', placeholder: '841234567', maxDigits: 9 },
+  { iso: 'CV', name: 'Cabo Verde', dialCode: '+238', placeholder: '9912345', maxDigits: 7 },
+];
+
+const CountryFlagSvg: React.FC<{ iso: string }> = ({ iso }) => {
+  switch (iso) {
+    case 'PT':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="8" height="14" fill="#006600" />
+          <rect x="8" width="12" height="14" fill="#FF0000" />
+          <circle cx="8" cy="7" r="2.6" fill="#FFCC00" />
+        </svg>
+      );
+    case 'BR':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="20" height="14" fill="#009B3A" />
+          <polygon points="10,2 18,7 10,12 2,7" fill="#FEDF00" />
+          <circle cx="10" cy="7" r="2.6" fill="#002776" />
+        </svg>
+      );
+    case 'ES':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="20" height="14" fill="#AA151B" />
+          <rect y="3.5" width="20" height="7" fill="#F1BF00" />
+        </svg>
+      );
+    case 'FR':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="6.67" height="14" fill="#002395" />
+          <rect x="6.67" width="6.67" height="14" fill="#FFFFFF" />
+          <rect x="13.33" width="6.67" height="14" fill="#ED2939" />
+        </svg>
+      );
+    case 'CH':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="20" height="14" fill="#D52B1E" />
+          <rect x="8.5" y="3" width="3" height="8" fill="#FFFFFF" />
+          <rect x="6" y="5.5" width="8" height="3" fill="#FFFFFF" />
+        </svg>
+      );
+    case 'LU':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="20" height="4.67" fill="#EA141D" />
+          <rect y="4.67" width="20" height="4.67" fill="#FFFFFF" />
+          <rect y="9.33" width="20" height="4.67" fill="#51ADDA" />
+        </svg>
+      );
+    case 'GB':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="20" height="14" fill="#012169" />
+          <path d="M0,0 L20,14 M20,0 L0,14" stroke="#FFFFFF" strokeWidth="2.4" />
+          <path d="M10,0 L10,14 M0,7 L20,7" stroke="#FFFFFF" strokeWidth="4" />
+          <path d="M10,0 L10,14 M0,7 L20,7" stroke="#C8102E" strokeWidth="2.4" />
+        </svg>
+      );
+    case 'DE':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="20" height="4.67" fill="#000000" />
+          <rect y="4.67" width="20" height="4.67" fill="#DD0000" />
+          <rect y="9.33" width="20" height="4.67" fill="#FFCE00" />
+        </svg>
+      );
+    case 'BE':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="6.67" height="14" fill="#000000" />
+          <rect x="6.67" width="6.67" height="14" fill="#FDDA24" />
+          <rect x="13.33" width="6.67" height="14" fill="#EF3340" />
+        </svg>
+      );
+    case 'NL':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="20" height="4.67" fill="#AE1C28" />
+          <rect y="4.67" width="20" height="4.67" fill="#FFFFFF" />
+          <rect y="9.33" width="20" height="4.67" fill="#21468B" />
+        </svg>
+      );
+    case 'IT':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="6.67" height="14" fill="#009246" />
+          <rect x="6.67" width="6.67" height="14" fill="#FFFFFF" />
+          <rect x="13.33" width="6.67" height="14" fill="#CE2B37" />
+        </svg>
+      );
+    case 'US':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="20" height="14" fill="#B22234" />
+          <rect y="2" width="20" height="2" fill="#FFFFFF" />
+          <rect y="6" width="20" height="2" fill="#FFFFFF" />
+          <rect y="10" width="20" height="2" fill="#FFFFFF" />
+          <rect width="9" height="7" fill="#3C3B6E" />
+        </svg>
+      );
+    case 'AO':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="20" height="7" fill="#CC092F" />
+          <rect y="7" width="20" height="7" fill="#000000" />
+          <circle cx="10" cy="7" r="2.3" fill="#FFCB00" />
+        </svg>
+      );
+    case 'MZ':
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="20" height="4.67" fill="#007168" />
+          <rect y="4.67" width="20" height="4.67" fill="#000000" />
+          <rect y="9.33" width="20" height="4.67" fill="#FCE100" />
+          <polygon points="0,0 8,7 0,14" fill="#D21034" />
+        </svg>
+      );
+    default:
+      return (
+        <svg width="20" height="14" viewBox="0 0 20 14" style={{ borderRadius: 2, flexShrink: 0 }}>
+          <rect width="20" height="14" fill="#003893" />
+          <rect y="7" width="20" height="3" fill="#FFFFFF" />
+          <rect y="8" width="20" height="1" fill="#CF2027" />
+        </svg>
+      );
+  }
+};
+
 export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [stage, setAuthStage] = useState<AuthStage>('auth');
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -261,8 +416,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [companyName, setCompanyName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phoneDigits, setPhoneDigits] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState<PhoneCountryOption>(PHONE_COUNTRIES[0]);
+  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   const [taxId, setTaxId] = useState('');
+
+  const fullFormattedPhone = phoneDigits.trim()
+    ? `${selectedCountry.dialCode} ${phoneDigits.trim()}`
+    : '';
 
   // Pending company state after initial registration
   const [pendingCompany, setPendingCompany] = useState<Company | null>(null);
@@ -302,7 +463,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       if (googleUsr) {
         setPendingGoogleUser(googleUsr);
         setEmail(googleUsr.email);
-        if (googleUsr.phone && !phone) setPhone(googleUsr.phone);
+        if (googleUsr.phone && !phoneDigits) {
+          setPhoneDigits(googleUsr.phone.replace(/\D/g, ''));
+        }
         setAuthStage((prev) => (prev === 'auth' ? 'google-company' : prev));
       }
     };
@@ -332,8 +495,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
     if (!companyName.trim() || companyName.trim().length < 2) {
       nextErrors.companyName = 'Informe o nome da sua empresa / construtora.';
     }
-    if (!taxId.trim() || taxId.trim().length < 5) {
-      nextErrors.taxId = 'Informe o NIF / identificação fiscal da empresa.';
+    if (!taxId.trim() || !/^[0-9]{5,15}$/.test(taxId.trim())) {
+      nextErrors.taxId = 'Informe um NIF válido contendo apenas números.';
     }
 
     if (Object.keys(nextErrors).length > 0) {
@@ -344,7 +507,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
 
     setLoading(true);
     try {
-      const created = await registerCompanyForGoogleUser(companyName, taxId, phone);
+      const created = await registerCompanyForGoogleUser(companyName, taxId, fullFormattedPhone);
       setPendingCompany(created);
       setCurrentStepIndex(0);
       setAuthStage('onboarding');
@@ -415,12 +578,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         setLoading(false);
       }
     } else {
-      // Registo de Conta: cria a firma e avança diretamente para o formulário multistep
+      // Registo de Conta: envia código de confirmação e valida campos numéricos
       const val = validateWithZod(registerSchema, {
         companyName,
         email,
         password,
-        phone,
+        phone: fullFormattedPhone,
         taxId,
       });
       if (!val.success) {
@@ -436,7 +599,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           val.data.companyName,
           val.data.email,
           val.data.password,
-          val.data.phone || '',
+          fullFormattedPhone,
           val.data.taxId || ''
         );
         setVerificationCode('');
@@ -470,7 +633,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         email,
         password,
         cleanCode,
-        phone,
+        fullFormattedPhone,
         taxId
       );
       setPendingCompany(created);
@@ -849,7 +1012,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1.35, position: 'relative' }}>
                       <label
                         style={{
                           display: 'block',
@@ -859,27 +1022,130 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                           marginBottom: '6px',
                         }}
                       >
-                        Telefone 
+                        Telefone
                       </label>
-                      <input
-                        type="text"
-                        placeholder="+351 912 345 678"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
+                      <div
                         style={{
-                          width: '100%',
-                          padding: '11px 14px',
-                          borderRadius: '10px',
-                          border: '1px solid #e2e8f0',
-                          backgroundColor: '#f8fafc',
-                          fontSize: '13px',
-                          color: '#0f172a',
-                          outline: 'none',
+                          display: 'flex',
+                          alignItems: 'stretch',
+                          borderRadius: '8px',
+                          border: `1px solid ${fieldErrors.phone ? '#DC2626' : '#D2D8E4'}`,
+                          backgroundColor: '#F5F7FB',
+                          minHeight: '44px',
                         }}
-                      />
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setCountryDropdownOpen((prev) => !prev)}
+                          title={`País: ${selectedCountry.name} (${selectedCountry.dialCode})`}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '0 10px',
+                            border: 'none',
+                            borderRight: '1px solid #D2D8E4',
+                            backgroundColor: '#EEF1FF',
+                            borderTopLeftRadius: '7px',
+                            borderBottomLeftRadius: '7px',
+                            color: '#010106',
+                            fontSize: '12.5px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <CountryFlagSvg iso={selectedCountry.iso} />
+                          <span>{selectedCountry.dialCode}</span>
+                          <ChevronDown size={13} color="#64748B" />
+                        </button>
+
+                        <input
+                          type="tel"
+                          inputMode="numeric"
+                          placeholder={selectedCountry.placeholder}
+                          maxLength={selectedCountry.maxDigits}
+                          value={phoneDigits}
+                          onChange={(e) =>
+                            setPhoneDigits(e.target.value.replace(/\D/g, '').slice(0, selectedCountry.maxDigits))
+                          }
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            padding: '10px 12px',
+                            border: 'none',
+                            backgroundColor: 'transparent',
+                            fontSize: '13.5px',
+                            color: '#010106',
+                            outline: 'none',
+                          }}
+                        />
+                      </div>
+
+                      {countryDropdownOpen && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: 0,
+                            marginTop: '4px',
+                            width: '240px',
+                            maxHeight: '220px',
+                            overflowY: 'auto',
+                            backgroundColor: '#FFFFFF',
+                            border: '1px solid #D2D8E4',
+                            borderRadius: '8px',
+                            boxShadow: '0 12px 28px -6px rgba(1, 1, 6, 0.22)',
+                            zIndex: 50,
+                            padding: '4px',
+                          }}
+                        >
+                          {PHONE_COUNTRIES.map((c) => {
+                            const isActive = c.iso === selectedCountry.iso;
+                            return (
+                              <button
+                                key={c.iso}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCountry(c);
+                                  setPhoneDigits((prev) => prev.slice(0, c.maxDigits));
+                                  setCountryDropdownOpen(false);
+                                }}
+                                style={{
+                                  width: '100%',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '8px',
+                                  padding: '8px 10px',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  backgroundColor: isActive ? '#EEF1FF' : 'transparent',
+                                  color: '#010106',
+                                  fontSize: '12.5px',
+                                  fontWeight: isActive ? 600 : 500,
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                }}
+                              >
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                  <CountryFlagSvg iso={c.iso} />
+                                  <span>{c.name}</span>
+                                </span>
+                                <span style={{ color: '#0015D4', fontWeight: 600 }}>{c.dialCode}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {fieldErrors.phone && (
+                        <span style={{ fontSize: '11.5px', color: '#DC2626', marginTop: '4px', display: 'block' }}>
+                          {fieldErrors.phone}
+                        </span>
+                      )}
                     </div>
 
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 0.9 }}>
                       <label
                         style={{
                           display: 'block',
@@ -893,20 +1159,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                       </label>
                       <input
                         type="text"
-                        placeholder="509 123 456"
+                        inputMode="numeric"
+                        maxLength={15}
+                        placeholder="509123456"
                         value={taxId}
-                        onChange={(e) => setTaxId(e.target.value)}
+                        onChange={(e) => setTaxId(e.target.value.replace(/\D/g, '').slice(0, 15))}
                         style={{
                           width: '100%',
-                          padding: '11px 14px',
-                          borderRadius: '10px',
-                          border: '1px solid #e2e8f0',
-                          backgroundColor: '#f8fafc',
-                          fontSize: '13px',
-                          color: '#0f172a',
+                          minHeight: '44px',
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          border: `1px solid ${fieldErrors.taxId ? '#DC2626' : '#D2D8E4'}`,
+                          backgroundColor: '#F5F7FB',
+                          fontSize: '13.5px',
+                          color: '#010106',
                           outline: 'none',
                         }}
                       />
+                      {fieldErrors.taxId && (
+                        <span style={{ fontSize: '11.5px', color: '#DC2626', marginTop: '4px', display: 'block' }}>
+                          {fieldErrors.taxId}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </>
@@ -1686,7 +1960,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               )}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '22px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.25fr', gap: '12px', marginBottom: '22px' }}>
               <div>
                 <label
                   style={{
@@ -1701,29 +1975,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
                   required
-                  placeholder="Ex: 509 123 456"
+                  maxLength={15}
+                  placeholder="Ex: 509123456"
                   value={taxId}
-                  onChange={(e) => setTaxId(e.target.value)}
+                  onChange={(e) => setTaxId(e.target.value.replace(/\D/g, '').slice(0, 15))}
                   style={{
                     width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: '10px',
-                    border: `1px solid ${fieldErrors.taxId ? '#ef4444' : '#e2e8f0'}`,
-                    backgroundColor: '#f8fafc',
+                    minHeight: '44px',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: `1px solid ${fieldErrors.taxId ? '#DC2626' : '#D2D8E4'}`,
+                    backgroundColor: '#F5F7FB',
                     fontSize: '13.5px',
-                    color: '#0f172a',
+                    color: '#010106',
                     outline: 'none',
                   }}
                 />
                 {fieldErrors.taxId && (
-                  <span style={{ fontSize: '11.5px', color: '#ef4444', marginTop: '4px', display: 'block' }}>
+                  <span style={{ fontSize: '11.5px', color: '#DC2626', marginTop: '4px', display: 'block' }}>
                     {fieldErrors.taxId}
                   </span>
                 )}
               </div>
 
-              <div>
+              <div style={{ position: 'relative' }}>
                 <label
                   style={{
                     display: 'block',
@@ -1735,22 +2012,120 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 >
                   Telefone / WhatsApp (Opcional)
                 </label>
-                <input
-                  type="text"
-                  placeholder="+351 912 345 678"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                <div
                   style={{
-                    width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: '10px',
-                    border: '1px solid #e2e8f0',
-                    backgroundColor: '#f8fafc',
-                    fontSize: '13.5px',
-                    color: '#0f172a',
-                    outline: 'none',
+                    display: 'flex',
+                    alignItems: 'stretch',
+                    borderRadius: '8px',
+                    border: '1px solid #D2D8E4',
+                    backgroundColor: '#F5F7FB',
+                    minHeight: '44px',
                   }}
-                />
+                >
+                  <button
+                    type="button"
+                    onClick={() => setCountryDropdownOpen((prev) => !prev)}
+                    title={`País: ${selectedCountry.name} (${selectedCountry.dialCode})`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '0 10px',
+                      border: 'none',
+                      borderRight: '1px solid #D2D8E4',
+                      backgroundColor: '#EEF1FF',
+                      borderTopLeftRadius: '7px',
+                      borderBottomLeftRadius: '7px',
+                      color: '#010106',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <CountryFlagSvg iso={selectedCountry.iso} />
+                    <span>{selectedCountry.dialCode}</span>
+                    <ChevronDown size={13} color="#64748B" />
+                  </button>
+
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder={selectedCountry.placeholder}
+                    maxLength={selectedCountry.maxDigits}
+                    value={phoneDigits}
+                    onChange={(e) =>
+                      setPhoneDigits(e.target.value.replace(/\D/g, '').slice(0, selectedCountry.maxDigits))
+                    }
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      padding: '10px 12px',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      fontSize: '13.5px',
+                      color: '#010106',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                {countryDropdownOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      marginTop: '4px',
+                      width: '240px',
+                      maxHeight: '220px',
+                      overflowY: 'auto',
+                      backgroundColor: '#FFFFFF',
+                      border: '1px solid #D2D8E4',
+                      borderRadius: '8px',
+                      boxShadow: '0 12px 28px -6px rgba(1, 1, 6, 0.22)',
+                      zIndex: 50,
+                      padding: '4px',
+                    }}
+                  >
+                    {PHONE_COUNTRIES.map((c) => {
+                      const isActive = c.iso === selectedCountry.iso;
+                      return (
+                        <button
+                          key={c.iso}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCountry(c);
+                            setPhoneDigits((prev) => prev.slice(0, c.maxDigits));
+                            setCountryDropdownOpen(false);
+                          }}
+                          style={{
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '8px',
+                            padding: '8px 10px',
+                            border: 'none',
+                            borderRadius: '6px',
+                            backgroundColor: isActive ? '#EEF1FF' : 'transparent',
+                            color: '#010106',
+                            fontSize: '12.5px',
+                            fontWeight: isActive ? 600 : 500,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                            <CountryFlagSvg iso={c.iso} />
+                            <span>{c.name}</span>
+                          </span>
+                          <span style={{ color: '#0015D4', fontWeight: 600 }}>{c.dialCode}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
