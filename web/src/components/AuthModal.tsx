@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  Building2,
   Check,
   CheckCircle2,
   Eye,
@@ -10,9 +11,15 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import {
+  getPendingGoogleAuthUser,
+  handleGoogleAuthRedirect,
   loginCompany,
   loginWithGoogle,
+  PendingGoogleUser,
   registerCompany,
+  registerCompanyForGoogleUser,
+  setActiveCompanySession,
+  supabase,
   updateCompanyProfile,
 } from '../lib/supabase';
 import { Company } from '../types';
@@ -22,7 +29,7 @@ interface AuthModalProps {
   onSuccess: (company: Company) => void;
 }
 
-type AuthStage = 'auth' | 'onboarding' | 'terms';
+type AuthStage = 'auth' | 'google-company' | 'onboarding' | 'terms';
 
 interface OnboardingOption {
   id: string;
@@ -233,6 +240,87 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
 
   // Pending company state after initial registration
   const [pendingCompany, setPendingCompany] = useState<Company | null>(null);
+  const [pendingGoogleUser, setPendingGoogleUser] = useState<PendingGoogleUser | null>(null);
+
+  // Detecta retorno do Google OAuth: se já tiver firma entra direto; se for novo registo abre o formulário multi-step
+  useEffect(() => {
+    let mounted = true;
+
+    const checkGoogleOAuthState = async () => {
+      const existingCompany = await handleGoogleAuthRedirect();
+      if (!mounted) return;
+      if (existingCompany) {
+        onSuccess(existingCompany);
+        return;
+      }
+
+      const googleUsr = await getPendingGoogleAuthUser();
+      if (!mounted) return;
+      if (googleUsr) {
+        setPendingGoogleUser(googleUsr);
+        setEmail(googleUsr.email);
+        if (googleUsr.phone && !phone) setPhone(googleUsr.phone);
+        setAuthStage((prev) => (prev === 'auth' ? 'google-company' : prev));
+      }
+    };
+
+    checkGoogleOAuthState();
+
+    const { data: authListener } =
+      supabase?.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+          checkGoogleOAuthState();
+        }
+      }) || { data: { subscription: null } };
+
+    return () => {
+      mounted = false;
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  const handleGoogleCompanyStepSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setFieldErrors({});
+
+    const nextErrors: Record<string, string> = {};
+    if (!companyName.trim() || companyName.trim().length < 2) {
+      nextErrors.companyName = 'Informe o nome da sua empresa / construtora.';
+    }
+    if (!taxId.trim() || taxId.trim().length < 5) {
+      nextErrors.taxId = 'Informe o NIF / identificação fiscal da empresa.';
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      setErrorMsg('Preencha os dados obrigatórios da empresa para avançar.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const created = await registerCompanyForGoogleUser(companyName, taxId, phone);
+      setPendingCompany(created);
+      setCurrentStepIndex(0);
+      setAuthStage('onboarding');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Não foi possível guardar os dados da firma.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelGoogleRegistration = async () => {
+    try {
+      await supabase?.auth.signOut();
+    } catch {}
+    setPendingGoogleUser(null);
+    setPendingCompany(null);
+    setErrorMsg(null);
+    setFieldErrors({});
+    setAuthStage('auth');
+  };
 
   // Multi-step Onboarding State
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -340,6 +428,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const handlePrevStep = () => {
     if (currentStepIndex > 0) {
       setCurrentStepIndex(currentStepIndex - 1);
+    } else if (pendingGoogleUser) {
+      setAuthStage('google-company');
     }
   };
 
@@ -361,11 +451,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         });
       }
       if (finalCompany) {
+        setActiveCompanySession(finalCompany);
         onSuccess(finalCompany);
       }
     } catch (err) {
       console.warn('Aviso ao guardar dados do questionário:', err);
       if (pendingCompany) {
+        setActiveCompanySession(pendingCompany);
         onSuccess(pendingCompany);
       }
     } finally {
@@ -1007,6 +1099,326 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       )}
 
       {/* ==================================================================== */}
+      {/* ESTÁGIO 1.5 (GOOGLE OAUTH): COLETAR DADOS DA EMPRESA (NOME, NIF...)  */}
+      {/* ==================================================================== */}
+      {stage === 'google-company' && (
+        <div
+          style={{
+            position: 'relative',
+            width: '100%',
+            maxWidth: '640px',
+            borderRadius: '28px',
+            backgroundColor: '#ffffff',
+            boxShadow: '0 30px 80px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+            padding: '40px 44px',
+            zIndex: 10,
+            overflowY: 'auto',
+            maxHeight: '92vh',
+          }}
+        >
+          {/* Barra de progresso do Registo Multi-Step */}
+          <div style={{ marginBottom: '22px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '10px',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: '11.5px',
+                  fontWeight: 700,
+                  letterSpacing: '1px',
+                  textTransform: 'uppercase',
+                  color: '#2563eb',
+                }}
+              >
+                Registo da Firma • Passo 1 de {ONBOARDING_STEPS.length + 2}
+              </span>
+              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                Dados da Empresa
+              </span>
+            </div>
+
+            <div
+              style={{
+                height: '6px',
+                width: '100%',
+                borderRadius: '999px',
+                backgroundColor: '#e2e8f0',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  height: '100%',
+                  width: `${Math.round((1 / (ONBOARDING_STEPS.length + 2)) * 100)}%`,
+                  borderRadius: '999px',
+                  background: 'linear-gradient(90deg, #2563eb 0%, #7c3aed 100%)',
+                  transition: 'width 0.4s ease',
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Cabeçalho */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+            <div
+              style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '14px',
+                backgroundColor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#2563eb',
+                flexShrink: 0,
+              }}
+            >
+              <Building2 size={24} />
+            </div>
+            <div>
+              <h2
+                style={{
+                  fontSize: '25px',
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  fontFamily: `'Playfair Display', Georgia, serif`,
+                  margin: '0 0 4px',
+                }}
+              >
+                Dados da Sua Firma
+              </h2>
+              <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                Conta Google autorizada com sucesso. Preencha os dados da sua construtora para continuar.
+              </p>
+            </div>
+          </div>
+
+          {/* Selo da conta Google autenticada */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '8px',
+              padding: '10px 14px',
+              borderRadius: '10px',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              marginBottom: '20px',
+              fontSize: '12.5px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#0f172a' }}>
+              <CheckCircle2 size={16} color="#16a34a" />
+              <span>
+                E-mail verificado: <strong>{pendingGoogleUser?.email || email}</strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCancelGoogleRegistration}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#2563eb',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                padding: 0,
+              }}
+            >
+              Trocar de conta
+            </button>
+          </div>
+
+          {errorMsg && (
+            <div
+              style={{
+                padding: '10px 14px',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '10px',
+                color: '#dc2626',
+                fontSize: '12.5px',
+                fontWeight: 500,
+                marginBottom: '16px',
+              }}
+            >
+              {errorMsg}
+            </div>
+          )}
+
+          <form onSubmit={handleGoogleCompanyStepSubmit} noValidate>
+            <div style={{ marginBottom: '16px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  color: '#334155',
+                  marginBottom: '6px',
+                }}
+              >
+                Nome da Firma / Construtora *
+              </label>
+              <input
+                type="text"
+                required
+                autoFocus
+                placeholder="Ex: Castello Construções Lda"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  border: `1px solid ${fieldErrors.companyName ? '#ef4444' : '#e2e8f0'}`,
+                  backgroundColor: '#f8fafc',
+                  fontSize: '13.5px',
+                  color: '#0f172a',
+                  outline: 'none',
+                }}
+              />
+              {fieldErrors.companyName && (
+                <span style={{ fontSize: '11.5px', color: '#ef4444', marginTop: '4px', display: 'block' }}>
+                  {fieldErrors.companyName}
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '22px' }}>
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12.5px',
+                    fontWeight: 600,
+                    color: '#334155',
+                    marginBottom: '6px',
+                  }}
+                >
+                  NIF / Identificação Fiscal *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: 509 123 456"
+                  value={taxId}
+                  onChange={(e) => setTaxId(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    border: `1px solid ${fieldErrors.taxId ? '#ef4444' : '#e2e8f0'}`,
+                    backgroundColor: '#f8fafc',
+                    fontSize: '13.5px',
+                    color: '#0f172a',
+                    outline: 'none',
+                  }}
+                />
+                {fieldErrors.taxId && (
+                  <span style={{ fontSize: '11.5px', color: '#ef4444', marginTop: '4px', display: 'block' }}>
+                    {fieldErrors.taxId}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12.5px',
+                    fontWeight: 600,
+                    color: '#334155',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Telefone / WhatsApp (Opcional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="+351 912 345 678"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    backgroundColor: '#f8fafc',
+                    fontSize: '13.5px',
+                    color: '#0f172a',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingTop: '18px',
+                borderTop: '1px solid #f1f5f9',
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleCancelGoogleRegistration}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '11px 18px',
+                  borderRadius: '10px',
+                  border: '1px solid #e2e8f0',
+                  backgroundColor: '#ffffff',
+                  color: '#475569',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <ArrowLeft size={16} />
+                <span>Voltar ao Login</span>
+              </button>
+
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '12px 26px',
+                  borderRadius: '10px',
+                  backgroundColor: '#09090b',
+                  color: '#ffffff',
+                  fontSize: '13.5px',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.75 : 1,
+                }}
+              >
+                <span>{loading ? 'A guardar dados...' : 'Continuar'}</span>
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
       {/* ESTÁGIO 2: FORMULÁRIO MULTI-STEP PARA CONHECER A FIRMA (DE MARCAR)   */}
       {/* ==================================================================== */}
       {stage === 'onboarding' && (
@@ -1185,7 +1597,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             <button
               type="button"
               onClick={handlePrevStep}
-              disabled={currentStepIndex === 0}
+              disabled={currentStepIndex === 0 && !pendingGoogleUser}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1194,10 +1606,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 borderRadius: '10px',
                 border: '1px solid #e2e8f0',
                 backgroundColor: '#ffffff',
-                color: currentStepIndex === 0 ? '#cbd5e1' : '#475569',
+                color: currentStepIndex === 0 && !pendingGoogleUser ? '#cbd5e1' : '#475569',
                 fontSize: '13px',
                 fontWeight: 600,
-                cursor: currentStepIndex === 0 ? 'not-allowed' : 'pointer',
+                cursor: currentStepIndex === 0 && !pendingGoogleUser ? 'not-allowed' : 'pointer',
                 transition: 'all 0.2s',
               }}
             >

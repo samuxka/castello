@@ -402,24 +402,35 @@ export async function registerCompany(
       tax_id: taxId?.trim() || null,
     };
 
-    const insertRes = await supabase
-      .from('companies')
-      .insert(insertPayload)
-      .select(COMPANY_SAFE_COLS)
-      .single();
-    data = insertRes.data;
+    // IMPORTANTE: Executa INSERT sem .select() (Prefer: return=minimal) seguido de SELECT separado.
+    // Isso evita que a função STABLE private.current_company_id() da política RLS de SELECT
+    // avalie um snapshot anterior ao INSERT durante o comando INSERT ... RETURNING.
+    let insertRes = await supabase.from('companies').insert(insertPayload);
     error = insertRes.error;
 
-    // Fallback temporário caso a coluna owner_auth_id ainda não tenha sido aplicada no banco
     if (error && (error.code === 'PGRST204' || error.message?.includes('owner_auth_id'))) {
       delete insertPayload.owner_auth_id;
-      const retry = await supabase
+      insertRes = await supabase.from('companies').insert(insertPayload);
+      error = insertRes.error;
+    }
+
+    if (!error) {
+      const selectRes = await supabase
         .from('companies')
-        .insert(insertPayload)
         .select(COMPANY_SAFE_COLS)
-        .single();
-      data = retry.data;
-      error = retry.error;
+        .eq('owner_auth_id', authUser.id)
+        .maybeSingle();
+      if (selectRes.data) {
+        data = selectRes.data;
+      } else {
+        const byEmailRes = await supabase
+          .from('companies')
+          .select(COMPANY_SAFE_COLS)
+          .eq('owner_email', cleanEmail)
+          .maybeSingle();
+        data = byEmailRes.data;
+        error = byEmailRes.error;
+      }
     }
   }
 
@@ -590,10 +601,26 @@ export async function loginWithGoogle(): Promise<void> {
   }
 }
 
+export interface PendingGoogleUser {
+  id: string;
+  email: string;
+  suggestedName: string;
+  phone: string;
+}
+
+/**
+ * Verifica no retorno do Google OAuth se o utilizador autenticado JÁ possui firma cadastrada.
+ * Se já possuir, restaura a sessão e devolve a firma.
+ * Se for um novo registo via Google (ainda sem firma em public.companies), devolve null
+ * mantendo a sessão JWT ativa para que o AuthModal abra o formulário multi-step de criação da firma.
+ */
 export async function handleGoogleAuthRedirect(): Promise<Company | null> {
   if (!supabase) return null;
   try {
-    const { data: { session }, error } = await supabase.auth.getSession();
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
     if (error || !session || !session.user) {
       return null;
     }
@@ -601,7 +628,7 @@ export async function handleGoogleAuthRedirect(): Promise<Company | null> {
     const userEmail = user.email?.toLowerCase().trim();
     if (!userEmail) return null;
 
-    // 1. Procura firma já vinculada ao auth.uid() ou reivindica firma legada por owner_email
+    // 1. Procura firma já vinculada ao auth.uid()
     const { data: existingByAuth, error: authLookupErr } = await supabase
       .from('companies')
       .select(COMPANY_SAFE_COLS)
@@ -614,14 +641,17 @@ export async function handleGoogleAuthRedirect(): Promise<Company | null> {
       return safe;
     }
 
-    const { data: claimed } = await supabase.rpc('claim_legacy_company_by_email');
-    if (claimed && typeof claimed === 'object' && (claimed as any).id) {
-      const safe = stripSensitiveCompanyFields(claimed as Company);
-      setActiveCompanySession(safe);
-      return safe;
-    }
+    // 2. Tenta vincular firma legada existente pelo mesmo owner_email
+    try {
+      const { data: claimed } = await supabase.rpc('claim_legacy_company_by_email');
+      if (claimed && typeof claimed === 'object' && (claimed as any).id) {
+        const safe = stripSensitiveCompanyFields(claimed as Company);
+        setActiveCompanySession(safe);
+        return safe;
+      }
+    } catch {}
 
-    // Fallback caso a coluna owner_auth_id ainda não exista no schema cache
+    // 3. Fallback caso owner_auth_id ainda não esteja preenchido
     const { data: existingByEmail } = await supabase
       .from('companies')
       .select(COMPANY_SAFE_COLS)
@@ -634,53 +664,169 @@ export async function handleGoogleAuthRedirect(): Promise<Company | null> {
       return safe;
     }
 
-    // 2. Primeira vez que entra via Google: cria a firma com owner_email e owner_auth_id corretos
-    const companyName =
-      user.user_metadata?.full_name ||
-      user.user_metadata?.name ||
-      userEmail.split('@')[0] ||
-      'Firma Castello';
+    // Não cria a firma automaticamente: o AuthModal vai abrir o fluxo multi-step
+    // (Dados da Firma -> Questionário -> Aceite de Termos e Política de Privacidade)
+    return null;
+  } catch (err) {
+    console.warn('Erro ao processar sessão Google:', err);
+    return null;
+  }
+}
 
-    const newCompany: Record<string, unknown> = {
-      name: companyName,
-      owner_email: userEmail,
-      owner_auth_id: user.id,
-      password_hash: 'supabase_auth_managed',
-      phone: user.phone || null,
-    };
-
-    let { data: created, error: insertError } = await supabase
-      .from('companies')
-      .insert([newCompany])
-      .select(COMPANY_SAFE_COLS)
-      .maybeSingle();
-
-    // Retry sem owner_auth_id caso a migração SQL ainda não tenha sido executada no banco
-    if (insertError && (insertError.code === 'PGRST204' || insertError.message?.includes('owner_auth_id'))) {
-      delete newCompany.owner_auth_id;
-      const retry = await supabase
-        .from('companies')
-        .insert([newCompany])
-        .select(COMPANY_SAFE_COLS)
-        .maybeSingle();
-      created = retry.data;
-      insertError = retry.error;
+/**
+ * Retorna os dados do utilizador autenticado via Google (ou Supabase Auth) que ainda
+ * não concluiu a criação da sua firma em public.companies.
+ */
+export async function getPendingGoogleAuthUser(): Promise<PendingGoogleUser | null> {
+  if (!supabase) return null;
+  try {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+    if (error || !session || !session.user || !session.user.email) {
+      return null;
     }
+    const user = session.user;
+    const cleanEmail = (user.email || '').toLowerCase().trim();
+    if (!cleanEmail) return null;
 
-    if (insertError) {
-      console.warn('Erro ao registar firma via Google:', insertError);
+    // Se já existir firma para este user, não é pendente
+    const { data: existing } = await supabase
+      .from('companies')
+      .select('id')
+      .eq('owner_auth_id', user.id)
+      .maybeSingle();
+    if (existing?.id) {
       return null;
     }
 
-    if (created) {
-      const safe = stripSensitiveCompanyFields(created as unknown as Company);
-      setActiveCompanySession(safe);
-      return safe;
-    }
-  } catch (err) {
-    console.warn('Erro ao processar sessão Google:', err);
+    return {
+      id: user.id,
+      email: cleanEmail,
+      suggestedName:
+        user.user_metadata?.company_name ||
+        user.user_metadata?.full_name ||
+        user.user_metadata?.name ||
+        '',
+      phone: user.phone || '',
+    };
+  } catch {
+    return null;
   }
-  return null;
+}
+
+/**
+ * Cria o registo da firma em public.companies para um utilizador já autenticado via Google OAuth,
+ * usando INSERT e SELECT em transações separadas para compatibilidade total com RLS.
+ */
+export async function registerCompanyForGoogleUser(
+  name: string,
+  taxId: string,
+  phone?: string
+): Promise<Company> {
+  if (!supabase) {
+    throw new Error('Serviço Supabase não configurado.');
+  }
+  const cleanName = name.trim();
+  const cleanTaxId = taxId.trim();
+  const cleanPhone = phone?.trim() || null;
+
+  if (cleanName.length < 2) {
+    throw new Error('Informe o nome da firma (mínimo 2 caracteres).');
+  }
+  if (cleanTaxId.length < 5) {
+    throw new Error('Informe um NIF / Tax ID válido.');
+  }
+
+  const {
+    data: { session },
+    error: sessionErr,
+  } = await supabase.auth.getSession();
+
+  if (sessionErr || !session || !session.user || !session.user.email) {
+    throw new Error('Sessão Google expirada. Clique novamente em Continuar com Google.');
+  }
+
+  const user = session.user;
+  const cleanEmail = (user.email || '').toLowerCase().trim();
+
+  // 1. Tenta via RPC SECURITY DEFINER se já estiver instalada no banco
+  try {
+    const { data: rpcCreated } = await supabase.rpc('complete_company_signup', {
+      p_email: cleanEmail,
+      p_name: cleanName,
+      p_phone: cleanPhone,
+      p_tax_id: cleanTaxId,
+    });
+    if (rpcCreated && typeof rpcCreated === 'object' && (rpcCreated as any).id) {
+      return stripSensitiveCompanyFields(rpcCreated as Company);
+    }
+  } catch {}
+
+  // 2. Verifica se a firma já foi criada para este auth.uid()
+  const { data: alreadyExists } = await supabase
+    .from('companies')
+    .select(COMPANY_SAFE_COLS)
+    .eq('owner_auth_id', user.id)
+    .maybeSingle();
+
+  if (alreadyExists) {
+    const { data: updated } = await supabase
+      .from('companies')
+      .update({
+        name: cleanName,
+        tax_id: cleanTaxId,
+        phone: cleanPhone,
+      })
+      .eq('id', (alreadyExists as any).id)
+      .select(COMPANY_SAFE_COLS)
+      .maybeSingle();
+    return stripSensitiveCompanyFields((updated || alreadyExists) as unknown as Company);
+  }
+
+  // 3. Executa INSERT sem .select() (Prefer: return=minimal) e depois SELECT separado
+  //    para evitar bloqueio da função STABLE private.current_company_id() no INSERT ... RETURNING
+  const insertPayload: Record<string, unknown> = {
+    name: cleanName,
+    owner_email: cleanEmail,
+    owner_auth_id: user.id,
+    password_hash: 'supabase_auth_managed',
+    phone: cleanPhone,
+    tax_id: cleanTaxId,
+  };
+
+  let { error: insertError } = await supabase.from('companies').insert(insertPayload);
+
+  if (insertError && (insertError.code === 'PGRST204' || insertError.message?.includes('owner_auth_id'))) {
+    delete insertPayload.owner_auth_id;
+    const retry = await supabase.from('companies').insert(insertPayload);
+    insertError = retry.error;
+  }
+
+  if (insertError) {
+    throw new Error(insertError.message || 'Não foi possível criar a firma.');
+  }
+
+  const { data: created, error: selectError } = await supabase
+    .from('companies')
+    .select(COMPANY_SAFE_COLS)
+    .eq('owner_auth_id', user.id)
+    .maybeSingle();
+
+  if (selectError || !created) {
+    const { data: fallbackByEmail } = await supabase
+      .from('companies')
+      .select(COMPANY_SAFE_COLS)
+      .eq('owner_email', cleanEmail)
+      .maybeSingle();
+    if (fallbackByEmail) {
+      return stripSensitiveCompanyFields(fallbackByEmail as unknown as Company);
+    }
+    throw new Error(selectError?.message || 'Firma criada, mas não foi possível carregar a sessão.');
+  }
+
+  return stripSensitiveCompanyFields(created as unknown as Company);
 }
 
 export async function updateCompanyProfile(
