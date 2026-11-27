@@ -559,28 +559,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 transition: 'justify-content 0.3s ease',
               }}
             >
-              <div
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '8px',
-                  backgroundColor: '#0f172a',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+              <img
+                src="/logo.webp"
+                alt="Castello"
+                width={36}
+                height={36}
+                style={{ width: '36px', height: '36px', objectFit: 'contain', borderRadius: '8px' }}
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
                 }}
-              >
-                <img
-                  src="/logo.webp"
-                  alt="Castello"
-                  width={18}
-                  height={18}
-                  style={{ width: '18px', height: '18px', objectFit: 'contain' }}
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
-              </div>
+              />
               <span
                 style={{
                   fontSize: '18px',

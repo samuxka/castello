@@ -483,27 +483,25 @@ function MainApp() {
 
         {/* Logo da Firma e Sino de Notificações */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          {company?.logo_url ? (
-            <View
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 8,
-                overflow: 'hidden',
-                backgroundColor: colors.card,
-                borderWidth: 1,
-                borderColor: colors.border,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Image
-                source={{ uri: company.logo_url }}
-                style={{ width: '100%', height: '100%' }}
-                resizeMode="cover"
-              />
-            </View>
-          ) : null}
+          <View
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 8,
+              overflow: 'hidden',
+              backgroundColor: '#FFFFFF',
+              borderWidth: 1,
+              borderColor: colors.border,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Image
+              source={company?.logo_url ? { uri: company.logo_url } : require('./assets/icon.png')}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode={company?.logo_url ? 'cover' : 'contain'}
+            />
+          </View>
 
           {/* Sino de Notificações / Mensagens da Empresa */}
           <TouchableOpacity
