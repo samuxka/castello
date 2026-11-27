@@ -488,7 +488,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                     textTransform: 'uppercase',
                   }}
                 >
-                  A WISE QUOTE
+                  GROW WITH US
                 </span>
                 <div
                   style={{
@@ -504,7 +504,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               <h1
                 style={{
                   color: '#ffffff',
-                  fontSize: '44px',
+                  fontSize: '39px',
                   lineHeight: '1.15',
                   fontWeight: 700,
                   letterSpacing: '-0.5px',
@@ -513,9 +513,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   textShadow: '0 4px 20px rgba(0,0,0,0.6)',
                 }}
               >
-                Get Everything
+                Gerencie seu negocio
                 <br />
-                You Want
+                com precisão.
               </h1>
               <p
                 style={{
@@ -526,8 +526,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   fontWeight: 400,
                 }}
               >
-                You can get everything you want if you work hard, trust the process, and stick to the
-                plan. Construa o futuro com precisão.
+                Tudo que você precisa para alavancar seu negocio em um só lugar.
               </p>
             </div>
           </div>
@@ -605,12 +604,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   marginBottom: '6px',
                 }}
               >
-                {isSignup ? 'Create Account' : 'Welcome Back'}
+                {isSignup ? 'Crie sua conta' : 'Bem vindo de volta'}
               </h2>
               <p style={{ fontSize: '13px', color: '#64748b' }}>
                 {isSignup
-                  ? 'Enter your details to register your construction firm'
-                  : 'Enter your email and password to access your account'}
+                  ? 'Digite os detalhes da sua empresa para criar uma conta'
+                  : 'Digite suas credenciais para acessar a conta'}
               </p>
             </div>
 
@@ -647,11 +646,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                         marginBottom: '6px',
                       }}
                     >
-                      Company Name
+                      Nome da empresa
                     </label>
                     <input
                       type="text"
-                      placeholder="Enter company name"
+                      placeholder="ex.: Castello"
                       value={companyName}
                       onChange={(e) => setCompanyName(e.target.value)}
                       style={{
@@ -683,7 +682,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                           marginBottom: '6px',
                         }}
                       >
-                        Phone (Optional)
+                        Telefone 
                       </label>
                       <input
                         type="text"
@@ -713,7 +712,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                           marginBottom: '6px',
                         }}
                       >
-                        NIF / Tax ID
+                        NIF
                       </label>
                       <input
                         type="text"
@@ -751,7 +750,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 </label>
                 <input
                   type="email"
-                  placeholder="Enter your email"
+                  placeholder="exemplo@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   style={{
@@ -788,7 +787,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 <div style={{ position: 'relative' }}>
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="Enter your password"
+                    placeholder="********"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     style={{
@@ -860,7 +859,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                         cursor: 'pointer',
                       }}
                     />
-                    Remember me
+                    Lembre-se de mim
                   </label>
 
                   <button
@@ -878,7 +877,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                       padding: 0,
                     }}
                   >
-                    Forgot Password
+                    Esqueci a senha
                   </button>
                 </div>
               )}
@@ -905,7 +904,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   opacity: loading ? 0.75 : 1,
                 }}
               >
-                {loading ? 'A processar...' : isSignup ? 'Sign Up' : 'Sign In'}
+                {loading ? 'A processar...' : isSignup ? 'Registrar' : 'Entrar'}
               </button>
 
               {/* Google OAuth Button */}
@@ -948,13 +947,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                     d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
                   />
                 </svg>
-                <span>{isSignup ? 'Sign Up with Google' : 'Sign In with Google'}</span>
+                <span>Continuar com Google</span>
               </button>
             </form>
 
             <div style={{ textAlign: 'center', marginTop: 'auto' }}>
               <span style={{ fontSize: '12.5px', color: '#64748b' }}>
-                {isSignup ? 'Already have an account? ' : "Don't have an account? "}
+                {isSignup ? 'Já tem uma conta? ' : "Ainda não tem uma contat? "}
               </span>
               <button
                 type="button"
@@ -974,7 +973,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   textDecoration: 'underline',
                 }}
               >
-                {isSignup ? 'Sign In' : 'Sign Up'}
+                {isSignup ? 'Acessar' : 'Registrar'}
               </button>
             </div>
           </div>
