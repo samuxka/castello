@@ -36,17 +36,26 @@ import {
   Zap,
 } from 'lucide-react';
 import {
+  clearLocalPendingOnboardingState,
+  clearPendingEmailVerificationDraft,
+  completeCompanyOnboardingAndTerms,
+  getLocalPendingOnboardingState,
+  getPendingEmailVerificationDraft,
   getPendingGoogleAuthUser,
   handleGoogleAuthRedirect,
   initiateEmailSignupVerification,
+  isCompanyOnboardingPending,
   loginCompany,
   loginWithGoogle,
+  OnboardingAnswersMap,
   PendingGoogleUser,
   registerCompanyForGoogleUser,
   resendEmailSignupCode,
+  restorePendingOnboardingSession,
+  savePendingEmailVerificationDraft,
+  savePendingOnboardingProgress,
   setActiveCompanySession,
   supabase,
-  updateCompanyProfile,
   verifyEmailSignupCodeAndCreateCompany,
 } from '../lib/supabase';
 import { Company } from '../types';
@@ -403,8 +412,17 @@ const CountryFlagSvg: React.FC<{ iso: string }> = ({ iso }) => {
 };
 
 export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
-  const [stage, setAuthStage] = useState<AuthStage>('auth');
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const initialOnboardingDraft = getLocalPendingOnboardingState();
+  const initialEmailVerifyDraft = !initialOnboardingDraft ? getPendingEmailVerificationDraft() : null;
+
+  const [stage, setAuthStage] = useState<AuthStage>(() => {
+    if (initialOnboardingDraft) return initialOnboardingDraft.stage;
+    if (initialEmailVerifyDraft) return 'verify-email';
+    return 'auth';
+  });
+  const [mode, setMode] = useState<'login' | 'signup'>(() =>
+    initialEmailVerifyDraft ? 'signup' : 'login'
+  );
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -413,28 +431,61 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const [rememberMe, setRememberMe] = useState(true);
 
   // Form states
-  const [companyName, setCompanyName] = useState('');
-  const [email, setEmail] = useState('');
+  const [companyName, setCompanyName] = useState(() => initialEmailVerifyDraft?.companyName || '');
+  const [email, setEmail] = useState(
+    () => initialOnboardingDraft?.company?.owner_email || initialEmailVerifyDraft?.email || ''
+  );
   const [password, setPassword] = useState('');
-  const [phoneDigits, setPhoneDigits] = useState('');
-  const [selectedCountry, setSelectedCountry] = useState<PhoneCountryOption>(PHONE_COUNTRIES[0]);
+  const [phoneDigits, setPhoneDigits] = useState(() => initialEmailVerifyDraft?.phoneDigits || '');
+  const [selectedCountry, setSelectedCountry] = useState<PhoneCountryOption>(() => {
+    if (initialEmailVerifyDraft?.selectedCountryIso) {
+      const found = PHONE_COUNTRIES.find((c) => c.iso === initialEmailVerifyDraft.selectedCountryIso);
+      if (found) return found;
+    }
+    return PHONE_COUNTRIES[0];
+  });
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
-  const [taxId, setTaxId] = useState('');
+  const [taxId, setTaxId] = useState(() => initialEmailVerifyDraft?.taxId || '');
 
   const fullFormattedPhone = phoneDigits.trim()
     ? `${selectedCountry.dialCode} ${phoneDigits.trim()}`
     : '';
 
   // Pending company state after initial registration
-  const [pendingCompany, setPendingCompany] = useState<Company | null>(null);
+  const [pendingCompany, setPendingCompany] = useState<Company | null>(
+    () => initialOnboardingDraft?.company || null
+  );
   const [pendingGoogleUser, setPendingGoogleUser] = useState<PendingGoogleUser | null>(null);
-  const isManualAuthFlowRef = useRef(false);
+  const isManualAuthFlowRef = useRef(Boolean(initialOnboardingDraft || initialEmailVerifyDraft));
 
   // Email verification code states (para registo com e-mail/senha)
   const [verificationCode, setVerificationCode] = useState('');
   const [resendingCode, setResendingCode] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resendSuccessMsg, setResendSuccessMsg] = useState<string | null>(null);
+
+  // Multi-step Onboarding State (restaurado automaticamente se a página for atualizada)
+  const [currentStepIndex, setCurrentStepIndex] = useState<number>(
+    () => initialOnboardingDraft?.currentStepIndex ?? 0
+  );
+  const [onboardingAnswers, setOnboardingAnswers] = useState<OnboardingAnswersMap>(() =>
+    initialOnboardingDraft?.onboardingAnswers || {
+      industry: '',
+      years_active: '',
+      team_size: '',
+      active_sites_count: '',
+      primary_goal: '',
+    }
+  );
+
+  // Terms and Privacy State
+  const [acceptTerms, setAcceptTerms] = useState<boolean>(
+    () => initialOnboardingDraft?.acceptTerms ?? false
+  );
+  const [acceptPrivacy, setAcceptPrivacy] = useState<boolean>(
+    () => initialOnboardingDraft?.acceptPrivacy ?? false
+  );
+  const [savingOnboarding, setSavingOnboarding] = useState(false);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -444,17 +495,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
     return () => clearInterval(timer);
   }, [resendCooldown]);
 
-  // Detecta retorno do Google OAuth: se já tiver firma entra direto; se for novo registo abre o formulário multi-step
+  // Restaura onboarding pendente ao atualizar a página ou detecta retorno do Google OAuth
   useEffect(() => {
     let mounted = true;
 
-    const checkGoogleOAuthState = async () => {
+    const checkAuthAndOnboardingState = async () => {
+      // 1. Verifica se existe um registo recém-criado com formulário multi-step ou termos pendentes
+      const pendingOnboarding = await restorePendingOnboardingSession();
+      if (!mounted) return;
+      if (pendingOnboarding && pendingOnboarding.company) {
+        isManualAuthFlowRef.current = true;
+        setPendingCompany(pendingOnboarding.company);
+        setOnboardingAnswers(pendingOnboarding.onboardingAnswers);
+        setCurrentStepIndex(pendingOnboarding.currentStepIndex);
+        setAcceptTerms(pendingOnboarding.acceptTerms);
+        setAcceptPrivacy(pendingOnboarding.acceptPrivacy);
+        setAuthStage(pendingOnboarding.stage);
+        return;
+      }
+
       if (isManualAuthFlowRef.current) return;
 
+      // 2. Fluxo Google OAuth
       const existingCompany = await handleGoogleAuthRedirect();
       if (!mounted || isManualAuthFlowRef.current) return;
       if (existingCompany) {
         onSuccess(existingCompany);
+        return;
+      }
+
+      // Verifica novamente se o retorno do Google encontrou uma firma com onboarding pendente
+      const googlePendingOnboarding = await restorePendingOnboardingSession();
+      if (!mounted) return;
+      if (googlePendingOnboarding && googlePendingOnboarding.company) {
+        setPendingCompany(googlePendingOnboarding.company);
+        setOnboardingAnswers(googlePendingOnboarding.onboardingAnswers);
+        setCurrentStepIndex(googlePendingOnboarding.currentStepIndex);
+        setAcceptTerms(googlePendingOnboarding.acceptTerms);
+        setAcceptPrivacy(googlePendingOnboarding.acceptPrivacy);
+        setAuthStage(googlePendingOnboarding.stage);
         return;
       }
 
@@ -470,13 +549,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       }
     };
 
-    checkGoogleOAuthState();
+    checkAuthAndOnboardingState();
 
     const { data: authListener } =
       supabase?.auth.onAuthStateChange((event) => {
         if (isManualAuthFlowRef.current) return;
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-          checkGoogleOAuthState();
+          checkAuthAndOnboardingState();
         }
       }) || { data: { subscription: null } };
 
@@ -522,27 +601,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
     try {
       await supabase?.auth.signOut();
     } catch {}
+    clearLocalPendingOnboardingState();
+    clearPendingEmailVerificationDraft();
+    isManualAuthFlowRef.current = false;
     setPendingGoogleUser(null);
     setPendingCompany(null);
     setErrorMsg(null);
     setFieldErrors({});
     setAuthStage('auth');
   };
-
-  // Multi-step Onboarding State
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [onboardingAnswers, setOnboardingAnswers] = useState<Record<string, string>>({
-    industry: '',
-    years_active: '',
-    team_size: '',
-    active_sites_count: '',
-    primary_goal: '',
-  });
-
-  // Terms and Privacy State
-  const [acceptTerms, setAcceptTerms] = useState(false);
-  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
-  const [savingOnboarding, setSavingOnboarding] = useState(false);
 
   const handleGoogleAuth = async () => {
     setErrorMsg(null);
@@ -571,6 +638,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       setLoading(true);
       try {
         const logged = await loginCompany(val.data.email, val.data.password);
+        if (isCompanyOnboardingPending(logged)) {
+          const restored = await restorePendingOnboardingSession();
+          setPendingCompany(restored?.company || logged);
+          if (restored?.onboardingAnswers) {
+            setOnboardingAnswers(restored.onboardingAnswers);
+          }
+          setCurrentStepIndex(restored?.currentStepIndex ?? 0);
+          setAcceptTerms(restored?.acceptTerms ?? false);
+          setAcceptPrivacy(restored?.acceptPrivacy ?? false);
+          setAuthStage(restored?.stage || 'onboarding');
+          return;
+        }
         onSuccess(logged);
       } catch (err: any) {
         setErrorMsg(err.message || 'Falha na autenticação da firma.');
@@ -602,6 +681,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           fullFormattedPhone,
           val.data.taxId || ''
         );
+        savePendingEmailVerificationDraft({
+          companyName: val.data.companyName,
+          email: val.data.email,
+          phoneDigits,
+          selectedCountryIso: selectedCountry.iso,
+          taxId: val.data.taxId || '',
+        });
         setVerificationCode('');
         setResendSuccessMsg(null);
         setResendCooldown(60);
@@ -666,29 +752,108 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
 
   // Multi-step Onboarding
   const currentStep = ONBOARDING_STEPS[currentStepIndex];
-  const selectedOptionForCurrentStep = onboardingAnswers[currentStep?.field];
+  const selectedOptionForCurrentStep = currentStep ? onboardingAnswers[currentStep.field] : '';
 
   const handleSelectOption = (optionId: string) => {
-    setOnboardingAnswers((prev) => ({
-      ...prev,
+    if (!currentStep) return;
+    const nextAnswers: OnboardingAnswersMap = {
+      ...onboardingAnswers,
       [currentStep.field]: optionId,
-    }));
+    };
+    setOnboardingAnswers(nextAnswers);
+    if (pendingCompany) {
+      savePendingOnboardingProgress(pendingCompany, {
+        stage: 'onboarding',
+        currentStepIndex,
+        onboardingAnswers: nextAnswers,
+        acceptTerms,
+        acceptPrivacy,
+      });
+    }
   };
 
   const handleNextStep = () => {
     if (!selectedOptionForCurrentStep) return;
     if (currentStepIndex < ONBOARDING_STEPS.length - 1) {
-      setCurrentStepIndex(currentStepIndex + 1);
+      const nextStep = currentStepIndex + 1;
+      setCurrentStepIndex(nextStep);
+      if (pendingCompany) {
+        savePendingOnboardingProgress(pendingCompany, {
+          stage: 'onboarding',
+          currentStepIndex: nextStep,
+          onboardingAnswers,
+          acceptTerms,
+          acceptPrivacy,
+        });
+      }
     } else {
       setAuthStage('terms');
+      if (pendingCompany) {
+        savePendingOnboardingProgress(pendingCompany, {
+          stage: 'terms',
+          currentStepIndex,
+          onboardingAnswers,
+          acceptTerms,
+          acceptPrivacy,
+        });
+      }
     }
   };
 
   const handlePrevStep = () => {
     if (currentStepIndex > 0) {
-      setCurrentStepIndex(currentStepIndex - 1);
+      const prevStep = currentStepIndex - 1;
+      setCurrentStepIndex(prevStep);
+      if (pendingCompany) {
+        savePendingOnboardingProgress(pendingCompany, {
+          stage: 'onboarding',
+          currentStepIndex: prevStep,
+          onboardingAnswers,
+          acceptTerms,
+          acceptPrivacy,
+        });
+      }
     } else if (pendingGoogleUser) {
       setAuthStage('google-company');
+    }
+  };
+
+  const handleToggleAcceptTerms = (checked: boolean) => {
+    setAcceptTerms(checked);
+    if (pendingCompany) {
+      savePendingOnboardingProgress(pendingCompany, {
+        stage: 'terms',
+        currentStepIndex,
+        onboardingAnswers,
+        acceptTerms: checked,
+        acceptPrivacy,
+      });
+    }
+  };
+
+  const handleToggleAcceptPrivacy = (checked: boolean) => {
+    setAcceptPrivacy(checked);
+    if (pendingCompany) {
+      savePendingOnboardingProgress(pendingCompany, {
+        stage: 'terms',
+        currentStepIndex,
+        onboardingAnswers,
+        acceptTerms,
+        acceptPrivacy: checked,
+      });
+    }
+  };
+
+  const handleBackFromTermsToOnboarding = () => {
+    setAuthStage('onboarding');
+    if (pendingCompany) {
+      savePendingOnboardingProgress(pendingCompany, {
+        stage: 'onboarding',
+        currentStepIndex,
+        onboardingAnswers,
+        acceptTerms,
+        acceptPrivacy,
+      });
     }
   };
 
@@ -696,29 +861,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   const handleCompleteRegistration = async () => {
     if (!acceptTerms || !acceptPrivacy) return;
     setSavingOnboarding(true);
+    setErrorMsg(null);
 
     try {
-      let finalCompany = pendingCompany;
-      if (pendingCompany?.id) {
-        finalCompany = await updateCompanyProfile(pendingCompany.id, {
-          industry: onboardingAnswers.industry,
-          years_active: onboardingAnswers.years_active,
-          team_size: onboardingAnswers.team_size,
-          active_sites_count: onboardingAnswers.active_sites_count,
-          primary_goal: onboardingAnswers.primary_goal,
-          terms_accepted_at: new Date().toISOString(),
-        });
+      const companyToComplete = pendingCompany || getLocalPendingOnboardingState()?.company || null;
+      if (!companyToComplete) {
+        throw new Error('Não foi possível localizar os dados da firma. Atualize a página e tente novamente.');
       }
-      if (finalCompany) {
-        setActiveCompanySession(finalCompany);
-        onSuccess(finalCompany);
-      }
-    } catch (err) {
+      const finalCompany = await completeCompanyOnboardingAndTerms(
+        companyToComplete,
+        onboardingAnswers
+      );
+      setActiveCompanySession(finalCompany);
+      onSuccess(finalCompany);
+    } catch (err: any) {
       console.warn('Aviso ao guardar dados do questionário:', err);
-      if (pendingCompany) {
-        setActiveCompanySession(pendingCompany);
-        onSuccess(pendingCompany);
-      }
+      setErrorMsg(err?.message || 'Não foi possível guardar a confirmação dos termos. Tente novamente.');
     } finally {
       setSavingOnboarding(false);
     }
@@ -2548,7 +2706,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               <input
                 type="checkbox"
                 checked={acceptTerms}
-                onChange={(e) => setAcceptTerms(e.target.checked)}
+                onChange={(e) => handleToggleAcceptTerms(e.target.checked)}
                 style={{
                   width: '18px',
                   height: '18px',
@@ -2588,7 +2746,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               <input
                 type="checkbox"
                 checked={acceptPrivacy}
-                onChange={(e) => setAcceptPrivacy(e.target.checked)}
+                onChange={(e) => handleToggleAcceptPrivacy(e.target.checked)}
                 style={{
                   width: '18px',
                   height: '18px',
@@ -2613,6 +2771,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               </span>
             </label>
           </div>
+
+          {errorMsg && (
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: '10px',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#dc2626',
+                fontSize: '12.5px',
+                fontWeight: 600,
+                marginBottom: '14px',
+                textAlign: 'center',
+              }}
+            >
+              {errorMsg}
+            </div>
+          )}
 
           {/* Botão Bloqueado até aceitar os termos */}
           {(!acceptTerms || !acceptPrivacy) && (
@@ -2640,7 +2816,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           <div style={{ display: 'flex', gap: '12px' }}>
             <button
               type="button"
-              onClick={() => setAuthStage('onboarding')}
+              onClick={handleBackFromTermsToOnboarding}
               style={{
                 display: 'flex',
                 alignItems: 'center',

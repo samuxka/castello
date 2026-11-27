@@ -34,6 +34,41 @@ interface SettingsPageProps {
   showNotice: (msg: string) => void;
 }
 
+const ONBOARDING_LABELS: Record<string, Record<string, string>> = {
+  industry: {
+    residencial: 'Construção Residencial',
+    comercial_industrial: 'Obras Comerciais & Industriais',
+    remodelacao_restauro: 'Remodelação & Reabilitação',
+    infraestruturas: 'Infraestruturas & Terraplanagens',
+    acabamentos: 'Acabamentos & Pinturas',
+    instalacoes_tecnicas: 'Instalações Técnicas (MEP)',
+  },
+  years_active: {
+    menos_1_ano: 'Menos de 1 ano',
+    '1_a_3_anos': '1 a 3 anos',
+    '4_a_10_anos': '4 a 10 anos',
+    mais_10_anos: 'Mais de 10 anos',
+  },
+  team_size: {
+    '1_a_5': '1 a 5 colaboradores',
+    '6_a_15': '6 a 15 colaboradores',
+    '16_a_50': '16 a 50 colaboradores',
+    mais_50: 'Mais de 50 colaboradores',
+  },
+  active_sites_count: {
+    '1_a_2': '1 a 2 obras em simultâneo',
+    '3_a_5': '3 a 5 obras em simultâneo',
+    '6_a_10': '6 a 10 obras em simultâneo',
+    mais_10: 'Mais de 10 obras em paralelo',
+  },
+  primary_goal: {
+    ponto_e_presencas: 'Registo e Validação de Ponto',
+    controlo_financeiro: 'Custos, Margens & Rentabilidade',
+    tarefas_e_diarios: 'Tarefas, Fotos & Diários de Obra',
+    carrinhas_e_materiais: 'Frotas, Carrinhas & Inventário',
+  },
+};
+
 export function SettingsPage({
   company,
   onCompanyUpdated,
@@ -691,6 +726,153 @@ export function SettingsPage({
             <Trash2 size={16} />
             Excluir Conta
           </button>
+        </div>
+      </div>
+
+      {/* Perfil do Questionário de Onboarding & Registo de Aceite de Termos e Privacidade */}
+      <div
+        style={{
+          padding: 24,
+          borderRadius: 12,
+          backgroundColor: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+          marginTop: 24,
+          marginBottom: 24,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <CheckCircle2 size={20} color="var(--primary)" />
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-main)' }}>
+            4. Perfil Operacional & Aceite de Termos e Privacidade
+          </h2>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+            gap: 12,
+            marginBottom: 18,
+          }}
+        >
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 10,
+              backgroundColor: 'var(--bg-card-subtle)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              Área de Atuação
+            </div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)', marginTop: 4 }}>
+              {(company.industry && ONBOARDING_LABELS.industry[company.industry]) ||
+                company.industry ||
+                'Não informado'}
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 10,
+              backgroundColor: 'var(--bg-card-subtle)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              Tempo de Mercado
+            </div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)', marginTop: 4 }}>
+              {(company.years_active && ONBOARDING_LABELS.years_active[company.years_active]) ||
+                company.years_active ||
+                'Não informado'}
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 10,
+              backgroundColor: 'var(--bg-card-subtle)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              Dimensão da Equipa
+            </div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)', marginTop: 4 }}>
+              {(company.team_size && ONBOARDING_LABELS.team_size[company.team_size]) ||
+                company.team_size ||
+                'Não informado'}
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 10,
+              backgroundColor: 'var(--bg-card-subtle)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              Obras em Simultâneo
+            </div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)', marginTop: 4 }}>
+              {(company.active_sites_count &&
+                ONBOARDING_LABELS.active_sites_count[company.active_sites_count]) ||
+                company.active_sites_count ||
+                'Não informado'}
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 10,
+              backgroundColor: 'var(--bg-card-subtle)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              Foco Principal no Castello
+            </div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text-main)', marginTop: 4 }}>
+              {(company.primary_goal && ONBOARDING_LABELS.primary_goal[company.primary_goal]) ||
+                company.primary_goal ||
+                'Não informado'}
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: '14px 16px',
+            borderRadius: 10,
+            backgroundColor: 'var(--bg-card-subtle)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: '#16a34a' }}>
+            <CheckCircle2 size={16} color="#16a34a" />
+            <span>
+              Termos de Uso e Política de Privacidade Aceites
+              {company.terms_accepted_at
+                ? ` em ${new Date(company.terms_accepted_at).toLocaleString('pt-PT')}`
+                : company.created_at
+                ? ` (${new Date(company.created_at).toLocaleDateString('pt-PT')})`
+                : ''}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            O registo de consentimento contratual (Termos de Serviço) e de proteção de dados (Política de Privacidade RGPD/LGPD) encontra-se ativo e vinculado a esta firma.
+          </div>
         </div>
       </div>
 

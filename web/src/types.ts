@@ -24,7 +24,12 @@ export interface Company {
   team_size?: string | null;
   active_sites_count?: string | null;
   primary_goal?: string | null;
+  terms_accepted?: boolean | null;
   terms_accepted_at?: string | null;
+  privacy_accepted?: boolean | null;
+  privacy_accepted_at?: string | null;
+  onboarding_completed?: boolean | null;
+  onboarding_completed_at?: string | null;
   email_verified_at?: string | null;
 }
 

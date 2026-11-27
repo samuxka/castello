@@ -83,6 +83,632 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
   : null;
 
 const CURRENT_COMPANY_KEY = 'castello_active_company_session';
+const PENDING_ONBOARDING_KEY = 'castello_pending_onboarding_v1';
+const PENDING_EMAIL_VERIFY_KEY = 'castello_pending_email_verify_v1';
+
+export interface OnboardingAnswersMap {
+  industry: string;
+  years_active: string;
+  team_size: string;
+  active_sites_count: string;
+  primary_goal: string;
+}
+
+export interface PendingOnboardingState {
+  company: Company;
+  stage: 'onboarding' | 'terms';
+  currentStepIndex: number;
+  onboardingAnswers: OnboardingAnswersMap;
+  acceptTerms: boolean;
+  acceptPrivacy: boolean;
+  updatedAt: string;
+}
+
+export interface PendingEmailVerificationDraft {
+  companyName: string;
+  email: string;
+  phoneDigits: string;
+  selectedCountryIso: string;
+  taxId: string;
+  updatedAt: string;
+}
+
+export interface CompanyCloudSettings {
+  logo_url?: string | null;
+  theme_color?: ThemeColor | null;
+  theme_mode?: ThemeMode | null;
+  industry?: string | null;
+  years_active?: string | null;
+  team_size?: string | null;
+  active_sites_count?: string | null;
+  primary_goal?: string | null;
+  terms_accepted?: boolean | null;
+  terms_accepted_at?: string | null;
+  privacy_accepted?: boolean | null;
+  privacy_accepted_at?: string | null;
+  onboarding_completed?: boolean | null;
+  onboarding_completed_at?: string | null;
+  onboarding_stage?: 'onboarding' | 'terms' | null;
+  onboarding_step_index?: number | null;
+  updated_at?: string;
+}
+
+const DEFAULT_ONBOARDING_ANSWERS: OnboardingAnswersMap = {
+  industry: '',
+  years_active: '',
+  team_size: '',
+  active_sites_count: '',
+  primary_goal: '',
+};
+
+export function getLocalPendingOnboardingState(): PendingOnboardingState | null {
+  try {
+    const raw = localStorage.getItem(PENDING_ONBOARDING_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingOnboardingState;
+    if (!parsed || !parsed.company || !parsed.company.id) return null;
+    return {
+      company: stripSensitiveCompanyFields(parsed.company),
+      stage: parsed.stage === 'terms' ? 'terms' : 'onboarding',
+      currentStepIndex:
+        typeof parsed.currentStepIndex === 'number' && parsed.currentStepIndex >= 0 && parsed.currentStepIndex <= 4
+          ? parsed.currentStepIndex
+          : 0,
+      onboardingAnswers: {
+        ...DEFAULT_ONBOARDING_ANSWERS,
+        ...(parsed.onboardingAnswers || {}),
+      },
+      acceptTerms: Boolean(parsed.acceptTerms),
+      acceptPrivacy: Boolean(parsed.acceptPrivacy),
+      updatedAt: parsed.updatedAt || new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function clearLocalPendingOnboardingState(): void {
+  try {
+    localStorage.removeItem(PENDING_ONBOARDING_KEY);
+  } catch {}
+}
+
+export function savePendingEmailVerificationDraft(draft: Omit<PendingEmailVerificationDraft, 'updatedAt'>): void {
+  try {
+    sessionStorage.setItem(
+      PENDING_EMAIL_VERIFY_KEY,
+      JSON.stringify({
+        ...draft,
+        updatedAt: new Date().toISOString(),
+      })
+    );
+  } catch {}
+}
+
+export function getPendingEmailVerificationDraft(): PendingEmailVerificationDraft | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_EMAIL_VERIFY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingEmailVerificationDraft;
+    if (!parsed || !parsed.email || !parsed.companyName) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingEmailVerificationDraft(): void {
+  try {
+    sessionStorage.removeItem(PENDING_EMAIL_VERIFY_KEY);
+  } catch {}
+}
+
+function applyCloudSettingsToCompany(
+  company: Company,
+  cloudSettings?: CompanyCloudSettings | null,
+  userMetadata?: Record<string, any> | null
+): Company {
+  const enriched: Company = { ...company };
+  const srcCloud = cloudSettings || {};
+  const srcMeta = userMetadata || {};
+
+  if (srcCloud.logo_url && !enriched.logo_url) enriched.logo_url = srcCloud.logo_url;
+  if (srcCloud.theme_color && !enriched.theme_color) enriched.theme_color = srcCloud.theme_color;
+  if (srcCloud.theme_mode && !enriched.theme_mode) enriched.theme_mode = srcCloud.theme_mode;
+
+  enriched.industry = enriched.industry || srcCloud.industry || srcMeta.industry || null;
+  enriched.years_active = enriched.years_active || srcCloud.years_active || srcMeta.years_active || null;
+  enriched.team_size = enriched.team_size || srcCloud.team_size || srcMeta.team_size || null;
+  enriched.active_sites_count =
+    enriched.active_sites_count || srcCloud.active_sites_count || srcMeta.active_sites_count || null;
+  enriched.primary_goal = enriched.primary_goal || srcCloud.primary_goal || srcMeta.primary_goal || null;
+
+  enriched.terms_accepted_at =
+    enriched.terms_accepted_at || srcCloud.terms_accepted_at || srcMeta.terms_accepted_at || null;
+  enriched.privacy_accepted_at =
+    enriched.privacy_accepted_at ||
+    srcCloud.privacy_accepted_at ||
+    srcMeta.privacy_accepted_at ||
+    enriched.terms_accepted_at ||
+    null;
+
+  if (
+    enriched.terms_accepted === true ||
+    srcCloud.terms_accepted === true ||
+    srcMeta.terms_accepted === true ||
+    Boolean(enriched.terms_accepted_at)
+  ) {
+    enriched.terms_accepted = true;
+  } else if (
+    enriched.terms_accepted === false ||
+    srcCloud.terms_accepted === false ||
+    srcMeta.terms_accepted === false
+  ) {
+    enriched.terms_accepted = false;
+  }
+
+  if (
+    enriched.privacy_accepted === true ||
+    srcCloud.privacy_accepted === true ||
+    srcMeta.privacy_accepted === true ||
+    Boolean(enriched.privacy_accepted_at)
+  ) {
+    enriched.privacy_accepted = true;
+  } else if (
+    enriched.privacy_accepted === false ||
+    srcCloud.privacy_accepted === false ||
+    srcMeta.privacy_accepted === false
+  ) {
+    enriched.privacy_accepted = false;
+  }
+
+  enriched.onboarding_completed_at =
+    enriched.onboarding_completed_at ||
+    srcCloud.onboarding_completed_at ||
+    srcMeta.onboarding_completed_at ||
+    enriched.terms_accepted_at ||
+    null;
+
+  if (
+    enriched.onboarding_completed === true ||
+    srcCloud.onboarding_completed === true ||
+    srcMeta.onboarding_completed === true ||
+    (enriched.terms_accepted === true && enriched.privacy_accepted === true)
+  ) {
+    enriched.onboarding_completed = true;
+  } else if (
+    enriched.onboarding_completed === false ||
+    srcCloud.onboarding_completed === false ||
+    srcMeta.onboarding_completed === false
+  ) {
+    enriched.onboarding_completed = false;
+  }
+
+  return enriched;
+}
+
+/**
+ * Verifica se a firma ainda está com o formulário multi-step de onboarding ou o
+ * aceite dos Termos de Uso e Política de Privacidade pendente.
+ */
+export function isCompanyOnboardingPending(
+  company: Company,
+  cloudSettings?: CompanyCloudSettings | null,
+  userMetadata?: Record<string, any> | null
+): boolean {
+  const enriched = applyCloudSettingsToCompany(company, cloudSettings, userMetadata);
+
+  // 1. Se já aceitou os Termos de Uso e a Política de Privacidade, está concluído
+  if (
+    (enriched.terms_accepted === true && enriched.privacy_accepted === true) ||
+    Boolean(enriched.terms_accepted_at) ||
+    enriched.onboarding_completed === true
+  ) {
+    return false;
+  }
+
+  // 2. Se existe rascunho local pendente para esta firma
+  const localPending = getLocalPendingOnboardingState();
+  if (localPending && localPending.company?.id === company.id) {
+    return true;
+  }
+
+  // 3. Se qualquer camada marcou explicitamente onboarding_completed === false ou terms_accepted === false
+  if (
+    enriched.onboarding_completed === false ||
+    enriched.terms_accepted === false ||
+    enriched.privacy_accepted === false
+  ) {
+    return true;
+  }
+
+  // 4. Se a firma foi criada a partir de 27/11/2026 e ainda não possui registo de aceite dos termos
+  if (enriched.created_at) {
+    const createdMs = Date.parse(enriched.created_at);
+    const cutoffMs = Date.parse('2026-11-27T00:00:00Z');
+    if (!Number.isNaN(createdMs) && createdMs >= cutoffMs && !enriched.terms_accepted_at) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function computeNextOnboardingStepIndex(answers: OnboardingAnswersMap): number {
+  const fields: (keyof OnboardingAnswersMap)[] = [
+    'industry',
+    'years_active',
+    'team_size',
+    'active_sites_count',
+    'primary_goal',
+  ];
+  for (let i = 0; i < fields.length; i++) {
+    if (!answers[fields[i]]) return i;
+  }
+  return fields.length - 1;
+}
+
+function areAllOnboardingQuestionsAnswered(answers: OnboardingAnswersMap): boolean {
+  return Boolean(
+    answers.industry &&
+      answers.years_active &&
+      answers.team_size &&
+      answers.active_sites_count &&
+      answers.primary_goal
+  );
+}
+
+function buildMergedPendingOnboardingState(
+  company: Company,
+  cloudSettings?: CompanyCloudSettings | null,
+  userMetadata?: Record<string, any> | null
+): PendingOnboardingState {
+  const local = getLocalPendingOnboardingState();
+  const isSameLocalCompany = local?.company?.id === company.id;
+  const enrichedCompany = applyCloudSettingsToCompany(company, cloudSettings, userMetadata);
+
+  const mergedAnswers: OnboardingAnswersMap = {
+    industry:
+      (isSameLocalCompany && local?.onboardingAnswers?.industry) ||
+      enrichedCompany.industry ||
+      cloudSettings?.industry ||
+      userMetadata?.industry ||
+      '',
+    years_active:
+      (isSameLocalCompany && local?.onboardingAnswers?.years_active) ||
+      enrichedCompany.years_active ||
+      cloudSettings?.years_active ||
+      userMetadata?.years_active ||
+      '',
+    team_size:
+      (isSameLocalCompany && local?.onboardingAnswers?.team_size) ||
+      enrichedCompany.team_size ||
+      cloudSettings?.team_size ||
+      userMetadata?.team_size ||
+      '',
+    active_sites_count:
+      (isSameLocalCompany && local?.onboardingAnswers?.active_sites_count) ||
+      enrichedCompany.active_sites_count ||
+      cloudSettings?.active_sites_count ||
+      userMetadata?.active_sites_count ||
+      '',
+    primary_goal:
+      (isSameLocalCompany && local?.onboardingAnswers?.primary_goal) ||
+      enrichedCompany.primary_goal ||
+      cloudSettings?.primary_goal ||
+      userMetadata?.primary_goal ||
+      '',
+  };
+
+  const allAnswered = areAllOnboardingQuestionsAnswered(mergedAnswers);
+
+  let stage: 'onboarding' | 'terms' = 'onboarding';
+  if (isSameLocalCompany && local?.stage === 'terms' && allAnswered) {
+    stage = 'terms';
+  } else if (cloudSettings?.onboarding_stage === 'terms' && allAnswered) {
+    stage = 'terms';
+  } else if (userMetadata?.onboarding_stage === 'terms' && allAnswered) {
+    stage = 'terms';
+  }
+
+  let currentStepIndex = computeNextOnboardingStepIndex(mergedAnswers);
+  if (
+    isSameLocalCompany &&
+    typeof local?.currentStepIndex === 'number' &&
+    local.currentStepIndex >= 0 &&
+    local.currentStepIndex <= 4
+  ) {
+    currentStepIndex = local.currentStepIndex;
+  } else if (
+    typeof cloudSettings?.onboarding_step_index === 'number' &&
+    cloudSettings.onboarding_step_index >= 0 &&
+    cloudSettings.onboarding_step_index <= 4
+  ) {
+    currentStepIndex = cloudSettings.onboarding_step_index;
+  } else if (
+    typeof userMetadata?.onboarding_step_index === 'number' &&
+    userMetadata.onboarding_step_index >= 0 &&
+    userMetadata.onboarding_step_index <= 4
+  ) {
+    currentStepIndex = userMetadata.onboarding_step_index;
+  }
+
+  const state: PendingOnboardingState = {
+    company: stripSensitiveCompanyFields(enrichedCompany),
+    stage,
+    currentStepIndex,
+    onboardingAnswers: mergedAnswers,
+    acceptTerms: isSameLocalCompany ? Boolean(local?.acceptTerms) : false,
+    acceptPrivacy: isSameLocalCompany ? Boolean(local?.acceptPrivacy) : false,
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    localStorage.setItem(PENDING_ONBOARDING_KEY, JSON.stringify(state));
+  } catch {}
+
+  return state;
+}
+
+/**
+ * Salva imediatamente o progresso do formulário multi-step (localmente e na nuvem),
+ * garantindo que ao atualizar a página as respostas marcadas e a etapa atual permaneçam salvas.
+ */
+export async function savePendingOnboardingProgress(
+  company: Company,
+  progress: {
+    stage: 'onboarding' | 'terms';
+    currentStepIndex: number;
+    onboardingAnswers: OnboardingAnswersMap;
+    acceptTerms?: boolean;
+    acceptPrivacy?: boolean;
+  }
+): Promise<void> {
+  if (!company || !company.id) return;
+
+  const state: PendingOnboardingState = {
+    company: stripSensitiveCompanyFields({
+      ...company,
+      ...progress.onboardingAnswers,
+      onboarding_completed: false,
+      terms_accepted: false,
+      privacy_accepted: false,
+    }),
+    stage: progress.stage,
+    currentStepIndex: progress.currentStepIndex,
+    onboardingAnswers: {
+      ...DEFAULT_ONBOARDING_ANSWERS,
+      ...progress.onboardingAnswers,
+    },
+    acceptTerms: Boolean(progress.acceptTerms),
+    acceptPrivacy: Boolean(progress.acceptPrivacy),
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    localStorage.setItem(PENDING_ONBOARDING_KEY, JSON.stringify(state));
+    // Garante que nenhuma sessão ativa do painel fique aberta antes do aceite dos termos
+    localStorage.removeItem(CURRENT_COMPANY_KEY);
+  } catch {}
+
+  if (!supabase) return;
+
+  try {
+    await saveCompanyCloudSettings(company.id, {
+      industry: state.onboardingAnswers.industry || null,
+      years_active: state.onboardingAnswers.years_active || null,
+      team_size: state.onboardingAnswers.team_size || null,
+      active_sites_count: state.onboardingAnswers.active_sites_count || null,
+      primary_goal: state.onboardingAnswers.primary_goal || null,
+      onboarding_completed: false,
+      terms_accepted: false,
+      privacy_accepted: false,
+      onboarding_stage: state.stage,
+      onboarding_step_index: state.currentStepIndex,
+    });
+  } catch {}
+
+  try {
+    await supabase.auth.updateUser({
+      data: {
+        company_id: company.id,
+        company_name: company.name,
+        industry: state.onboardingAnswers.industry || null,
+        years_active: state.onboardingAnswers.years_active || null,
+        team_size: state.onboardingAnswers.team_size || null,
+        active_sites_count: state.onboardingAnswers.active_sites_count || null,
+        primary_goal: state.onboardingAnswers.primary_goal || null,
+        onboarding_completed: false,
+        terms_accepted: false,
+        privacy_accepted: false,
+        onboarding_stage: state.stage,
+        onboarding_step_index: state.currentStepIndex,
+      },
+    });
+  } catch {}
+}
+
+/**
+ * Conclui definitivamente o questionário multi-step e grava o aceite dos Termos de Uso
+ * e da Política de Privacidade na tabela public.companies, nas configurações em nuvem e no Supabase Auth.
+ */
+export async function completeCompanyOnboardingAndTerms(
+  company: Company,
+  onboardingAnswers: OnboardingAnswersMap
+): Promise<Company> {
+  const acceptedAt = new Date().toISOString();
+  const cleanAnswers: OnboardingAnswersMap = {
+    industry: onboardingAnswers.industry || '',
+    years_active: onboardingAnswers.years_active || '',
+    team_size: onboardingAnswers.team_size || '',
+    active_sites_count: onboardingAnswers.active_sites_count || '',
+    primary_goal: onboardingAnswers.primary_goal || '',
+  };
+
+  const completedFields: Partial<Company> = {
+    industry: cleanAnswers.industry || null,
+    years_active: cleanAnswers.years_active || null,
+    team_size: cleanAnswers.team_size || null,
+    active_sites_count: cleanAnswers.active_sites_count || null,
+    primary_goal: cleanAnswers.primary_goal || null,
+    terms_accepted: true,
+    terms_accepted_at: acceptedAt,
+    privacy_accepted: true,
+    privacy_accepted_at: acceptedAt,
+    onboarding_completed: true,
+    onboarding_completed_at: acceptedAt,
+  };
+
+  let mergedCompany: Company = stripSensitiveCompanyFields({
+    ...company,
+    ...completedFields,
+  });
+
+  if (supabase && company.id) {
+    // 1. Atualiza colunas na tabela public.companies (com fallback se a migração ainda não tiver sido corrida)
+    try {
+      const { data: updatedRow, error: updateErr } = await supabase
+        .from('companies')
+        .update({
+          industry: completedFields.industry,
+          years_active: completedFields.years_active,
+          team_size: completedFields.team_size,
+          active_sites_count: completedFields.active_sites_count,
+          primary_goal: completedFields.primary_goal,
+          terms_accepted: true,
+          terms_accepted_at: acceptedAt,
+          privacy_accepted: true,
+          privacy_accepted_at: acceptedAt,
+          onboarding_completed: true,
+          onboarding_completed_at: acceptedAt,
+        })
+        .eq('id', company.id)
+        .select('*')
+        .maybeSingle();
+
+      if (!updateErr && updatedRow) {
+        mergedCompany = stripSensitiveCompanyFields({
+          ...mergedCompany,
+          ...(updatedRow as unknown as Company),
+          ...completedFields,
+        });
+      }
+    } catch {}
+
+    // 2. Persiste nas configurações em nuvem (company_notifications -> settings_${companyId})
+    try {
+      await saveCompanyCloudSettings(company.id, {
+        logo_url: mergedCompany.logo_url,
+        theme_color: (mergedCompany.theme_color as ThemeColor) || 'azul',
+        theme_mode: (mergedCompany.theme_mode as ThemeMode) || 'dark',
+        industry: completedFields.industry,
+        years_active: completedFields.years_active,
+        team_size: completedFields.team_size,
+        active_sites_count: completedFields.active_sites_count,
+        primary_goal: completedFields.primary_goal,
+        terms_accepted: true,
+        terms_accepted_at: acceptedAt,
+        privacy_accepted: true,
+        privacy_accepted_at: acceptedAt,
+        onboarding_completed: true,
+        onboarding_completed_at: acceptedAt,
+        onboarding_stage: 'terms',
+        onboarding_step_index: 4,
+      });
+    } catch {}
+
+    // 3. Persiste nos metadados do utilizador autenticado no Supabase Auth (auth.users)
+    try {
+      await supabase.auth.updateUser({
+        data: {
+          company_id: company.id,
+          company_name: mergedCompany.name,
+          industry: completedFields.industry,
+          years_active: completedFields.years_active,
+          team_size: completedFields.team_size,
+          active_sites_count: completedFields.active_sites_count,
+          primary_goal: completedFields.primary_goal,
+          terms_accepted: true,
+          terms_accepted_at: acceptedAt,
+          privacy_accepted: true,
+          privacy_accepted_at: acceptedAt,
+          onboarding_completed: true,
+          onboarding_completed_at: acceptedAt,
+          onboarding_stage: 'terms',
+          onboarding_step_index: 4,
+        },
+      });
+    } catch {}
+  }
+
+  clearLocalPendingOnboardingState();
+  clearPendingEmailVerificationDraft();
+  setActiveCompanySession(mergedCompany);
+  return mergedCompany;
+}
+
+/**
+ * Restaura o estado do questionário multi-step pendente a partir da sessão autenticada
+ * e das configurações na nuvem / localStorage quando o utilizador atualiza a página.
+ */
+export async function restorePendingOnboardingSession(): Promise<PendingOnboardingState | null> {
+  const localDraft = getLocalPendingOnboardingState();
+  if (!supabase) return localDraft;
+
+  try {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+
+    if (error || !session || !session.user) {
+      return null;
+    }
+
+    const user = session.user;
+    let comp: any = null;
+
+    const { data: byOwner } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('owner_auth_id', user.id)
+      .maybeSingle();
+
+    if (byOwner) {
+      comp = byOwner;
+    } else if (user.email) {
+      const { data: byEmail } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('owner_email', user.email.toLowerCase().trim())
+        .maybeSingle();
+      if (byEmail) {
+        comp = byEmail;
+      }
+    }
+
+    if (!comp && localDraft?.company) {
+      comp = localDraft.company;
+    }
+
+    if (!comp || !comp.id) {
+      return null;
+    }
+
+    const safe = stripSensitiveCompanyFields(comp as unknown as Company);
+    const cloudSettings = await fetchCompanyCloudSettings(safe.id);
+
+    if (!isCompanyOnboardingPending(safe, cloudSettings, user.user_metadata)) {
+      clearLocalPendingOnboardingState();
+      return null;
+    }
+
+    localStorage.removeItem(CURRENT_COMPANY_KEY);
+    return buildMergedPendingOnboardingState(safe, cloudSettings, user.user_metadata);
+  } catch {
+    return localDraft;
+  }
+}
 
 // ============================================================================
 // SESSÃO DA FIRMA / PATRÃO (VALIDADA VIA SUPABASE AUTH JWT)
@@ -98,7 +724,12 @@ export function getActiveCompanySession(): Company | null {
   try {
     const parsed = JSON.parse(raw) as Company;
     if (!parsed || !parsed.id) return null;
-    return stripSensitiveCompanyFields(parsed);
+    const safe = stripSensitiveCompanyFields(parsed);
+    if (isCompanyOnboardingPending(safe)) {
+      localStorage.removeItem(CURRENT_COMPANY_KEY);
+      return null;
+    }
+    return safe;
   } catch {
     return null;
   }
@@ -106,7 +737,8 @@ export function getActiveCompanySession(): Company | null {
 
 /**
  * Valida no boot se existe realmente uma sessão JWT ativa no Supabase Auth.
- * Impede bypass de autenticação via edição manual de localStorage.
+ * Impede bypass de autenticação via edição manual de localStorage e bloqueia entrada
+ * direta no painel caso o utilizador ainda não tenha concluído o onboarding e aceite os termos.
  */
 export async function restoreVerifiedCompanySession(): Promise<Company | null> {
   if (!supabase) return null;
@@ -122,44 +754,48 @@ export async function restoreVerifiedCompanySession(): Promise<Company | null> {
       return null;
     }
 
-    const { data: comp, error: ownerErr } = await supabase
+    let comp: any = null;
+    const { data: byOwner, error: ownerErr } = await supabase
       .from('companies')
-      .select(COMPANY_SAFE_COLS)
+      .select('*')
       .eq('owner_auth_id', session.user.id)
       .maybeSingle();
 
-    if (!ownerErr && comp) {
-      const safe = stripSensitiveCompanyFields(comp as unknown as Company);
+    if (!ownerErr && byOwner) {
+      comp = byOwner;
+    } else {
+      // Tenta vincular firma legada cujo owner_email coincide com o email autenticado no JWT
+      const { data: claimed } = await supabase.rpc('claim_legacy_company_by_email');
+      if (claimed && typeof claimed === 'object' && (claimed as any).id) {
+        comp = claimed;
+      } else if (session.user.email) {
+        const { data: byEmail } = await supabase
+          .from('companies')
+          .select('*')
+          .eq('owner_email', session.user.email.toLowerCase().trim())
+          .maybeSingle();
+        if (byEmail) {
+          comp = byEmail;
+        }
+      }
+    }
+
+    if (comp && comp.id) {
+      let safe = stripSensitiveCompanyFields(comp as unknown as Company);
       const cloudSettings = await fetchCompanyCloudSettings(safe.id);
-      if (cloudSettings) {
-        if (cloudSettings.logo_url && !safe.logo_url) safe.logo_url = cloudSettings.logo_url;
-        if (cloudSettings.theme_color && !safe.theme_color) safe.theme_color = cloudSettings.theme_color;
-        if (cloudSettings.theme_mode && !safe.theme_mode) safe.theme_mode = cloudSettings.theme_mode;
+      safe = applyCloudSettingsToCompany(safe, cloudSettings, session.user.user_metadata);
+
+      // Se a conta ainda não concluiu o formulário multi-step ou não aceitou os Termos e Privacidade,
+      // bloqueia a ida direta para o painel e mantém o estado do onboarding salvo para o AuthModal.
+      if (isCompanyOnboardingPending(safe, cloudSettings, session.user.user_metadata)) {
+        localStorage.removeItem(CURRENT_COMPANY_KEY);
+        buildMergedPendingOnboardingState(safe, cloudSettings, session.user.user_metadata);
+        return null;
       }
+
+      clearLocalPendingOnboardingState();
       localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(safe));
       return safe;
-    }
-
-    // Tenta vincular firma legada cujo owner_email coincide com o email autenticado no JWT
-    const { data: claimed } = await supabase.rpc('claim_legacy_company_by_email');
-    if (claimed && typeof claimed === 'object' && (claimed as any).id) {
-      const safe = stripSensitiveCompanyFields(claimed as Company);
-      localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(safe));
-      return safe;
-    }
-
-    // Fallback seguro caso a coluna owner_auth_id ainda não exista no schema cache (usa o e-mail verificado do JWT)
-    if (session.user.email) {
-      const { data: byEmail } = await supabase
-        .from('companies')
-        .select(COMPANY_SAFE_COLS)
-        .eq('owner_email', session.user.email.toLowerCase().trim())
-        .maybeSingle();
-      if (byEmail) {
-        const safe = stripSensitiveCompanyFields(byEmail as unknown as Company);
-        localStorage.setItem(CURRENT_COMPANY_KEY, JSON.stringify(safe));
-        return safe;
-      }
     }
 
     localStorage.removeItem(CURRENT_COMPANY_KEY);
@@ -251,25 +887,35 @@ export function setActiveCompanySession(company: Company | null) {
 }
 
 // ----------------------------------------------------------------------------
-// SINCRONIZAÇÃO EM NUVEM DE CONFIGURAÇÕES DA FIRMA (LOGO, CORES E TEMA)
+// SINCRONIZAÇÃO EM NUVEM DE CONFIGURAÇÕES DA FIRMA (LOGO, CORES, TEMA, ONBOARDING E TERMOS)
 // Garante persistência imediata entre todos os dispositivos, computadores e navegadores
 // ----------------------------------------------------------------------------
 export async function saveCompanyCloudSettings(
   companyId: string,
-  settings: { logo_url?: string | null; theme_color?: ThemeColor | null; theme_mode?: ThemeMode | null }
+  settings: CompanyCloudSettings
 ): Promise<void> {
   if (!supabase || !companyId) return;
   try {
+    const existing = (await fetchCompanyCloudSettings(companyId)) || {};
+    const merged: CompanyCloudSettings = {
+      ...existing,
+      updated_at: new Date().toISOString(),
+    };
+
+    for (const [key, value] of Object.entries(settings)) {
+      if (value !== undefined) {
+        (merged as any)[key] = value;
+      }
+    }
+
+    if (merged.theme_color === undefined) merged.theme_color = 'azul';
+    if (merged.theme_mode === undefined) merged.theme_mode = 'dark';
+
     const payload = {
       id: `settings_${companyId}`,
       company_id: companyId,
       title: '__CASTELLO_COMPANY_SETTINGS__',
-      content: JSON.stringify({
-        logo_url: settings.logo_url ?? null,
-        theme_color: settings.theme_color ?? 'azul',
-        theme_mode: settings.theme_mode ?? 'dark',
-        updated_at: new Date().toISOString(),
-      }),
+      content: JSON.stringify(merged),
     };
     await supabase.from('company_notifications').upsert(payload, { onConflict: 'id' });
   } catch (e) {
@@ -279,7 +925,7 @@ export async function saveCompanyCloudSettings(
 
 export async function fetchCompanyCloudSettings(
   companyId: string
-): Promise<{ logo_url?: string | null; theme_color?: ThemeColor | null; theme_mode?: ThemeMode | null } | null> {
+): Promise<CompanyCloudSettings | null> {
   if (!supabase || !companyId) return null;
   try {
     const { data, error } = await supabase
@@ -292,7 +938,7 @@ export async function fetchCompanyCloudSettings(
       try {
         const parsed = JSON.parse(data.content);
         if (parsed && typeof parsed === 'object') {
-          return parsed;
+          return parsed as CompanyCloudSettings;
         }
       } catch {}
     }
@@ -338,6 +984,9 @@ export async function initiateEmailSignupVerification(
         company_name: name.trim(),
         phone: phone?.trim() || null,
         tax_id: taxId?.trim() || null,
+        onboarding_completed: false,
+        terms_accepted: false,
+        privacy_accepted: false,
       },
     },
   });
@@ -427,7 +1076,7 @@ export async function verifyEmailSignupCodeAndCreateCompany(
   }
 
   // Garante sessão JWT ativa caso verifyOtp não a tenha persistido
-  if (!verifyData.session) {
+  if (!verifyData.session && password) {
     const { data: signedIn } = await supabase.auth.signInWithPassword({
       email: cleanEmail,
       password,
@@ -499,7 +1148,12 @@ export async function verifyEmailSignupCodeAndCreateCompany(
     throw new Error(error?.message || 'Falha ao criar firma após verificação.');
   }
 
-  const createdCompany = stripSensitiveCompanyFields(data as unknown as Company);
+  const createdCompany: Company = stripSensitiveCompanyFields({
+    ...(data as unknown as Company),
+    onboarding_completed: false,
+    terms_accepted: false,
+    privacy_accepted: false,
+  });
 
   if (createdCompany.theme_color || createdCompany.theme_mode) {
     saveTheme(
@@ -507,6 +1161,15 @@ export async function verifyEmailSignupCodeAndCreateCompany(
       (createdCompany.theme_mode as ThemeMode) || 'dark'
     );
   }
+
+  clearPendingEmailVerificationDraft();
+  await savePendingOnboardingProgress(createdCompany, {
+    stage: 'onboarding',
+    currentStepIndex: 0,
+    onboardingAnswers: DEFAULT_ONBOARDING_ANSWERS,
+    acceptTerms: false,
+    acceptPrivacy: false,
+  });
 
   return createdCompany;
 }
@@ -540,7 +1203,12 @@ export async function registerCompany(
     email: cleanEmail,
     password,
     options: {
-      data: { company_name: name.trim() },
+      data: {
+        company_name: name.trim(),
+        onboarding_completed: false,
+        terms_accepted: false,
+        privacy_accepted: false,
+      },
     },
   });
 
@@ -647,7 +1315,12 @@ export async function registerCompany(
     throw new Error(error?.message || 'Falha ao criar firma.');
   }
 
-  const createdCompany = stripSensitiveCompanyFields(data as unknown as Company);
+  const createdCompany: Company = stripSensitiveCompanyFields({
+    ...(data as unknown as Company),
+    onboarding_completed: false,
+    terms_accepted: false,
+    privacy_accepted: false,
+  });
 
   const cloudSettings = await fetchCompanyCloudSettings(createdCompany.id);
   if (cloudSettings) {
@@ -662,6 +1335,13 @@ export async function registerCompany(
 
   // Não chama setActiveCompanySession aqui: a sessão ativa só é gravada após o utilizador
   // concluir o formulário multi-step de onboarding e aceitar os Termos e Política de Privacidade.
+  await savePendingOnboardingProgress(createdCompany, {
+    stage: 'onboarding',
+    currentStepIndex: 0,
+    onboardingAnswers: DEFAULT_ONBOARDING_ANSWERS,
+    acceptTerms: false,
+    acceptPrivacy: false,
+  });
   return createdCompany;
 }
 
@@ -748,7 +1428,7 @@ export async function loginCompany(
   let companyData: Company | null = null;
   const { data: byOwner, error: byOwnerErr } = await supabase
     .from('companies')
-    .select(COMPANY_SAFE_COLS)
+    .select('*')
     .eq('owner_auth_id', authData.user.id)
     .maybeSingle();
 
@@ -763,7 +1443,7 @@ export async function loginCompany(
       // Fallback caso owner_auth_id ainda não tenha sido criado no banco
       const { data: byEmail } = await supabase
         .from('companies')
-        .select(COMPANY_SAFE_COLS)
+        .select('*')
         .eq('owner_email', cleanEmail)
         .maybeSingle();
       if (byEmail) {
@@ -776,18 +1456,25 @@ export async function loginCompany(
     throw new Error('Nenhuma firma associada a esta conta foi encontrada.');
   }
 
-  // Carrega configurações da nuvem (logo_url, theme_color, theme_mode)
+  // Carrega configurações da nuvem (logo_url, theme_color, theme_mode, onboarding, termos)
   const cloudSettings = await fetchCompanyCloudSettings(companyData.id);
-  if (cloudSettings) {
-    if (cloudSettings.logo_url && !companyData.logo_url) companyData.logo_url = cloudSettings.logo_url;
-    if (cloudSettings.theme_color && !companyData.theme_color) companyData.theme_color = cloudSettings.theme_color;
-    if (cloudSettings.theme_mode && !companyData.theme_mode) companyData.theme_mode = cloudSettings.theme_mode;
-  }
+  companyData = applyCloudSettingsToCompany(companyData, cloudSettings, authData.user.user_metadata);
 
   if (companyData.theme_color || companyData.theme_mode) {
     saveTheme((companyData.theme_color as ThemeColor) || 'azul', (companyData.theme_mode as ThemeMode) || 'dark');
   }
 
+  // Se o utilizador ainda não concluiu o onboarding e aceite dos termos, mantém-o como pendente
+  if (isCompanyOnboardingPending(companyData, cloudSettings, authData.user.user_metadata)) {
+    localStorage.removeItem(CURRENT_COMPANY_KEY);
+    buildMergedPendingOnboardingState(companyData, cloudSettings, authData.user.user_metadata);
+    return {
+      ...companyData,
+      onboarding_completed: false,
+    };
+  }
+
+  clearLocalPendingOnboardingState();
   setActiveCompanySession(companyData);
   return companyData;
 }
@@ -869,10 +1556,11 @@ function isGoogleProviderUser(user: any): boolean {
 }
 
 /**
- * Verifica no retorno do Google OAuth se o utilizador autenticado JÁ possui firma cadastrada.
- * Se já possuir, restaura a sessão e devolve a firma.
- * Se for um novo registo via Google (ainda sem firma em public.companies), devolve null
- * mantendo a sessão JWT ativa para que o AuthModal abra o formulário multi-step de criação da firma.
+ * Verifica no retorno do Google OAuth se o utilizador autenticado JÁ possui firma cadastrada
+ * e com onboarding/termos aceites.
+ * Se já possuir e tiver aceite os termos, restaura a sessão e devolve a firma.
+ * Se for um novo registo via Google ou ainda tiver onboarding/termos pendentes, devolve null
+ * mantendo a sessão JWT ativa para que o AuthModal abra o formulário multi-step.
  */
 export async function handleGoogleAuthRedirect(): Promise<Company | null> {
   if (!supabase) return null;
@@ -892,38 +1580,51 @@ export async function handleGoogleAuthRedirect(): Promise<Company | null> {
     const userEmail = user.email?.toLowerCase().trim();
     if (!userEmail) return null;
 
+    let comp: any = null;
+
     // 1. Procura firma já vinculada ao auth.uid()
     const { data: existingByAuth, error: authLookupErr } = await supabase
       .from('companies')
-      .select(COMPANY_SAFE_COLS)
+      .select('*')
       .eq('owner_auth_id', user.id)
       .maybeSingle();
 
     if (!authLookupErr && existingByAuth) {
-      const safe = stripSensitiveCompanyFields(existingByAuth as unknown as Company);
-      setActiveCompanySession(safe);
-      return safe;
+      comp = existingByAuth;
+    } else {
+      // 2. Tenta vincular firma legada existente pelo mesmo owner_email
+      try {
+        const { data: claimed } = await supabase.rpc('claim_legacy_company_by_email');
+        if (claimed && typeof claimed === 'object' && (claimed as any).id) {
+          comp = claimed;
+        }
+      } catch {}
+
+      // 3. Fallback caso owner_auth_id ainda não esteja preenchido
+      if (!comp) {
+        const { data: existingByEmail } = await supabase
+          .from('companies')
+          .select('*')
+          .eq('owner_email', userEmail)
+          .maybeSingle();
+        if (existingByEmail) {
+          comp = existingByEmail;
+        }
+      }
     }
 
-    // 2. Tenta vincular firma legada existente pelo mesmo owner_email
-    try {
-      const { data: claimed } = await supabase.rpc('claim_legacy_company_by_email');
-      if (claimed && typeof claimed === 'object' && (claimed as any).id) {
-        const safe = stripSensitiveCompanyFields(claimed as Company);
-        setActiveCompanySession(safe);
-        return safe;
+    if (comp && comp.id) {
+      let safe = stripSensitiveCompanyFields(comp as unknown as Company);
+      const cloudSettings = await fetchCompanyCloudSettings(safe.id);
+      safe = applyCloudSettingsToCompany(safe, cloudSettings, user.user_metadata);
+
+      if (isCompanyOnboardingPending(safe, cloudSettings, user.user_metadata)) {
+        localStorage.removeItem(CURRENT_COMPANY_KEY);
+        buildMergedPendingOnboardingState(safe, cloudSettings, user.user_metadata);
+        return null;
       }
-    } catch {}
 
-    // 3. Fallback caso owner_auth_id ainda não esteja preenchido
-    const { data: existingByEmail } = await supabase
-      .from('companies')
-      .select(COMPANY_SAFE_COLS)
-      .eq('owner_email', userEmail)
-      .maybeSingle();
-
-    if (existingByEmail) {
-      const safe = stripSensitiveCompanyFields(existingByEmail as unknown as Company);
+      clearLocalPendingOnboardingState();
       setActiveCompanySession(safe);
       return safe;
     }
@@ -958,7 +1659,7 @@ export async function getPendingGoogleAuthUser(): Promise<PendingGoogleUser | nu
     const cleanEmail = (user.email || '').toLowerCase().trim();
     if (!cleanEmail) return null;
 
-    // Se já existir firma para este user, não é pendente
+    // Se já existir firma para este user, não é pendente de criação inicial (pode estar pendente de onboarding)
     const { data: existing } = await supabase
       .from('companies')
       .select('id')
@@ -1018,6 +1719,8 @@ export async function registerCompanyForGoogleUser(
   const user = session.user;
   const cleanEmail = (user.email || '').toLowerCase().trim();
 
+  let createdCompanyResult: Company | null = null;
+
   // 1. Tenta via RPC SECURITY DEFINER se já estiver instalada no banco
   try {
     const { data: rpcCreated } = await supabase.rpc('complete_company_signup', {
@@ -1027,80 +1730,102 @@ export async function registerCompanyForGoogleUser(
       p_tax_id: cleanTaxId,
     });
     if (rpcCreated && typeof rpcCreated === 'object' && (rpcCreated as any).id) {
-      return stripSensitiveCompanyFields(rpcCreated as Company);
+      createdCompanyResult = stripSensitiveCompanyFields(rpcCreated as Company);
     }
   } catch {}
 
   // 2. Verifica se a firma já foi criada para este auth.uid()
-  const { data: alreadyExists } = await supabase
-    .from('companies')
-    .select(COMPANY_SAFE_COLS)
-    .eq('owner_auth_id', user.id)
-    .maybeSingle();
-
-  if (alreadyExists) {
-    const { data: updated } = await supabase
+  if (!createdCompanyResult) {
+    const { data: alreadyExists } = await supabase
       .from('companies')
-      .update({
-        name: cleanName,
-        tax_id: cleanTaxId,
-        phone: cleanPhone,
-      })
-      .eq('id', (alreadyExists as any).id)
       .select(COMPANY_SAFE_COLS)
+      .eq('owner_auth_id', user.id)
       .maybeSingle();
-    return stripSensitiveCompanyFields((updated || alreadyExists) as unknown as Company);
+
+    if (alreadyExists) {
+      const { data: updated } = await supabase
+        .from('companies')
+        .update({
+          name: cleanName,
+          tax_id: cleanTaxId,
+          phone: cleanPhone,
+        })
+        .eq('id', (alreadyExists as any).id)
+        .select(COMPANY_SAFE_COLS)
+        .maybeSingle();
+      createdCompanyResult = stripSensitiveCompanyFields((updated || alreadyExists) as unknown as Company);
+    }
   }
 
   // 3. Executa INSERT sem .select() (Prefer: return=minimal) e depois SELECT separado
   //    para evitar bloqueio da função STABLE private.current_company_id() no INSERT ... RETURNING
-  const insertPayload: Record<string, unknown> = {
-    name: cleanName,
-    owner_email: cleanEmail,
-    owner_auth_id: user.id,
-    password_hash: 'supabase_auth_managed',
-    phone: cleanPhone,
-    tax_id: cleanTaxId,
-  };
+  if (!createdCompanyResult) {
+    const insertPayload: Record<string, unknown> = {
+      name: cleanName,
+      owner_email: cleanEmail,
+      owner_auth_id: user.id,
+      password_hash: 'supabase_auth_managed',
+      phone: cleanPhone,
+      tax_id: cleanTaxId,
+    };
 
-  let { error: insertError } = await supabase.from('companies').insert(insertPayload);
+    let { error: insertError } = await supabase.from('companies').insert(insertPayload);
 
-  if (insertError && (insertError.code === 'PGRST204' || insertError.message?.includes('owner_auth_id'))) {
-    delete insertPayload.owner_auth_id;
-    const retry = await supabase.from('companies').insert(insertPayload);
-    insertError = retry.error;
-  }
+    if (insertError && (insertError.code === 'PGRST204' || insertError.message?.includes('owner_auth_id'))) {
+      delete insertPayload.owner_auth_id;
+      const retry = await supabase.from('companies').insert(insertPayload);
+      insertError = retry.error;
+    }
 
-  if (insertError) {
-    throw new Error(insertError.message || 'Não foi possível criar a firma.');
-  }
+    if (insertError) {
+      throw new Error(insertError.message || 'Não foi possível criar a firma.');
+    }
 
-  const { data: created, error: selectError } = await supabase
-    .from('companies')
-    .select(COMPANY_SAFE_COLS)
-    .eq('owner_auth_id', user.id)
-    .maybeSingle();
-
-  if (selectError || !created) {
-    const { data: fallbackByEmail } = await supabase
+    const { data: created, error: selectError } = await supabase
       .from('companies')
       .select(COMPANY_SAFE_COLS)
-      .eq('owner_email', cleanEmail)
+      .eq('owner_auth_id', user.id)
       .maybeSingle();
-    if (fallbackByEmail) {
-      return stripSensitiveCompanyFields(fallbackByEmail as unknown as Company);
+
+    if (selectError || !created) {
+      const { data: fallbackByEmail } = await supabase
+        .from('companies')
+        .select(COMPANY_SAFE_COLS)
+        .eq('owner_email', cleanEmail)
+        .maybeSingle();
+      if (fallbackByEmail) {
+        createdCompanyResult = stripSensitiveCompanyFields(fallbackByEmail as unknown as Company);
+      } else {
+        throw new Error(selectError?.message || 'Firma criada, mas não foi possível carregar a sessão.');
+      }
+    } else {
+      createdCompanyResult = stripSensitiveCompanyFields(created as unknown as Company);
     }
-    throw new Error(selectError?.message || 'Firma criada, mas não foi possível carregar a sessão.');
   }
 
-  return stripSensitiveCompanyFields(created as unknown as Company);
+  const finalPendingCompany: Company = {
+    ...createdCompanyResult,
+    onboarding_completed: false,
+    terms_accepted: false,
+    privacy_accepted: false,
+  };
+
+  await savePendingOnboardingProgress(finalPendingCompany, {
+    stage: 'onboarding',
+    currentStepIndex: 0,
+    onboardingAnswers: DEFAULT_ONBOARDING_ANSWERS,
+    acceptTerms: false,
+    acceptPrivacy: false,
+  });
+
+  return finalPendingCompany;
 }
 
 export async function updateCompanyProfile(
   companyId: string,
   updates: Partial<Company>
 ): Promise<Company> {
-  const current = getActiveCompanySession();
+  const current = getActiveCompanySession() || getLocalPendingOnboardingState()?.company || null;
   const merged: Company = {
     ...(current || ({} as Company)),
     ...updates,
@@ -1110,16 +1835,28 @@ export async function updateCompanyProfile(
   if (supabase) {
     try {
       // Tenta atualizar no Supabase com os campos fornecidos
-      const payload: Record<string, any> = {
-        name: merged.name,
-        tax_id: merged.tax_id || null,
-        phone: merged.phone || null,
-      };
+      const payload: Record<string, any> = {};
+      if (merged.name) payload.name = merged.name;
+      if (merged.tax_id !== undefined) payload.tax_id = merged.tax_id || null;
+      if (merged.phone !== undefined) payload.phone = merged.phone || null;
       if (updates.logo_url !== undefined) payload.logo_url = updates.logo_url;
       if (updates.theme_color !== undefined) payload.theme_color = updates.theme_color;
       if (updates.theme_mode !== undefined) payload.theme_mode = updates.theme_mode;
       if (updates.currency !== undefined) payload.currency = updates.currency;
       if (updates.address !== undefined) payload.address = updates.address;
+      if (updates.industry !== undefined) payload.industry = updates.industry;
+      if (updates.years_active !== undefined) payload.years_active = updates.years_active;
+      if (updates.team_size !== undefined) payload.team_size = updates.team_size;
+      if (updates.active_sites_count !== undefined) payload.active_sites_count = updates.active_sites_count;
+      if (updates.primary_goal !== undefined) payload.primary_goal = updates.primary_goal;
+      if (updates.terms_accepted !== undefined) payload.terms_accepted = updates.terms_accepted;
+      if (updates.terms_accepted_at !== undefined) payload.terms_accepted_at = updates.terms_accepted_at;
+      if (updates.privacy_accepted !== undefined) payload.privacy_accepted = updates.privacy_accepted;
+      if (updates.privacy_accepted_at !== undefined) payload.privacy_accepted_at = updates.privacy_accepted_at;
+      if (updates.onboarding_completed !== undefined) payload.onboarding_completed = updates.onboarding_completed;
+      if (updates.onboarding_completed_at !== undefined) {
+        payload.onboarding_completed_at = updates.onboarding_completed_at;
+      }
 
       const { data, error } = await supabase
         .from('companies')
@@ -1128,7 +1865,7 @@ export async function updateCompanyProfile(
         .select('*')
         .maybeSingle();
 
-      if (error) {
+      if (error && merged.name) {
         console.warn('Aviso ao atualizar firma no Supabase (aplicando fallback local):', error.message);
         // Fallback para colunas essenciais
         await supabase
@@ -1146,10 +1883,21 @@ export async function updateCompanyProfile(
         logo_url: merged.logo_url,
         theme_color: merged.theme_color,
         theme_mode: merged.theme_mode,
+        industry: merged.industry,
+        years_active: merged.years_active,
+        team_size: merged.team_size,
+        active_sites_count: merged.active_sites_count,
+        primary_goal: merged.primary_goal,
+        terms_accepted: merged.terms_accepted,
+        terms_accepted_at: merged.terms_accepted_at,
+        privacy_accepted: merged.privacy_accepted,
+        privacy_accepted_at: merged.privacy_accepted_at,
+        onboarding_completed: merged.onboarding_completed,
+        onboarding_completed_at: merged.onboarding_completed_at,
       });
 
       if (data) {
-        const full = { ...merged, ...data } as Company;
+        const full = { ...merged, ...data, ...updates } as Company;
         setActiveCompanySession(full);
         return full;
       }
