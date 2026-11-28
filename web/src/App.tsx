@@ -99,6 +99,7 @@ const EmployeeDetailPage = React.lazy(() => import('./pages/EmployeeDetailPage')
 const PrivacyPolicyPage = React.lazy(() => import('./pages/PrivacyPolicyPage').then((m) => ({ default: m.PrivacyPolicyPage })));
 const TermsOfServicePage = React.lazy(() => import('./pages/TermsOfServicePage').then((m) => ({ default: m.TermsOfServicePage })));
 const ResetPasswordPage = React.lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
+const LandingPage = React.lazy(() => import('./landing/LandingPage').then((m) => ({ default: m.LandingPage })));
 const AttendanceChart = React.lazy(() => import('./components/AttendanceChart').then((m) => ({ default: m.AttendanceChart })));
 const DashboardCalendarCard = React.lazy(() => import('./components/DashboardCalendarCard').then((m) => ({ default: m.DashboardCalendarCard })));
 const SiteProgressLineChart = React.lazy(() => import('./components/SiteProgressLineChart').then((m) => ({ default: m.SiteProgressLineChart })));
@@ -180,14 +181,60 @@ function resolvePublicLegalRoute(): PublicRoute {
   return null;
 }
 
+function shouldRenderLandingPage(): boolean {
+  if (typeof window === 'undefined') return false;
+  const hostname = window.location.hostname.toLowerCase();
+  const params = new URLSearchParams(window.location.search);
+  const pathname = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+
+  if (hostname === 'www.erpcastle.com') {
+    window.location.replace(`https://erpcastle.com${window.location.pathname}${window.location.search}`);
+    return true;
+  }
+
+  // Acesso explícito à Landing Page em qualquer domínio (/landing ou ?landing=true)
+  if (pathname === '/landing' || params.get('landing') === 'true') {
+    return true;
+  }
+
+  // No subdomínio do sistema (app.erpcastle.com), abre sempre a aplicação / login
+  if (hostname === 'app.erpcastle.com') {
+    return false;
+  }
+
+  // No domínio institucional (erpcastle.com), abre a Landing Page por padrão
+  if (hostname === 'erpcastle.com') {
+    if (params.get('app') === 'true' || params.get('mode') === 'app' || pathname.startsWith('/app')) {
+      return false;
+    }
+    return true;
+  }
+
+  // Em localhost / preview Vercel: se pedir ?app=true ou /app ou retorno OAuth/recovery, abre o sistema
+  if (
+    params.get('app') === 'true' ||
+    params.get('mode') === 'app' ||
+    pathname.startsWith('/app') ||
+    window.location.hash.includes('type=recovery') ||
+    window.location.hash.includes('access_token')
+  ) {
+    return false;
+  }
+
+  // Na raiz '/' em localhost sem ?app=true, exibe a Landing Page
+  return true;
+}
+
 export default function App() {
   const [publicLegalPage, setPublicLegalPage] = useState<PublicRoute>(() =>
     resolvePublicLegalRoute()
   );
+  const [isLandingMode, setIsLandingMode] = useState<boolean>(() => shouldRenderLandingPage());
 
   useEffect(() => {
     const handlePopState = () => {
       setPublicLegalPage(resolvePublicLegalRoute());
+      setIsLandingMode(shouldRenderLandingPage());
     };
     window.addEventListener('popstate', handlePopState);
 
@@ -883,6 +930,14 @@ export default function App() {
             setPublicLegalPage('privacidade');
           }}
         />
+      </React.Suspense>
+    );
+  }
+
+  if (isLandingMode && !publicLegalPage) {
+    return (
+      <React.Suspense fallback={<PageLoadingFallback />}>
+        <LandingPage />
       </React.Suspense>
     );
   }
