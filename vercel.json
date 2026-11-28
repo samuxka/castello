@@ -4,14 +4,14 @@
   "outputDirectory": "web/dist",
   "redirects": [
     {
-      "source": "/:path*",
+      "source": "/(.*)",
       "has": [
         {
           "type": "host",
           "value": "www.erpcastle.com"
         }
       ],
-      "destination": "https://erpcastle.com/:path*",
+      "destination": "https://erpcastle.com/$1",
       "permanent": true
     }
   ],
@@ -26,7 +26,7 @@
         { "key": "Permissions-Policy", "value": "camera=(self), microphone=(), geolocation=()" },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://res.cloudinary.com https://images.unsplash.com https://*.googleusercontent.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.cloudinary.com https://www.googleapis.com https://challenges.cloudflare.com; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'"
+          "value": "default-src 'self' https://erpcastle.com https://*.erpcastle.com; script-src 'self' https://erpcastle.com https://*.erpcastle.com https://challenges.cloudflare.com; frame-src 'self' https://erpcastle.com https://*.erpcastle.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' https://erpcastle.com https://*.erpcastle.com data: blob: https://res.cloudinary.com https://images.unsplash.com https://*.googleusercontent.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://erpcastle.com https://*.erpcastle.com https://*.supabase.co wss://*.supabase.co https://api.cloudinary.com https://www.googleapis.com https://challenges.cloudflare.com; frame-ancestors 'self' https://erpcastle.com https://*.erpcastle.com; base-uri 'self'; object-src 'none'; form-action 'self' https://erpcastle.com https://*.erpcastle.com"
         }
       ]
     },
