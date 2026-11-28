@@ -99,7 +99,6 @@ const EmployeeDetailPage = React.lazy(() => import('./pages/EmployeeDetailPage')
 const PrivacyPolicyPage = React.lazy(() => import('./pages/PrivacyPolicyPage').then((m) => ({ default: m.PrivacyPolicyPage })));
 const TermsOfServicePage = React.lazy(() => import('./pages/TermsOfServicePage').then((m) => ({ default: m.TermsOfServicePage })));
 const ResetPasswordPage = React.lazy(() => import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
-const LandingPage = React.lazy(() => import('./landing/LandingPage').then((m) => ({ default: m.LandingPage })));
 const AttendanceChart = React.lazy(() => import('./components/AttendanceChart').then((m) => ({ default: m.AttendanceChart })));
 const DashboardCalendarCard = React.lazy(() => import('./components/DashboardCalendarCard').then((m) => ({ default: m.DashboardCalendarCard })));
 const SiteProgressLineChart = React.lazy(() => import('./components/SiteProgressLineChart').then((m) => ({ default: m.SiteProgressLineChart })));
@@ -181,57 +180,14 @@ function resolvePublicLegalRoute(): PublicRoute {
   return null;
 }
 
-function shouldRenderLandingPage(): boolean {
-  if (typeof window === 'undefined') return false;
-  const hostname = window.location.hostname.toLowerCase();
-  const params = new URLSearchParams(window.location.search);
-  const pathname = window.location.pathname.toLowerCase();
-
-  // Redirecionamento 301 de fallback para www.erpcastle.com -> https://erpcastle.com
-  if (hostname === 'www.erpcastle.com') {
-    window.location.replace(`https://erpcastle.com${window.location.pathname}${window.location.search}`);
-    return true;
-  }
-
-  // Se o utilizador aceder a app.erpcastle.com, NUNCA mostra a landing page (sempre o sistema)
-  if (hostname === 'app.erpcastle.com') {
-    return false;
-  }
-
-  // Se o utilizador aceder a erpcastle.com:
-  if (hostname === 'erpcastle.com') {
-    if (params.get('app') === 'true' || params.get('mode') === 'app' || pathname.startsWith('/app')) {
-      return false;
-    }
-    return true;
-  }
-
-  // Em localhost / desenvolvimento local:
-  // Se explicitamente pedir app via ?app=true, /app, ou se tiver token de recuperação -> abre o sistema
-  if (
-    params.get('app') === 'true' ||
-    params.get('mode') === 'app' ||
-    pathname.startsWith('/app') ||
-    window.location.hash.includes('type=recovery') ||
-    window.location.hash.includes('access_token')
-  ) {
-    return false;
-  }
-
-  // Por defeito no localhost na rota raiz '/', apresenta a Landing Page
-  return true;
-}
-
 export default function App() {
   const [publicLegalPage, setPublicLegalPage] = useState<PublicRoute>(() =>
     resolvePublicLegalRoute()
   );
-  const [isLandingMode, setIsLandingMode] = useState<boolean>(() => shouldRenderLandingPage());
 
   useEffect(() => {
     const handlePopState = () => {
       setPublicLegalPage(resolvePublicLegalRoute());
-      setIsLandingMode(shouldRenderLandingPage());
     };
     window.addEventListener('popstate', handlePopState);
 
@@ -931,14 +887,6 @@ export default function App() {
     );
   }
 
-  if (isLandingMode && !publicLegalPage) {
-    return (
-      <React.Suspense fallback={<PageLoadingFallback />}>
-        <LandingPage />
-      </React.Suspense>
-    );
-  }
-
   if (!activeCompany) {
     return (
       <React.Suspense fallback={<PageLoadingFallback />}>
@@ -1276,18 +1224,6 @@ export default function App() {
               <Settings size={18} style={{ flexShrink: 0 }} />
               <span className="nav-label">Configurações</span>
             </button>
-
-            <a
-              href={typeof window !== 'undefined' && window.location.hostname === 'localhost' ? '/?landing=true' : 'https://erpcastle.com'}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="nav-item"
-              title="Website Oficial (erpcastle.com)"
-              style={{ textDecoration: 'none', color: 'inherit', marginTop: 12, borderTop: '1px solid var(--border-color)', paddingTop: 12 }}
-            >
-              <ExternalLink size={18} style={{ flexShrink: 0 }} />
-              <span className="nav-label">Website Oficial</span>
-            </a>
           </nav>
         </div>
 

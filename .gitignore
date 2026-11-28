@@ -54,8 +54,3 @@ yarn-error.log*
 k6.zip
 k6_dist/
 tests_k6/
-
-# Python / OCR
-.easyocr/
-__pycache__/
-*.pyc
