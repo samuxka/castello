@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowRight,
@@ -87,6 +87,7 @@ const CASTELLO_SCREENS: GalleryScreen[] = [
 
 export const LandingPage: React.FC = () => {
   const appUrl = getAppUrl();
+  const rootScrollRef = useRef<HTMLDivElement | null>(null);
   const [scrollY, setScrollY] = useState(0);
   const [isScrolled, setIsScrolled] = useState(false);
   const [heroFocusMode, setHeroFocusMode] = useState<'both' | 'web' | 'mobile'>('both');
@@ -100,11 +101,15 @@ export const LandingPage: React.FC = () => {
     const prevTitle = document.title;
     document.title = 'Castello — Sistema de Gestão de Obras & Ponto (Web & Mobile)';
 
+    const scrollContainer = rootScrollRef.current;
+
     let ticking = false;
     const onScroll = () => {
       if (!ticking) {
         window.requestAnimationFrame(() => {
-          const y = window.scrollY || window.pageYOffset;
+          const y = scrollContainer
+            ? scrollContainer.scrollTop
+            : window.scrollY || window.pageYOffset;
           setScrollY(y);
           setIsScrolled(y > 24);
           ticking = false;
@@ -113,10 +118,13 @@ export const LandingPage: React.FC = () => {
       }
     };
 
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', onScroll, { passive: true });
+    }
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
 
-    // IntersectionObserver para revelar cada bloco conforme o utilizador faz scroll
+    // IntersectionObserver usando o container com scroll (.lp-root)
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -125,7 +133,11 @@ export const LandingPage: React.FC = () => {
           }
         });
       },
-      { threshold: 0.12, rootMargin: '0px 0px -40px 0px' }
+      {
+        root: scrollContainer || null,
+        threshold: 0.1,
+        rootMargin: '0px 0px -30px 0px',
+      }
     );
 
     const revealNodes = document.querySelectorAll('.lp-reveal');
@@ -133,6 +145,9 @@ export const LandingPage: React.FC = () => {
 
     return () => {
       document.title = prevTitle;
+      if (scrollContainer) {
+        scrollContainer.removeEventListener('scroll', onScroll);
+      }
       window.removeEventListener('scroll', onScroll);
       observer.disconnect();
     };
@@ -170,7 +185,7 @@ export const LandingPage: React.FC = () => {
   ];
 
   return (
-    <div className="lp-root">
+    <div ref={rootScrollRef} className="lp-root">
       {/* ====================================================================
           NAVBAR FLUTUANTE (COMO NO VÍDEO: Logo com círculo, 4 links, Log In + CTA)
          ==================================================================== */}

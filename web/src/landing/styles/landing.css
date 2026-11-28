@@ -17,14 +17,47 @@
   --lp-muted: #5A6478;
 }
 
+html:has(.lp-root),
+body:has(.lp-root) {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  height: auto !important;
+}
+
 .lp-root {
   font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
   background-color: var(--lp-white);
   color: var(--lp-obsidian);
-  min-height: 100vh;
-  overflow-x: hidden;
-  position: relative;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
+  z-index: 50;
+}
+
+/* Barra de scroll visível e elegante para a Landing Page */
+.lp-root::-webkit-scrollbar {
+  width: 10px;
+}
+
+.lp-root::-webkit-scrollbar-track {
+  background: #F5F7FB;
+}
+
+.lp-root::-webkit-scrollbar-thumb {
+  background: #B9C8FF;
+  border-radius: 999px;
+  border: 2px solid #F5F7FB;
+}
+
+.lp-root::-webkit-scrollbar-thumb:hover {
+  background: #0015D4;
 }
 
 .lp-root *,
