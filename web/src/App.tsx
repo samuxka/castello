@@ -900,7 +900,7 @@ export default function App() {
             if (company.theme_mode) {
               setTheme(company.theme_mode as ThemeMode);
             }
-            applyTheme((company.theme_color as ThemeColor) || 'azul', (company.theme_mode as ThemeMode) || 'dark');
+            applyTheme((company.theme_color as ThemeColor) || 'azul', (company.theme_mode as ThemeMode) || 'light');
           }}
         />
       </React.Suspense>
